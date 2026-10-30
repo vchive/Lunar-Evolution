@@ -1,3 +1,49 @@
+<!-- vfs-lifetime-current:start -->
+## 当前开发点：原 VFS owner 生命周期已完成有限实跑（2026-10-31）
+
+当前后继工作区 `/Users/liminghan/.codex/worktrees/subject-session-diagnostics/lunar_agent`，
+分支 `codex/vfs-execution-lifetime`。显式新 backend 保留原 service/initialized worker
+句柄覆盖 initialized、before-start、original-exit、before-readback、after-readback，
+增加 report-v7、observation-v5、dependency-v6 与独立 candidate reader；旧默认不变。
+仅新模式使用严格 connected-stream socket profile，仍须唯一 listener、原 service FD
+ownership、名称和重复读回一致；不把合法 accepted stream 当第二个 listener。
+
+冻结 `02347d6861273ef7c66423e166019002aa54ef60` / tree `a94ab84e` 的 37 完整文件、
+1,683 用例集中回归全部通过，57.950186秒，零 fail/error/skip/retry；2,777 源码字节与
+Git 执行位前后相同，309 import origins 在固定 inventory 内。新增207节点包含原156与
+socket51，不累计旧回归为一次全量。Ruff、compileall、diff检查通过。83 groups /65
+zero-skip 保持，source group1374、固定 expected sum8190；后继自身完整CI/source门仍须通过。
+
+同一冻结源码的 fresh inert 六命令原 runner/consumer 在17.175096秒通过，原600秒总预算、
+零retry；108 lifetime raw、102 VFS raw、61 controls/122 logrefs/22 current+promoted
+outputs 全核，486原件/151目录已独审，源码 before/after 相同。原 service/worker 句柄贯穿
+五阶段；它只证明有限机制，全部 custody/installation/runtime/admission/publication claims
+仍为false。独审收据 `vfs-lifetime-02347d68-six-command-original-archive-review-v1.json`
+SHA12865705…；证据主区 ignored `validation/vfs-lifetime-20261031/`。
+
+旧6b95e260有限实跑确实dispatch后在freeze0的service.verify拒绝，原瞬时分支未知；
+原包装拒绝、3.14导入失败及6b机制失败均保持原义。独立kernel fixture证明的socket parser缺陷不回填历史。
+旧Shinka0de完整构建在1439.790942秒失败，原3000秒/零retry，configure1和210条freeze
+完成，下一条freeze index210在原service获取阶段失败；compile/link未到。9735原件已独审。
+新lifetime完整Shinka已在同02347源码、原已批318命令图和3000秒/零retry下独立启动；其终态
+只以 `validation/native-support-export-20261030/full-cpython-shinka-lifetime-02347d68/`
+的原summary/report与后续独审为准，本节不推断完整CPython/runtime验收。
+
+PR199 head920073be 已通过45/45完整CI与最终独审，合main为
+`3de1e92dd2b043d78fe6d3ba701292cbbc74eb16`，tree `b2218ed1` 精确等于受测树；parents
+为70ed04a2/920073be。三版各27030节点=26896pass+134原skip，所有skip keys未变。
+本地审计报告曾因变量遮蔽误序列化skip列表，v3修正并保留旧报告，无CI/test重跑；39个
+原件/source检查与最终独审9f60e470…通过。用户授权的委派审查规范随PR199已合main。
+
+真正剩余必要软件链：完整configured driver输入闭包与原始不可变消费/保护过渡，随后
+accepted static image与原live runtime owner，再接首个scheduler context loader和生产RSI
+CLI/本地复制case。现有episode stager/resolver/gateway/恢复及reserved BRS serial软件已存在，
+不重复实现。固定U独占/外部writer acquisition和真实root/account/ACL/cgroup条件仍未具备，
+也不把它们视作全部Podman软件工作都无法继续的总阻塞。不运行模型/WebAgent/远程 evaluator/
+真实solver campaign，不读密钥或无关live argv/env，不改原benchmark；production_admission/
+online_publication=false。
+<!-- vfs-lifetime-current:end -->
+
 <!-- delegated-review-current:start -->
 ## 软件冻结记录：依赖比较、scope 与安装候选描述（2026-10-31）
 

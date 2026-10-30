@@ -36,6 +36,7 @@ from tools.static_python_rsi_fixture.execution_backend import (
 from tools.static_python_rsi_fixture.runtime_closure import canonical
 
 _BACKEND = "podman-snapshots-source-data-vfs-retained-v1"
+_LIFETIME_BACKEND = "podman-snapshots-source-data-vfs-lifetime-v1"
 _MAX_WIRE = 16 * 1024 * 1024
 _FALSE = (
     "immutable_custody_verified", "driver_inputs_verified", "implicit_link_inputs_verified",
@@ -182,7 +183,11 @@ def _prepare(
     expected_cpython_inventory_sha256: str, expected_augmented_source_inventory_sha256: str,
     installation_version: str, workspace: Path, deadline: float,
     monotonic: Callable[[], float], interrupted: Callable[[], bool] | None,
+    lifetime: bool = False,
 ) -> RetainedFixedInstallationDescription:
+    if type(lifetime) is not bool:
+        _fail("history_profile")
+    backend = _LIFETIME_BACKEND if lifetime else _BACKEND
     for value, maximum in ((recipe_bytes, _MAX_WIRE),
                            (runtime_closure, fixed.MAX_FIXED_CLOSURE_BYTES)):
         if type(value) is not bytes or not 0 < len(value) <= maximum:
@@ -232,8 +237,9 @@ def _prepare(
         _fail("cpython_inventory")
     root = workspace.absolute()
     report_bytes, outputs = _report_outputs(
-        build.execution_report, recipe, _BACKEND, version4=True, workspace=root,
+        build.execution_report, recipe, backend, version4=True, workspace=root,
         checkpoint=checkpoint, vfs_roots=True, vfs_retained=True,
+        **({"vfs_lifetime": True} if lifetime else {}),
     )
     inventory = canonical(outputs)
     if _sha(inventory) != build.output_inventory_sha256:
@@ -257,8 +263,9 @@ def _prepare(
         _fail("historical_binding")
     dependency = _json(history_bytes["dependency-report.json"])
     expected_dependency = {
-        "schema": "lunar-actual-build-dependency-consumer-v5", "status": "compared",
-        "custody_backend": _BACKEND, "dependency_path_profile": SOURCE_DIRECTORY_PROFILE,
+        "schema": "lunar-actual-build-dependency-consumer-v6" if lifetime else
+                  "lunar-actual-build-dependency-consumer-v5", "status": "compared",
+        "custody_backend": backend, "dependency_path_profile": SOURCE_DIRECTORY_PROFILE,
         **common, "execution_report_sha256": historical["report.json"],
         "compiler_comparison_sha256": build.compiler_comparison_sha256,
         "linker_comparison_sha256": build.linker_comparison_sha256,
@@ -398,6 +405,38 @@ def prepare_retained_fixed_installation_description(
             expected_augmented_source_inventory_sha256=expected_augmented_source_inventory_sha256,
             installation_version=installation_version, workspace=workspace, deadline=deadline,
             monotonic=monotonic, interrupted=interrupted,
+        )
+    except _Refusal as exc:
+        reason = str(exc)
+    except Exception:  # noqa: BLE001 - external validators, IO and callbacks retain no private material
+        reason = "readback_or_description"
+    raise RetainedInstallationDescriptionError(reason) from None
+
+
+def prepare_lifetime_fixed_installation_description(
+    build: DependencyCheckedBuild, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    expected_manifest_sha256: str, expected_dependency_report_sha256: str,
+    runtime_closure: bytes, expected_runtime_closure_sha256: str,
+    expected_cpython_inventory_sha256: str, expected_augmented_source_inventory_sha256: str,
+    installation_version: str, workspace: Path, deadline: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    interrupted: Callable[[], bool] | None = None,
+) -> RetainedFixedInstallationDescription:
+    """Read only lifetime-v7/v6 history into unaccepted candidate bytes.
+
+    Original retained histories belong to the separate retained entry point.
+    The lifetime observations confer no immutable-input or runtime authority.
+    """
+    try:
+        return _prepare(
+            build, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_dependency_report_sha256=expected_dependency_report_sha256,
+            runtime_closure=runtime_closure, expected_runtime_closure_sha256=expected_runtime_closure_sha256,
+            expected_cpython_inventory_sha256=expected_cpython_inventory_sha256,
+            expected_augmented_source_inventory_sha256=expected_augmented_source_inventory_sha256,
+            installation_version=installation_version, workspace=workspace, deadline=deadline,
+            monotonic=monotonic, interrupted=interrupted, lifetime=True,
         )
     except _Refusal as exc:
         reason = str(exc)

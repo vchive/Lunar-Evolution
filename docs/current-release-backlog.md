@@ -1,3 +1,39 @@
+## Current closeout — original VFS lifetime observation, 2026-10-31
+
+This entry supersedes the older execution states below. PR199 is merged into
+main as `3de1e92d`, tree `b2218ed1`, with exact parents `70ed04a2` / `920073be`.
+All 45 CI jobs passed. Independent original/source review confirmed 27,030 cases
+per Python version: 26,896 passes and the same 134 original skip keys. A local
+audit-report serialization bug was corrected from the same original artifacts;
+the old report remains preserved, with no CI or test rerun. Delegated independent
+configuration review is now part of the merged SDD.
+
+The explicit VFS lifetime successor retains original service/initialized-worker
+handles through five boundaries and original readback. Frozen `02347d68` passed
+1,683 cases in 37 complete affected Linux files, zero failure/error/skip/retry.
+Its fresh six-command inert runner/consumer attempt passed in 17.175096 seconds
+under the original 600-second budget without retry. Independent review matched
+486 files, 108 lifetime raw records and 102 VFS raw records. The new connected-
+stream socket profile is lifetime-only; older defaults remain unchanged. It still
+returns unaccepted evidence and candidate bytes, with all authority claims false.
+The successor needs its own complete CI/source checks and verified main merge.
+
+A separate fresh full Shinka attempt uses the same frozen source, original
+reviewed 318-command graph and 3,000-second budget, with no retry. Its terminal
+summary and original-record review are separate evidence, not inferred from the
+six-command fixture. Historical failed attempts retain their original meaning.
+
+Remaining P0: this successor's final-source CI and integration. Remaining P1:
+complete configured driver inputs, original immutable consumption and protected
+output-to-input transitions; accepted image/live runtime ownership; then the
+first scheduler context loader, production RSI CLI and copied local cases.
+Per-episode staging/resolution/gateway/recovery and reserved BRS serial software
+already exist. Fixed-U exclusivity, external-writer acquisition and real
+account/root/ACL/cgroup prerequisites remain open. They do not excuse missing
+Podman software integration. Production admission and online publication remain
+false. Evidence is under primary ignored `validation/vfs-lifetime-20261031/`
+and `validation/native-support-export-20261030/`.
+
 ## Current closeout — verified integration and delegated review, 2026-10-30
 
 This entry supersedes the older execution states below. PR197 and PR198 have
