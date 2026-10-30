@@ -8,6 +8,42 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Current lifetime and worker-view continuation — 2026-10-31
+
+This checklist is the current execution state; older grouped open items below
+retain their historical scope and do not undo these narrower completions.
+
+- [x] Implement the explicit original-owner five-phase lifetime path and
+  connected-stream socket parser; retain old defaults and candidate contracts.
+- [x] Complete the frozen02347d68 1,683-node Linux batch and independently
+  audited six-command original inert observation, with no failures or skips.
+- [x] Complete a fresh original Shinka build on that source: all318 commands,
+  212compiler/2linker comparisons, 2828.000364s within3000s, zero retry; audit
+  all22,397 archived files and preserve the complete originals losslessly.
+- [x] Preserve the failed first candidate observation and identify the audit's
+  two trailing-newline comparison-pin defects without modifying product bytes.
+- [ ] Independently review and observe the corrected candidate mapping under
+  a separate exact plan; the original failed observation must remain failed.
+- [x] Implement explicit worker-input-view v1 on the original held role FDs,
+  bounded inventory equality and report-v8/observation-v6/dependency-v7/lifetime-v2.
+- [x] Retain the original1750-node batch as1749pass/1stale-count failure;
+  all67 additions passed. Correct only the count and pass its82-node full file
+  separately, with unchanged src/tools; never sum these as one passing batch.
+- [x] Independently review and execute one six-command worker-view inert plan:
+  remote14.251950s, original600s, zero retry, original SSH child reaped/rc0.
+- [ ] Complete independent worker-view original-record review and the explicit
+  installation candidate reader's focused regression.
+- [ ] Complete each successor's final-source CI/source gate and main merge.
+- [ ] Complete configured driver input closure, original immutable consumption,
+  protected output transitions and complete original descendant drainage.
+- [ ] Establish an accepted static image/live owner, then the first production
+  scheduler context loader, production RSI CLI and copied local-case acceptance.
+
+Original fixed-U exclusivity, external-writer acquisition and account/root/ACL/
+cgroup prerequisites remain separate open conditions. The finite worker view
+does not establish them or turn any authority claim true. See
+`full-build-observation-20261031.md` and `vfs-worker-input-view.md`.
+
 ## Delegated actual configuration review — 2026-10-30
 
 - [x] Record the user's explicit delegation and permit independent agent review

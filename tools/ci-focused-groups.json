@@ -179,9 +179,10 @@
         "tests/test_static_python_lifetime_installation.py",
         "tests/test_static_python_vfs_connected_stream_socket.py",
         "tests/test_static_python_worker_input_view.py",
-        "tests/test_static_python_worker_input_view_entrypoints.py"
+        "tests/test_static_python_worker_input_view_entrypoints.py",
+        "tests/test_static_python_worker_input_view_installation.py"
       ],
-      "expected_tests": 1441,
+      "expected_tests": 1462,
       "zero_skips": true
     },
     {

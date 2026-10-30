@@ -1,3 +1,38 @@
+<!-- worker-input-view-current:start -->
+## 当前开发点：原 worker 输入视图与候选读取（2026-10-31）
+
+当前工作区 `/Users/liminghan/.codex/worktrees/configuration-review-v2/lunar_agent`，
+分支 `codex/vfs-worker-input-view`。PR200 的 `subject-session-diagnostics` 工作区
+保持 head4b031a31 冻结，原 CI41134336681 继续自然运行；未重试或重启。
+
+显式 worker-input-view backend 已实现：原 initialized worker 的 held source/toolchain/
+work FD 在 before-start 核完整成员、文件内容/大小/执行位、nofollow/type/nlink、目录和
+名称身份；原 deadline/cancel 贯穿。report-v8/observation-v6/dependency-v7/lifetime-v2
+绑定原 owner、三 role inventory 和 before-start 摘要，旧 API/default 不变。
+它仅证明该边界的有限视图一致，不证明不可变消费、外部 writer 排除或完整后代清理。
+
+冻结34b03828 的39完整文件1750节点原结果1749pass/1fail（漏更新 CI 总数）；67新增全过。
+原失败保留。acafb640 仅修总数，完整82节点文件通过，src/tools逐字节不变。两批不相加
+声称一次全过。acaf 同源六命令有限实跑14.251950秒通过，原600秒/零retry，SSH rc0/reaped。
+独审全486原件、108 lifetime raw、102 VFS raw、61 controls/122 logrefs/22 outputpins，
+源码2780文件前后及Git执行位相等，receipt fc3162e8…；新 candidate reader另待集中回归。
+该显式读取入口复用原v8/dep7/obs6/lifetime2验证和两轮FD读回，只返回已有未接受候选。
+
+完整Shinka lifetime构建已经成功：02347d68/source，318命令、212compiler/2linker比较，
+2828.000364秒/原3000秒/零retry；2777源码前后相等，22,397原件独审通过（35ceb2df…）。
+随后第一次候选观察确实rc1/independent_mapping_pin失败；已定位审计两个展开清单hash
+多算末尾LF，非产品缺陷。原失败和原receipt保留，create-only窄纠错与新精确计划另审；
+不能把原失败升级。完整原tar保留远端，本机使用经独审流式核同字节的lossless .tar.gz，
+不整包解压。详见 full-build-observation-20261031.md 与ignored原始证据。
+
+尚需当前后继完整CI/source审查与main合并。必要软件链仍为：完整driver输入闭包、原始
+不可变输入/输出保护过渡及完整后代drain，accepted image/live owner，首个scheduler
+context loader、生产RSI CLI和复制本地case。episode stager/resolver/gateway/恢复与
+reserved BRS serial已存在。fixed-U、外部writer及root/account/ACL/cgroup前提仍缺；
+不把有限视图或原skip当验收，不跑模型/WebAgent/远程evaluator/真实solver，不读密钥或
+无关live argv/env，不改原benchmark。installation/runtime/admission/publication权威全false。
+<!-- worker-input-view-current:end -->
+
 <!-- vfs-lifetime-current:start -->
 ## 当前开发点：原 VFS owner 生命周期已完成有限实跑（2026-10-31）
 

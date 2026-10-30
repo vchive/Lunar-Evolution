@@ -20,10 +20,10 @@ callback, caller-provided owner, process discovery or detached acceptance DTO.
 | Dependency report | `lunar-actual-build-dependency-consumer-v7` |
 | Lifetime manifest | `lunar-podman-vfs-execution-lifetime-v2` |
 | Input-view profile | `lunar-podman-worker-input-view-v1` |
+| Candidate reader | `prepare_worker_input_view_fixed_installation_description` |
 
 Old entry points, defaults, report bytes and verifiers remain unchanged. New
-readers reject old/mixed versions. This slice adds no installation candidate
-reader or accepted runtime path.
+readers reject old/mixed versions. No accepted runtime path is added.
 
 ## Original view and read reuse
 
@@ -69,6 +69,35 @@ The consumer reads original create-only files with the existing bounded
 nofollow ledger, verifies the lifetime/raw/control history, and reconstructs
 the strict summary from the original recipe/prior inventories and verified
 original owner. It does not query historical `/proc` or recreate a live owner.
+
+## Explicit unaccepted installation candidate reader
+
+`prepare_worker_input_view_fixed_installation_description` is a separate
+read-only entry point in the existing `retained_installation` module. It accepts
+only the original worker-input-view backend, execution report-v8, dependency-v7,
+observation-v6 and lifetime-v2 history. It selects the existing checked-build
+`_report_outputs` path with the worker-view flag, so the original observation
+validator must reconstruct and check the finite summary, original raw/control
+records and prior groups. No caller-provided replacement summary or relaxed
+history profile is accepted. Missing, older or mixed history refuses.
+
+The reader reuses the existing recipe/history pins, comparison-file checks,
+original deadline/cancellation, two rounds of bounded nofollow input/output
+readback, actual image mode, expanded closure parser and ELF check. It returns
+the same `RetainedFixedInstallationDescription` candidate type and candidate
+byte schema. With identical source/output bytes, those candidate bytes remain
+identical to the older readers; the separate historical dependency-report pin
+records the selected history. Old retained and lifetime entry points keep their
+original schemas, defaults and bytes and reject worker-view history.
+
+This reader does not execute an image, reconstruct a live owner, issue an
+accepted receipt, create an installation or open a CLI/runtime route. The
+worker summary remains a finite observation and grants no immutable custody.
+All candidate and publication/admission claims remain false. Focused tests
+reuse the existing synthetic retained fixture with an explicitly doubled
+custody boundary; original file/history reconstruction and closure/ELF checks
+remain real. The actual worker-summary validator keeps its separate original
+FD/raw-history tests and cannot be bypassed by the new reader.
 
 ## Limits and verification
 

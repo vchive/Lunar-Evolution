@@ -37,6 +37,7 @@ from tools.static_python_rsi_fixture.runtime_closure import canonical
 
 _BACKEND = "podman-snapshots-source-data-vfs-retained-v1"
 _LIFETIME_BACKEND = "podman-snapshots-source-data-vfs-lifetime-v1"
+_WORKER_INPUT_BACKEND = "podman-snapshots-source-data-vfs-worker-input-view-v1"
 _MAX_WIRE = 16 * 1024 * 1024
 _FALSE = (
     "immutable_custody_verified", "driver_inputs_verified", "implicit_link_inputs_verified",
@@ -184,10 +185,12 @@ def _prepare(
     installation_version: str, workspace: Path, deadline: float,
     monotonic: Callable[[], float], interrupted: Callable[[], bool] | None,
     lifetime: bool = False,
+    worker_input_view: bool = False,
 ) -> RetainedFixedInstallationDescription:
-    if type(lifetime) is not bool:
+    if (type(lifetime) is not bool or type(worker_input_view) is not bool
+            or worker_input_view and not lifetime):
         _fail("history_profile")
-    backend = _LIFETIME_BACKEND if lifetime else _BACKEND
+    backend = _WORKER_INPUT_BACKEND if worker_input_view else _LIFETIME_BACKEND if lifetime else _BACKEND
     for value, maximum in ((recipe_bytes, _MAX_WIRE),
                            (runtime_closure, fixed.MAX_FIXED_CLOSURE_BYTES)):
         if type(value) is not bytes or not 0 < len(value) <= maximum:
@@ -240,6 +243,7 @@ def _prepare(
         build.execution_report, recipe, backend, version4=True, workspace=root,
         checkpoint=checkpoint, vfs_roots=True, vfs_retained=True,
         **({"vfs_lifetime": True} if lifetime else {}),
+        **({"vfs_worker_input_view": True} if worker_input_view else {}),
     )
     inventory = canonical(outputs)
     if _sha(inventory) != build.output_inventory_sha256:
@@ -263,7 +267,8 @@ def _prepare(
         _fail("historical_binding")
     dependency = _json(history_bytes["dependency-report.json"])
     expected_dependency = {
-        "schema": "lunar-actual-build-dependency-consumer-v6" if lifetime else
+        "schema": "lunar-actual-build-dependency-consumer-v7" if worker_input_view else
+                  "lunar-actual-build-dependency-consumer-v6" if lifetime else
                   "lunar-actual-build-dependency-consumer-v5", "status": "compared",
         "custody_backend": backend, "dependency_path_profile": SOURCE_DIRECTORY_PROFILE,
         **common, "execution_report_sha256": historical["report.json"],
@@ -441,5 +446,37 @@ def prepare_lifetime_fixed_installation_description(
     except _Refusal as exc:
         reason = str(exc)
     except Exception:  # noqa: BLE001 - external validators, IO and callbacks retain no private material
+        reason = "readback_or_description"
+    raise RetainedInstallationDescriptionError(reason) from None
+
+
+def prepare_worker_input_view_fixed_installation_description(
+    build: DependencyCheckedBuild, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    expected_manifest_sha256: str, expected_dependency_report_sha256: str,
+    runtime_closure: bytes, expected_runtime_closure_sha256: str,
+    expected_cpython_inventory_sha256: str, expected_augmented_source_inventory_sha256: str,
+    installation_version: str, workspace: Path, deadline: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    interrupted: Callable[[], bool] | None = None,
+) -> RetainedFixedInstallationDescription:
+    """Read worker-view v8/v7 history into the existing unaccepted candidate.
+
+    Original summary/control validation and bounded readbacks remain mandatory.
+    A finite input view does not confer immutable custody or runtime authority.
+    """
+    try:
+        return _prepare(
+            build, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_dependency_report_sha256=expected_dependency_report_sha256,
+            runtime_closure=runtime_closure, expected_runtime_closure_sha256=expected_runtime_closure_sha256,
+            expected_cpython_inventory_sha256=expected_cpython_inventory_sha256,
+            expected_augmented_source_inventory_sha256=expected_augmented_source_inventory_sha256,
+            installation_version=installation_version, workspace=workspace, deadline=deadline,
+            monotonic=monotonic, interrupted=interrupted, lifetime=True, worker_input_view=True,
+        )
+    except _Refusal as exc:
+        reason = str(exc)
+    except Exception:  # noqa: BLE001 - preserve bounded refusal without historical private material
         reason = "readback_or_description"
     raise RetainedInstallationDescriptionError(reason) from None

@@ -1,3 +1,36 @@
+## Current closeout — original worker input view, 2026-10-31
+
+This entry supersedes the older in-progress observations below. The original
+Shinka lifetime build on02347d68 completed318commands and212compiler/2linker
+comparisons in2828.000364s under the original3000s allowance, zero retry;
+22,397 original files were independently audited. Its first separate candidate
+observation failed because two audit comparison pins included a trailing LF.
+The failed observation remains failed. A narrow correction and a fresh exact
+candidate plan are separate from the successful full build.
+
+The explicit worker-input-view successor verifies original source/toolchain/work
+inventories through the original initialized worker's held FDs before start,
+with report-v8/observation-v6/dependency-v7/lifetime-v2 and unchanged old defaults.
+All67 additions passed in the retained1750-node batch; its stale CI count caused
+one original failure. The count-only successor passed its complete82-node file,
+with identical product bytes. These are separate batches. Onacafb640, the exact
+six-command inert run passed in14.251950s,600s/zero retry. Independent review
+matched486files,108lifetime/102VFS raw records,61controls/122logrefs/22outputs and
+all three role summaries; source2780 records matched before/after. The explicit
+candidate reader reuses that strict history, without installation authority;
+its focused regression and final-source CI/main integration remain required.
+
+P0 is final-source CI, independent original/source review and verified main
+integration for PR200 and this successor. P1 remains original immutable input
+consumption, configured driver closure, protected output transitions and complete
+descendant drainage, followed by accepted image/live ownership, the first
+scheduler context loader, production RSI CLI and copied local cases. Fixed-U,
+external-writer and account/root/ACL/cgroup prerequisites remain separate open
+conditions. No finite observation changes installation/runtime/admission or
+publication authority. Evidence is under primary ignored
+`validation/vfs-worker-input-view-20261031/` and
+`validation/native-support-export-20261030/`.
+
 ## Current closeout — original VFS lifetime observation, 2026-10-31
 
 This entry supersedes the older execution states below. PR199 is merged into
