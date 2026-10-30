@@ -95,9 +95,19 @@ workspace candidate观察21.313828秒成功，93 frozen/33 native和完整规范
 候选pin46e4e4be…/46,427B；这不是accepted root。Shinka318命令全部rc0，但后置
 consumer在2143.932569秒（非超时）拒绝：原freeze233为stopped，runner接受而validator
 只接受exited。14,441原件/VFS/四输入树FD核验通过，原失败保留。已统一有限终态判定
-及严格整数PID/ExitCode，保留wait/reaped和全部原profile门；新增73 focused待集中执行。
+及严格整数PID/ExitCode，保留wait/reaped和全部原profile门；freeze0de18312的19完整
+文件826节点全部pass（含73新增），9.241618秒含harness，0fail/error/skip/retry；
+2770源码前后字节/Git执行位与285import origins均核一致，Ruff/compileall/diff通过。
+原83groups/65zero-skip保持，source1167/sum7983；最终完整CI仍须自己的source门。
+新干净0de product对Shinka原证据只读phase诊断20.712070秒通过：原report/VFS、四
+输入树和532outputs均核一致；不写原workspace/receipt，不把旧failed转成功。测试
+product含pytest cache曾被严格source集合preflight拒绝，未导入产品；后用原archive
+重建独立干净build-product（2770files/308dirs），原测试树和拒绝原件均保留。
 原CI41110175003自然终态41success/4failure（heavy6+三focused拒绝），45原ZIP已独审
 封口；三版各26957原inventory/134原skipkeys完整，v2closure f4d4680d…。
+原prestart probe v3单次120s内0.814724秒成功，init原PID/root/ns→同helper→原pidfd
+终态已独审（receipt e97bdfc6…），只证明该有限获取可行。后继owner-lifetime规格/实现
+在独立 `subject-session-diagnostics` worktree / `codex/vfs-execution-lifetime`，不混PR199。
 详见 `full-build-observation-20261031.md`；后继最终CI/source门仍以PR199为准，
 不提前宣告发布通过。CIcollector与完整构建原件保留在下述ignored根目录。
 原件与审查在主区 ignored `validation/native-support-export-20261030/`。
