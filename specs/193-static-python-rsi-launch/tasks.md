@@ -8,6 +8,23 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Same-container native support export — 2026-10-30
+
+- [x] Specify source-owned static helper, finite wire and an explicit exact
+  command profile without relaxing the legacy runner validator.
+- [x] Implement same-command cache scanning/export and original report/ELF/FD,
+  candidate, inventory and manifest readback through the existing runner.
+- [x] Preserve multiple CRT identities, create-only outputs, original deadlines,
+  finite bounds and all-false authority claims; never execute the seed.
+- [x] Finish code before the affected regression. Final source `5ea6210d` passes
+  496/496 unique cases in 14 complete files, including 83 new cases, zero skip.
+  Retain the earlier 495-case source and its real cache-parent refusal separately.
+- [x] Observe the final source's single real rootless run: 103.894995 seconds,
+  original 120-second budget, zero retry, 6 candidates / 13,968,568 bytes.
+- [ ] Complete this successor's final-source full CI/source gate and integration.
+- [ ] Complete independent real configuration review, full configured build,
+  original custody/runtime ownership and production producer/CLI acceptance.
+
 ## Explicit real-configuration review v2 — 2026-10-30
 
 - [x] Specify a separately selected v2 schema/profile, retaining v1 bytes,

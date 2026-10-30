@@ -1,3 +1,37 @@
+## Current continuation — same-container native support export, 2026-10-30
+
+The fixed native helper and consumer now use the original snapshot runner to
+link the seed and export both caches before that link container exits. Selection
+is explicit, with an exact source/graph/environment/output profile; legacy
+capture validation and defaults remain unchanged. No seed or solver is run.
+
+The final cache-child source `5ea6210d` passed 496 unique cases across 14 complete
+files (83 new), in 9.228404 seconds including the wrapper, with no failures,
+errors or skips. Source bytes and Git executable-bit projections matched before
+and after. Ruff, compileall and diff checks passed. The existing 83 groups and
+65 zero-skip groups remain; the source group is 932 and expected sum is 7671.
+The earlier 495-case result is contained in this domain, not added to it.
+
+A real rootless run then completed under the original 120-second deadline,
+zero retry, in 103.894995 seconds: 6 candidates / 13,968,568 bytes, original
+report, static ELF and finite cache/export checks, no seed execution. The first
+source's 63.977149-second `cache_not_fresh` failure remains a failure: the fixed
+image supplied cache parent directories. Fresh fixed child roots correct that
+integration without accepting an old cache or changing the runner. Preparation
+failures before test bodies and all original evidence are retained separately.
+
+P0: PR197's final CI/source gate is still running; this successor must also pass
+its own final-source CI before integration. P1: independently reviewed complete
+configuration and final stages, full CPython/freezer/ELF/custody and sealed
+startup remain open. The first accepted-runtime scheduler-context loader must
+reuse the existing per-episode staging and gateway/recovery chain. Original
+fixed-U exclusivity and complete external writer acquisition are missing
+installation prerequisites; enrolled-tree cleanup does not complete that gate.
+Real producer/CLI/local-case and P2 root/account/ACL/cgroup acceptance remain
+unaccepted. See [specific implementation boundaries](../specs/193-static-python-rsi-launch/remaining-implementation-boundaries-20261030.md).
+Production admission and online publication remain false. Evidence is under the
+primary ignored `validation/native-support-export-20261030/` directory.
+
 ## Current remaining work — configuration review continuation, 2026-10-30
 
 PR196 is merged as87ab0709:45/45 CI gates and independent artifact/source/JUnit

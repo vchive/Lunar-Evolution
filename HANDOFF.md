@@ -1,3 +1,43 @@
+<!-- native-support-export-current:start -->
+## 当前执行点：同容器支持文件导出已实跑通过（2026-10-30）
+
+本节覆盖下方历史状态。PR196 已合 main 为 87ab0709；PR197 的最终 head
+ffa86153 完整 CI/source 门仍在进行，不能将局部成功称为已合 main。
+
+当前后继工作区 `/Users/liminghan/.codex/worktrees/native-support-export/lunar_agent`，
+分支 `codex/native-support-export`，基于 ffa86153。Feature193 新增固定静态 C
+helper，在原 `podman-snapshots-v1` runner 的同一 link 容器内完成 seed link、
+两缓存完整有界库存和七类候选导出。新的显式 command profile 精确约束源码、
+环境、完整阶段图和输出；旧 graph 校验器与默认路径不变。消费者复核原 report、
+输入/输出 FD、静态 ELF、wire、候选和最终库存/manifest，不执行 seed，不自动选 CRT。
+
+初 freeze fece03ce 的 14 完整文件 495/495 通过、82 新增；实际 rootless 在
+63.977149 秒因原镜像预建缓存父目录而严格拒绝，前三阶段成功，link stderr 为
+`native_support_export_cache_not_fresh`，不是 deadline。原失败与 117 原件已保留。
+修正仅将生产缓存固定到原父目录下全新的 `native-support` 子根，并新增真实 C
+fixture。最终软件 freeze 5ea6210d / 2758 files 的相同 14 完整文件 496/496
+通过，83 新增，9.228404 秒含 wrapper，零 fail/error/skip；源码字节与 Git 执行位
+前后相同。当前唯一覆盖为 496，不把两次结果累加。Ruff/compileall/diff 通过。
+原 83 groups / 65 zero-skip 不变，source group 932，expected sum 7671。
+
+新 source 单次真实 rootless 导出在原 120 秒绝对预算、零 retry 下用时
+103.894995 秒成功，5 个命令均通过，6 候选 / 13,968,568 bytes，保留多个 CRT
+身份；helper 和 seed 通过原静态 ELF 门，seed 未执行。它证明同容器导出及原
+runner/consumer 接线，不证明 acquisition、immutable custody 或完整 CPython。
+证据在主区 ignored `validation/native-support-export-20261030/`；两个准备失败
+（scp 未完成前过早 dispatch、Darwin/Linux EDQUOT 参数 ID 差异）均在 test body
+前拒绝并保留。最终新 source 仍须自己的完整 CI/source 门，不能复用 PR197。
+
+剩余软件/前置边界详见 Feature193 `remaining-implementation-boundaries-20261030.md`：
+原固定 U 独占及完整外部 writer acquisition 尚无安装机制，target tree 退出不能代替；
+生产 CLI 还缺基于 accepted runtime/live owner 的首个 scheduler context loader，
+现有 stager/resolver/gateway/controller/recovery 已存在，不重复实现。真实完整配置
+审查包已准备，精确最终图预览在核对中；完整 CPython/freezer/custody/sealed startup、
+实际 producer/CLI/local case 以及 root/account/ACL/cgroup 条件仍未验收。
+无模型/WebAgent/远程或公司 evaluator/solver campaign、密钥/live argv-env 或 benchmark
+写入；`production_admission=false`、`online_publication=false`。
+<!-- native-support-export-current:end -->
+
 <!-- configuration-review-v2-current:start -->
 ## 当前执行点：PR196 已合 main；PR197 配置适配合批通过 focused（2026-10-30）
 
