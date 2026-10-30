@@ -623,7 +623,7 @@ class PodmanCustody:
         if _lifetime_services is not None and (type(_lifetime_services) is not list or _lifetime_services):
             _fail("custody_vfs_lifetime_owner")
         pid = self._service_pid("vfs-service-before", root, operations)
-        service = (vfs.ServiceRoot(pid, self.checkpoint, _release_all=True)
+        service = (vfs.ServiceRoot(pid, self.checkpoint, _release_all=True, _connected_streams=True)
                    if _lifetime_services is not None else vfs.ServiceRoot(pid, self.checkpoint))
         try:
             info_raw = self._control(["info", "--format", (

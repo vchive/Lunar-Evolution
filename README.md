@@ -1,7 +1,7 @@
 # Lunar Evolution
 
 [![CI](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml)
-[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
 **Lunar Evolution 是一个本地优先的 Agent 任务与算法演化控制器。** 它负责规划和调度任务、记录评测与产物，并保存检查或恢复运行所需的证据。运行时仅依赖 Python 标准库；mock 工作流可以离线使用，不需要模型密钥。
@@ -32,7 +32,7 @@
 
 ## 快速开始
 
-需要 Python 3.11 或更高版本。克隆仓库并安装命令行工具：
+当前验证的 Python 版本为 3.11、3.12 和 3.13，推荐使用 3.12。Python 3.14 尚未兼容，请先使用上述版本。克隆仓库并安装命令行工具：
 
 ```bash
 git clone https://github.com/vchive/Lunar-Evolution.git

@@ -23,6 +23,9 @@ SCHEMA = "lunar-podman-vfs-root-acquisition-v1"
 MAX_METADATA_BYTES = 2 * 1024**2
 MAX_RECORDS = 4096
 _ID = re.compile(r"[a-f0-9]{64}\Z")
+_UNIX_NUM = re.compile(r"(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{16}):\Z")
+_UNIX_HEX8 = re.compile(r"[0-9a-fA-F]{8}\Z")
+_UNIX_INODE = re.compile(r"[1-9][0-9]{0,19}\Z")
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 
 
@@ -174,7 +177,12 @@ def _namespace(descriptor: int) -> dict:
     return {"device": info.st_dev, "inode": info.st_ino}
 
 
-def _socket_owner(pid: int, socket: Path, checkpoint: Callable[[], None]) -> dict:
+def _socket_owner(pid: int, socket: Path, checkpoint: Callable[[], None], *,
+                  connected_streams: bool = False) -> dict:
+    if type(connected_streams) is not bool:
+        _fail("custody_vfs_service")
+    if connected_streams:
+        return _connected_stream_socket_owner(pid, socket, checkpoint)
     info = socket.lstat()
     if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.geteuid():
         _fail("custody_vfs_service")
@@ -202,6 +210,71 @@ def _socket_owner(pid: int, socket: Path, checkpoint: Callable[[], None]) -> dic
     if not owned:
         _fail("custody_vfs_service")
     return {"path": str(socket), "identity": identity(info), "kernel_inode": matching[0]}
+
+
+def _stream_listener_inode(raw: bytes, socket: Path, checkpoint: Callable[[], None]) -> int:
+    """Classify only fixed Linux AF_UNIX stream rows for this exact pathname."""
+    if type(raw) is not bytes or len(raw) > 1024**2:
+        _fail("custody_vfs_service")
+    try:
+        rows = raw.decode("ascii").splitlines()
+    except UnicodeError:
+        _fail("custody_vfs_service")
+    if (not rows or len(rows) - 1 > MAX_RECORDS
+            or rows[0].split() != ["Num", "RefCount", "Protocol", "Flags", "Type", "St", "Inode", "Path"]):
+        _fail("custody_vfs_service")
+    listeners, inodes = [], set()
+    for row in rows[1:]:
+        checkpoint()
+        fields = row.split()
+        if str(socket) not in fields:
+            continue
+        if (len(fields) != 8 or fields[7] != str(socket)
+                or _UNIX_NUM.fullmatch(fields[0]) is None
+                or _UNIX_HEX8.fullmatch(fields[1]) is None
+                or fields[2] != "00000000" or fields[4] != "0001"
+                or _UNIX_INODE.fullmatch(fields[6]) is None
+                or not 0 < int(fields[6]) < 2**64
+                or (fields[3], fields[5]) not in {("00010000", "01"), ("00000000", "03")}):
+            _fail("custody_vfs_service")
+        inode = int(fields[6])
+        if inode in inodes:
+            _fail("custody_vfs_service")
+        inodes.add(inode)
+        if len(inodes) > MAX_RECORDS:
+            _fail("custody_vfs_service")
+        if fields[3] == "00010000":
+            listeners.append(inode)
+    if len(listeners) != 1:
+        _fail("custody_vfs_service")
+    return listeners[0]
+
+
+def _connected_stream_socket_owner(pid: int, socket: Path, checkpoint: Callable[[], None]) -> dict:
+    checkpoint()
+    info = socket.lstat()
+    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.geteuid():
+        _fail("custody_vfs_service")
+    inode = _stream_listener_inode(_proc_bytes(f"/proc/{pid}/net/unix"), socket, checkpoint)
+    owned = []
+    with os.scandir(f"/proc/{pid}/fd") as entries:
+        for count, entry in enumerate(entries, 1):
+            checkpoint()
+            if count > MAX_RECORDS:
+                _fail("custody_vfs_service")
+            try:
+                if os.readlink(entry.path) == f"socket:[{inode}]":
+                    owned.append(entry.path)
+            except FileNotFoundError:
+                continue
+    if not owned:
+        _fail("custody_vfs_service")
+    checkpoint()
+    if (os.readlink(owned[0]) != f"socket:[{inode}]"
+            or identity(socket.lstat()) != identity(info)
+            or _stream_listener_inode(_proc_bytes(f"/proc/{pid}/net/unix"), socket, checkpoint) != inode):
+        _fail("custody_vfs_service")
+    return {"path": str(socket), "identity": identity(info), "kernel_inode": inode}
 
 
 def parse_mount_table(raw: bytes, checkpoint: Callable[[], None]) -> list[Path]:
@@ -259,10 +332,14 @@ def check_mount_tables(service: ServiceRoot, protected: list[Path],
 class ServiceRoot:
     """Held original service process/root/namespace, not a reusable authority token."""
 
-    def __init__(self, pid: int, checkpoint: Callable[[], None], *, _release_all: bool = False):
-        if type(_release_all) is not bool or type(pid) is not int or not 0 < pid < 2**31:
+    def __init__(self, pid: int, checkpoint: Callable[[], None], *, _release_all: bool = False,
+                 _connected_streams: bool = False):
+        if (type(_release_all) is not bool or type(_connected_streams) is not bool
+                or type(pid) is not int or not 0 < pid < 2**31):
             _fail("custody_vfs_service")
         self.checkpoint, self.pid = checkpoint, pid
+        if _connected_streams:
+            self._connected_streams = True
         self.descriptors: list[int] = []
         try:
             self.pid_fd = os.pidfd_open(pid, 0)
@@ -279,11 +356,12 @@ class ServiceRoot:
             finally:
                 os.close(client)
             self.socket = Path(f"/run/user/{os.geteuid()}/podman/podman.sock")
+            socket_options = {"connected_streams": True} if _connected_streams else {}
             self.proof = {"pid": pid, "start_ticks": self.start,
                           "root_identity": identity(os.fstat(self.root_fd)),
                           "mount_namespace": _namespace(self.namespace_fd),
                           "client_mount_namespace": client_namespace,
-                          "socket": _socket_owner(pid, self.socket, checkpoint)}
+                          "socket": _socket_owner(pid, self.socket, checkpoint, **socket_options)}
             self.verify()
         except BaseException as error:
             if _release_all:
@@ -313,7 +391,11 @@ class ServiceRoot:
                     _fail("custody_vfs_service_drift")
             finally:
                 os.close(descriptor)
-        if _socket_owner(self.pid, self.socket, self.checkpoint) != self.proof["socket"]:
+        profile = getattr(self, "_connected_streams", False)
+        if type(profile) is not bool:
+            _fail("custody_vfs_service")
+        socket_options = {"connected_streams": True} if profile else {}
+        if _socket_owner(self.pid, self.socket, self.checkpoint, **socket_options) != self.proof["socket"]:
             _fail("custody_vfs_service_drift")
 
     def close(self) -> None:

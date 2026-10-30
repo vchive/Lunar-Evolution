@@ -1,3 +1,34 @@
+<!-- vfs-lifetime-current:start -->
+## 当前开发点：原 VFS owner 生命周期与 socket 校验（2026-10-31）
+
+当前后继工作区 `/Users/liminghan/.codex/worktrees/subject-session-diagnostics/lunar_agent`，
+分支 `codex/vfs-execution-lifetime`。显式新 backend 保留原 service/initialized worker
+句柄覆盖 initialized、before-start、original-exit、before-readback、after-readback，
+增加 report-v7、observation-v5、dependency-v6 与独立 candidate reader；旧默认不变。
+冻结 `6b95e260` 的 36 完整文件/1,632 用例已在 Linux/Python3.12 全部通过，零
+fail/error/skip/retry，2,775 源码字节与 Git 执行位前后相同，原件独审通过。
+
+实际 inert-v3 确实 dispatch 原 consumer；configure0 五阶段完成，freeze0 在原
+service.verify 内拒绝，7.120890 秒、非600秒超时，原 stop/state 已返回并 reaped。
+原瞬间内部失败分支未知，不能反填 socket 根因；另一个独立纯 stdlib Linux fixture
+已证明相同 pathname 可有唯一 listener 和合法 connected AF_UNIX stream，旧 parser
+会误拒。正在仅为显式 lifetime profile 修复，见 `vfs-service-connected-streams.md`；
+需要新的集中回归与 fresh actual observation，旧失败保留。
+
+Shinka `0de18312` 的 fresh 完整构建已终止：1,439.790942 秒、原3000秒总预算、零
+retry，configure1 和前210条 freeze 完成；下一条（freeze index210）在原 service
+获取阶段失败，compile/link 未到。它与 inert-v3 使用同 service，失败 cleanup 时间相近；不能据此认定唯一根因。
+9,735 原件/245,646,385 bytes 已有限归档并逐文件核查，原失败不改写。PR199 最终
+head `920073be` 的 run41124749840 仍在进行，不能提前称已合 main。
+
+证据均在主区 ignored `validation/vfs-lifetime-20261031/` 与
+`validation/native-support-export-20261030/`。固定 U 独占/外部 writer acquisition、
+完整 driver closure、immutable custody、accepted runtime/sealed startup、首个 scheduler
+context loader、生产 RSI CLI 和本地复制 case 仍未验收。真实 root/account/ACL/cgroup
+环境条件仍缺。不运行模型/WebAgent/远程 evaluator/真实 solver campaign，不读取密钥
+或无关 live argv/env，不改原 benchmark；production_admission/online_publication=false。
+<!-- vfs-lifetime-current:end -->
+
 <!-- delegated-review-current:start -->
 ## 软件冻结记录：依赖比较、scope 与安装候选描述（2026-10-31）
 

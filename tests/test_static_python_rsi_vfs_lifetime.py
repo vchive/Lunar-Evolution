@@ -767,8 +767,8 @@ def original_runner(retained_vector, monkeypatch, *, failure=None, status="stopp
         events.append("lifetime-capture")
         return token
 
-    def service(pid, checkpoint, *, _release_all=False):
-        assert _release_all is True
+    def service(pid, checkpoint, *, _release_all=False, _connected_streams=False):
+        assert _release_all is True and _connected_streams is True
         return prior_service(pid, checkpoint)
 
     class OriginalOwnerDouble:
