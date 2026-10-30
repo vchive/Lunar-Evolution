@@ -8,6 +8,41 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Complete configuration review preview — 2026-10-30
+
+- [x] Share the original generation path and expose an explicit v2 pure preview,
+  preserving default/v1/v2 bytes, original review selection and error order.
+- [x] Return a distinct non-executable DTO with actual overlays, source/toolchain
+  pins, compile roles, freezer tasks, full commands/outputs and false authority.
+- [x] Cover old independent goldens, independent v2 binder equivalence, runtime
+  overlays, all originals/pins/types, callback-free key handling and refusal by
+  the execution parser: 29 new cases, no binder interception.
+- [x] Prepare complete true OpenEvolve/Shinka graphs and original review inputs
+  without approval, toolchain invocation or execution.
+- [x] Finish all code before final affected regression: freeze01112fd5,
+  1492/1492 unique in37 complete Linux files,112new,0fail/error/skip/retry;
+  full Ruff/compileall/diff and source/Git-mode checks passed.
+- [ ] Complete final-source CI/source gate and verified main integration.
+- [ ] Review and approve actual full inputs/graphs, then complete configured
+  build/runtime/producer/CLI acceptance. Preview does not supply approval.
+
+## Same-container native support export — 2026-10-30
+
+- [x] Specify source-owned static helper, finite wire and an explicit exact
+  command profile without relaxing the legacy runner validator.
+- [x] Implement same-command cache scanning/export and original report/ELF/FD,
+  candidate, inventory and manifest readback through the existing runner.
+- [x] Preserve multiple CRT identities, create-only outputs, original deadlines,
+  finite bounds and all-false authority claims; never execute the seed.
+- [x] Finish code before the affected regression. Final source `5ea6210d` passes
+  496/496 unique cases in 14 complete files, including 83 new cases, zero skip.
+  Retain the earlier 495-case source and its real cache-parent refusal separately.
+- [x] Observe the final source's single real rootless run: 103.894995 seconds,
+  original 120-second budget, zero retry, 6 candidates / 13,968,568 bytes.
+- [ ] Complete this successor's final-source full CI/source gate and integration.
+- [ ] Complete independent real configuration review, full configured build,
+  original custody/runtime ownership and production producer/CLI acceptance.
+
 ## Explicit real-configuration review v2 — 2026-10-30
 
 - [x] Specify a separately selected v2 schema/profile, retaining v1 bytes,

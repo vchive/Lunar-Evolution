@@ -1,3 +1,80 @@
+<!-- build-review-preview-current:start -->
+## 当前执行点：完整配置图预览与导出合批完成（2026-10-30）
+
+本节覆盖下方历史状态。当前分支 `codex/native-support-export` 已完成同容器 native
+支持文件导出，以及显式 v2 的完整 CPython/RSI 构建图纯预览。预览复用正式生成器，
+保留 default/v1/v2 recipe、manifest 和 source bytes 的旧 golden，不替换 binder。
+返回独立非可执行 DTO/schema，无 review approval pin；原批准与运行门不变。
+
+所有代码完成后冻结 `01112fd596fe5d57e4c01c3d15382cd8f9ac9f78` / 2760 files：
+5090gpu Python3.12 的 37 完整文件 1492/1492 通过，44.113545 秒含 wrapper，
+零 fail/error/skip/retry，source bytes 与 Git 执行位 projection 前后相同。新增
+112 = native83 + preview29；当前唯一覆盖是1492，包含之前496，不累加旧批。
+完整 Ruff、compileall、diff 检查通过。原83 groups/65 zero-skip保持，source961、
+expected sum7700。证据主区 ignored `validation/native-support-export-20261030/`。
+此后仅文档记录更新；本后继自身完整 CI/source 门仍须通过，不能复用 PR197。
+
+真实 native 实跑属于先前 `5ea6210d` source：103.894995秒、原120秒预算、零retry，
+5 commands/6候选/13,968,568 bytes，seed未执行；129原件/71,531,186 bytes 已独审。
+最终合批树的 exporter/C/runner 完全逐字节相同，所用 concrete helper/class AST不变；
+未把真实run来源改写为最终树。完整构建、immutable custody与runtime仍未验收。
+
+真实独立 review 包已备齐八输出原字节、完整当前源码/两closure、完整 Make/header/
+discovery/role事实及两个正式生成路径的精确图。OpenEvolve observed stage SHA
+`2d1dd8d0ab81521faf2a58e9de0bd6b4bc3dd1e8ff920788772e76d376b4aede`，
+Shinka `23c56c396837d25c909198779067838ef70cb8f391ff194b9b4cf7445b6641c4`。
+这些是 unapproved 审查材料，未生成 approved manifest/approval pin或执行recipe。
+
+剩余 P0：PR197 与当前后继各自最终 CI/source 门、核对精确 merge tree 后合 main。
+剩余 P1：具体真实配置/完整图独立审查、完整 configured CPython/freezer/ELF/custody/
+sealed startup及原 owner/lifecycle，随后把已有 stager/resolver/gateway/recovery接到
+首个 accepted-runtime scheduler context loader/生产 CLI，再跑本地复制 case。
+固定 U 全 interval 独占/外部 writer acquisition 尚无原安装机制，不能用target退出、
+flock/瞬时扫描或falseflag代替；P2真实root/account/ACL/cgroup等前提仍缺，42skip不算通过。
+无模型/WebAgent/远程或公司evaluator/真实solver campaign、密钥/live argv-env 或原
+benchmark写入；`production_admission=false`、`online_publication=false`。
+<!-- build-review-preview-current:end -->
+
+<!-- native-support-export-current:start -->
+## 当前执行点：同容器支持文件导出已实跑通过（2026-10-30）
+
+本节覆盖下方历史状态。PR196 已合 main 为 87ab0709；PR197 的最终 head
+ffa86153 完整 CI/source 门仍在进行，不能将局部成功称为已合 main。
+
+当前后继工作区 `/Users/liminghan/.codex/worktrees/native-support-export/lunar_agent`，
+分支 `codex/native-support-export`，基于 ffa86153。Feature193 新增固定静态 C
+helper，在原 `podman-snapshots-v1` runner 的同一 link 容器内完成 seed link、
+两缓存完整有界库存和七类候选导出。新的显式 command profile 精确约束源码、
+环境、完整阶段图和输出；旧 graph 校验器与默认路径不变。消费者复核原 report、
+输入/输出 FD、静态 ELF、wire、候选和最终库存/manifest，不执行 seed，不自动选 CRT。
+
+初 freeze fece03ce 的 14 完整文件 495/495 通过、82 新增；实际 rootless 在
+63.977149 秒因原镜像预建缓存父目录而严格拒绝，前三阶段成功，link stderr 为
+`native_support_export_cache_not_fresh`，不是 deadline。原失败与 117 原件已保留。
+修正仅将生产缓存固定到原父目录下全新的 `native-support` 子根，并新增真实 C
+fixture。最终软件 freeze 5ea6210d / 2758 files 的相同 14 完整文件 496/496
+通过，83 新增，9.228404 秒含 wrapper，零 fail/error/skip；源码字节与 Git 执行位
+前后相同。当前唯一覆盖为 496，不把两次结果累加。Ruff/compileall/diff 通过。
+原 83 groups / 65 zero-skip 不变，source group 932，expected sum 7671。
+
+新 source 单次真实 rootless 导出在原 120 秒绝对预算、零 retry 下用时
+103.894995 秒成功，5 个命令均通过，6 候选 / 13,968,568 bytes，保留多个 CRT
+身份；helper 和 seed 通过原静态 ELF 门，seed 未执行。它证明同容器导出及原
+runner/consumer 接线，不证明 acquisition、immutable custody 或完整 CPython。
+证据在主区 ignored `validation/native-support-export-20261030/`；两个准备失败
+（scp 未完成前过早 dispatch、Darwin/Linux EDQUOT 参数 ID 差异）均在 test body
+前拒绝并保留。最终新 source 仍须自己的完整 CI/source 门，不能复用 PR197。
+
+剩余软件/前置边界详见 Feature193 `remaining-implementation-boundaries-20261030.md`：
+原固定 U 独占及完整外部 writer acquisition 尚无安装机制，target tree 退出不能代替；
+生产 CLI 还缺基于 accepted runtime/live owner 的首个 scheduler context loader，
+现有 stager/resolver/gateway/controller/recovery 已存在，不重复实现。真实完整配置
+审查包已准备，精确最终图预览在核对中；完整 CPython/freezer/custody/sealed startup、
+实际 producer/CLI/local case 以及 root/account/ACL/cgroup 条件仍未验收。
+无模型/WebAgent/远程或公司 evaluator/solver campaign、密钥/live argv-env 或 benchmark
+写入；`production_admission=false`、`online_publication=false`。
+<!-- native-support-export-current:end -->
+
 <!-- configuration-review-v2-current:start -->
 ## 当前执行点：PR196 已合 main；PR197 配置适配合批通过 focused（2026-10-30）
 

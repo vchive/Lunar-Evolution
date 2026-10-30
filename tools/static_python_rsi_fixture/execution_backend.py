@@ -561,6 +561,7 @@ def _run_pinned_build(
     version3: bool = False,
     version4: bool = False,
     custody_backend: str | None = None,
+    command_profile: str | None = None,
     vfs_roots: bool = False,
     vfs_retained: bool = False,
 ) -> BuildExecutionReport:
@@ -590,6 +591,10 @@ def _run_pinned_build(
         _fail("custody_backend")
     if version4 and custody_backend != source_data_backend:
         _fail("custody_backend")
+    if command_profile is not None and (
+            type(command_profile) is not str or command_profile != "native-support-export-v1"
+            or not version3 or version4 or custody_backend != "podman-snapshots-v1"):
+        _fail("custody_command_profile")
     if custody_backend is not None:
         if (type(custody_backend) is not str
                 or custody_backend not in ({source_data_backend} if version4 else
@@ -605,7 +610,13 @@ def _run_pinned_build(
             validate_custody_image_budget,
             validate_snapshot_budget,
         )
-        (validate_dependency_command_graph_v4 if version4 else validate_dependency_command_graph)(recipe)
+        if command_profile == "native-support-export-v1":
+            from tools.static_python_rsi_fixture.native_support_export import (
+                validate_native_support_export_graph,
+            )
+            validate_native_support_export_graph(recipe)
+        else:
+            (validate_dependency_command_graph_v4 if version4 else validate_dependency_command_graph)(recipe)
         if custody_backend in {"podman-snapshots-v1", source_data_backend}:
             validate_snapshot_budget(recipe)
         else:
@@ -895,18 +906,21 @@ def run_pinned_build_v3(
     interrupted: Callable[[], bool] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     custody_backend: str | None = None,
+    command_profile: str | None = None,
 ) -> BuildExecutionReport:
     """Explicit full-toolchain mechanism; optional custody grants no admission.
 
     ``custody_backend="podman"`` selects the same loop's fixed Linux custody
     dispatch. ``podman-snapshots-v1`` uses the same checks with fixed read-only
-    snapshot mounts. The default and v1/v2 retain ordinary-copy behavior.
+    snapshot mounts. The separately selected native-support-export-v1 command
+    profile validates only its fixed graph; the default capture validator remains
+    unchanged. The default and v1/v2 retain ordinary-copy behavior.
     """
     return _run_pinned_build(
         preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
         source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
         deadline=deadline, interrupted=interrupted, monotonic=monotonic, version3=True,
-        custody_backend=custody_backend,
+        custody_backend=custody_backend, command_profile=command_profile,
     )
 
 

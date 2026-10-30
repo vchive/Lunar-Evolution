@@ -1,3 +1,66 @@
+## Final software batch — complete review preview and native export, 2026-10-30
+
+The explicit v2 preview now exposes the actual generator's complete overlays,
+roles, freezer tasks, command outputs and stage graph before review approval.
+It is a separate non-executable DTO/schema, with no approval pin. Preparation
+retains its public signature, default/v1/v2 bytes and independent binder gate.
+Two real current solver previews and complete original review inputs are ready;
+they remain unapproved review materials, not build/runtime acceptance.
+
+Final software freeze `01112fd5` passed all 1,492 unique cases in 37 complete
+Linux files, in 44.113545 seconds including the wrapper, zero failures/errors/
+skips/retries. There are 112 new cases: native export83 and preview29. Source
+bytes and Git executable-bit projections matched before and after. Full Ruff,
+compileall and diff checks passed. Existing 83 groups / 65 zero-skip remain;
+source group961 and expected sum7700. The earlier 496 cases are included, not
+added again. Native real-run evidence belongs to `5ea6210d`; native source bytes
+and directly used concrete helper ASTs are unchanged in the combined source.
+
+P0 remains each successor's final-source CI/source gate and verified integration.
+P1 remains independent review of the actual full inputs/graph, full configured
+CPython/freezer/ELF/custody and sealed startup/owner acceptance, then the fixed
+first scheduler-context loader and actual producer/RSI CLI/copied-case acceptance.
+The per-episode stager/resolvers/gateway/recovery already exist. Original fixed-U
+exclusivity and complete external writer acquisition remain missing installation
+prerequisites; target-tree cleanup cannot establish them. P2 root/account/ACL/
+cgroup acceptance still needs its original environment. Production admission
+and online publication remain false. Evidence and the concrete review packet
+are in primary ignored `validation/native-support-export-20261030/`.
+
+## Current continuation — same-container native support export, 2026-10-30
+
+The fixed native helper and consumer now use the original snapshot runner to
+link the seed and export both caches before that link container exits. Selection
+is explicit, with an exact source/graph/environment/output profile; legacy
+capture validation and defaults remain unchanged. No seed or solver is run.
+
+The final cache-child source `5ea6210d` passed 496 unique cases across 14 complete
+files (83 new), in 9.228404 seconds including the wrapper, with no failures,
+errors or skips. Source bytes and Git executable-bit projections matched before
+and after. Ruff, compileall and diff checks passed. The existing 83 groups and
+65 zero-skip groups remain; the source group is 932 and expected sum is 7671.
+The earlier 495-case result is contained in this domain, not added to it.
+
+A real rootless run then completed under the original 120-second deadline,
+zero retry, in 103.894995 seconds: 6 candidates / 13,968,568 bytes, original
+report, static ELF and finite cache/export checks, no seed execution. The first
+source's 63.977149-second `cache_not_fresh` failure remains a failure: the fixed
+image supplied cache parent directories. Fresh fixed child roots correct that
+integration without accepting an old cache or changing the runner. Preparation
+failures before test bodies and all original evidence are retained separately.
+
+P0: PR197's final CI/source gate is still running; this successor must also pass
+its own final-source CI before integration. P1: independently reviewed complete
+configuration and final stages, full CPython/freezer/ELF/custody and sealed
+startup remain open. The first accepted-runtime scheduler-context loader must
+reuse the existing per-episode staging and gateway/recovery chain. Original
+fixed-U exclusivity and complete external writer acquisition are missing
+installation prerequisites; enrolled-tree cleanup does not complete that gate.
+Real producer/CLI/local-case and P2 root/account/ACL/cgroup acceptance remain
+unaccepted. See [specific implementation boundaries](../specs/193-static-python-rsi-launch/remaining-implementation-boundaries-20261030.md).
+Production admission and online publication remain false. Evidence is under the
+primary ignored `validation/native-support-export-20261030/` directory.
+
 ## Current remaining work — configuration review continuation, 2026-10-30
 
 PR196 is merged as87ab0709:45/45 CI gates and independent artifact/source/JUnit

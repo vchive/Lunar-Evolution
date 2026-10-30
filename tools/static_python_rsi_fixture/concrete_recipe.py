@@ -166,6 +166,31 @@ class ConcreteBuildRecipe:
         return _sha(self.recipe_bytes)
 
 
+@dataclass(frozen=True, slots=True)
+class CPythonBuildReviewPreview:
+    """Unapproved observations only; deliberately not an executable recipe."""
+
+    preview_bytes: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class _CPythonBuildGraph:
+    sources: dict[str, bytes]
+    inventory: dict[str, dict]
+    zig: list[dict]
+    stages: list[dict]
+    compile_roles: dict[str, str]
+    freeze_tasks: list[dict]
+    solver: str
+    closure_sha256: str | None
+    core_objects: int
+    native_objects: int
+    freezer_objects: int
+    target_objects: int
+    library: str
+    executable: str
+
+
 def _record(path: str, raw: bytes) -> dict:
     return {"path": path, "size": len(raw), "sha256": _sha(raw), "executable": False}
 
@@ -286,32 +311,14 @@ def _envelope_sources(solver: str, facts: dict, sources: dict[str, bytes]) -> No
         _fail("envelope_source_drift")
 
 
-def prepare_cpython_build_recipe(
+def _prepare_cpython_graph(
     preparation: RSIProfilePreparation, *, source_inventory_bytes: bytes,
     expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
     configuration_header: bytes, expected_configuration_sha256: str,
-    runtime_closure: FixedRuntimeClosure | None = None,
-    producer_lifecycle_profile: str | None = None,
-    configuration_outputs: tuple[tuple[str, bytes], ...] | None = None,
-    review_manifest_bytes: bytes | None = None,
-    expected_review_manifest_sha256: str | None = None,
-) -> ConcreteBuildRecipe:
-    """Emit executable commands; caller stages returned sources in a fresh root.
-
-    The caller provides an independently pinned, reviewed pyconfig.h generated
-    for this exact CPython/Zig/musl target. No host config, interpreter freezer,
-    configure script, make or ambient library is substituted. The recipe carries
-    the original preparation as a base binding; new solver tables/main are an
-    explicit source-profile version and cannot pass legacy runtime DTO gates.
-    """
-    review_selected = (configuration_outputs is not None, review_manifest_bytes is not None,
-                       expected_review_manifest_sha256 is not None)
-    if any(review_selected) and not all(review_selected):
-        _fail("configuration_review_incomplete")
-    v2_review_selected = all(review_selected) and selects_v2_review(
-        review_manifest_bytes=review_manifest_bytes,
-        expected_review_manifest_sha256=expected_review_manifest_sha256,
-    )
+    runtime_closure: FixedRuntimeClosure | None,
+    producer_lifecycle_profile: str | None, v2_review_selected: bool,
+) -> _CPythonBuildGraph:
+    """One source-owned generation path, before any approval binding."""
     if (producer_lifecycle_profile is not None
             and (type(producer_lifecycle_profile) is not str
                  or producer_lifecycle_profile not in {FIXED_PRODUCER_LIFECYCLE_PROFILE,
@@ -531,22 +538,65 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
     stages = [{"stage": name, "commands": commands} for name, commands in (
         ("configure", configure_commands), ("freeze", freeze_commands),
         ("compile", compile_commands), ("link", link_commands))]
+    compile_roles = {"@source/configuration/probe.c": "configuration"}
+    for group, role in ((units, "core"), (native, "builtin"),
+                        (freezer, "freezer"), (target, "target")):
+        for unit in group:
+            compile_roles["@source/" + unit["source"]] = (
+                "builtin" if unit.get("compile_role") == "builtin" or "module" in unit else role
+            )
+    return _CPythonBuildGraph(
+        sources, inventory, zig, stages, compile_roles, tasks, solver, closure_sha,
+        len(units), len(native), len(freezer), len(target), library, executable,
+    )
+
+
+def prepare_cpython_build_recipe(
+    preparation: RSIProfilePreparation, *, source_inventory_bytes: bytes,
+    expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
+    configuration_header: bytes, expected_configuration_sha256: str,
+    runtime_closure: FixedRuntimeClosure | None = None,
+    producer_lifecycle_profile: str | None = None,
+    configuration_outputs: tuple[tuple[str, bytes], ...] | None = None,
+    review_manifest_bytes: bytes | None = None,
+    expected_review_manifest_sha256: str | None = None,
+) -> ConcreteBuildRecipe:
+    """Emit executable commands; caller stages returned sources in a fresh root.
+
+    The caller provides an independently pinned, reviewed pyconfig.h generated
+    for this exact CPython/Zig/musl target. No host config, interpreter freezer,
+    configure script, make or ambient library is substituted. The recipe carries
+    the original preparation as a base binding; new solver tables/main are an
+    explicit source-profile version and cannot pass legacy runtime DTO gates.
+    """
+    review_selected = (configuration_outputs is not None, review_manifest_bytes is not None,
+                       expected_review_manifest_sha256 is not None)
+    if any(review_selected) and not all(review_selected):
+        _fail("configuration_review_incomplete")
+    v2_review_selected = all(review_selected) and selects_v2_review(
+        review_manifest_bytes=review_manifest_bytes,
+        expected_review_manifest_sha256=expected_review_manifest_sha256,
+    )
+    graph = _prepare_cpython_graph(
+        preparation, source_inventory_bytes=source_inventory_bytes,
+        expected_source_inventory_sha256=expected_source_inventory_sha256,
+        zig_manifest_bytes=zig_manifest_bytes, configuration_header=configuration_header,
+        expected_configuration_sha256=expected_configuration_sha256,
+        runtime_closure=runtime_closure, producer_lifecycle_profile=producer_lifecycle_profile,
+        v2_review_selected=v2_review_selected,
+    )
+    sources, inventory, zig, stages = graph.sources, graph.inventory, graph.zig, graph.stages
+    solver, closure_sha = graph.solver, graph.closure_sha256
+    library, executable = graph.library, graph.executable
     review_metadata = {}
     if all(review_selected):
-        compile_roles = {"@source/configuration/probe.c": "configuration"}
-        for group, role in ((units, "core"), (native, "builtin"),
-                            (freezer, "freezer"), (target, "target")):
-            for unit in group:
-                compile_roles["@source/" + unit["source"]] = (
-                    "builtin" if unit.get("compile_role") == "builtin" or "module" in unit else role
-                )
         binding = bind_reviewed_cpython_configuration(
             configuration_outputs=configuration_outputs,
             review_manifest_bytes=review_manifest_bytes,
             expected_review_manifest_sha256=expected_review_manifest_sha256,
             source_inventory_sha256=expected_source_inventory_sha256,
             zig_manifest_sha256=_sha(zig_manifest_bytes), configuration_header=configuration_header,
-            stages=stages, compile_roles=compile_roles,
+            stages=stages, compile_roles=graph.compile_roles,
         )
         for path, raw in binding.sources:
             if path in sources or path in inventory:
@@ -575,14 +625,96 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
                                                   "independently-pinned-config-header-and-compiled-probe"),
                           **review_metadata,
                           "autoconf_executed": False, "host_python_used": False,
-                          "toolchain_files": len(zig), "freezer_jobs": len(tasks),
-                          "core_objects": len(units), "native_objects": len(native),
-                          "freezer_objects": len(freezer), "target_objects": len(target),
+                          "toolchain_files": len(zig), "freezer_jobs": len(graph.freeze_tasks),
+                          "core_objects": graph.core_objects, "native_objects": graph.native_objects,
+                          "freezer_objects": graph.freezer_objects, "target_objects": graph.target_objects,
                           "library": library, "executable": executable,
                           "build_performed": False, "configured_closure_verified": False,
                           "installation_accepted": False, "runtime_execution_performed": False,
                           "production_admission": False})
     return ConcreteBuildRecipe(recipe, tuple(sorted(sources.items())), manifest)
+
+
+def preview_cpython_build_review_v2(
+    preparation: RSIProfilePreparation, *, source_inventory_bytes: bytes,
+    expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
+    configuration_header: bytes, expected_configuration_sha256: str,
+    configuration_outputs: tuple[tuple[str, bytes], ...],
+    runtime_closure: FixedRuntimeClosure | None = None,
+    producer_lifecycle_profile: str | None = None,
+) -> CPythonBuildReviewPreview:
+    """Observe the complete fixed v2 graph before independent human review.
+
+    Pins compare supplied originals; they do not approve those originals. This
+    entry point cannot bind a review or return an executable recipe. The actual
+    preparation API still requires its original separately approved manifest.
+    """
+    from tools.static_python_rsi_fixture.configuration_review_v2 import (
+        MAX_OUTPUT_BYTES,
+        MAX_TOTAL_OUTPUT_BYTES,
+        OUTPUTS,
+    )
+
+    if (type(configuration_outputs) is not tuple or len(configuration_outputs) != len(OUTPUTS)
+            or any(type(row) is not tuple or len(row) != 2 for row in configuration_outputs)
+            or any(type(row[0]) is not str for row in configuration_outputs)
+            or tuple(row[0] for row in configuration_outputs) != OUTPUTS
+            or any(type(row[1]) is not bytes or not 0 < len(row[1]) <= MAX_OUTPUT_BYTES
+                   for row in configuration_outputs)
+            or sum(len(row[1]) for row in configuration_outputs) > MAX_TOTAL_OUTPUT_BYTES):
+        _fail("configuration_preview_output_set")
+    graph = _prepare_cpython_graph(
+        preparation, source_inventory_bytes=source_inventory_bytes,
+        expected_source_inventory_sha256=expected_source_inventory_sha256,
+        zig_manifest_bytes=zig_manifest_bytes, configuration_header=configuration_header,
+        expected_configuration_sha256=expected_configuration_sha256,
+        runtime_closure=runtime_closure, producer_lifecycle_profile=producer_lifecycle_profile,
+        v2_review_selected=True,
+    )
+    if dict(configuration_outputs)["pyconfig.h"] != configuration_header:
+        _fail("configuration_preview_header_mismatch")
+    if "configuration/review.json" in graph.inventory:
+        _fail("configuration_review_overlap")
+    for path, raw in configuration_outputs:
+        original = "configuration/original/" + path
+        if original in graph.inventory:
+            _fail("configuration_review_overlap")
+        graph.inventory[original] = _record(original, raw)
+    # Validate the same full prospective dependency graph. These internal bytes
+    # are never returned; only the distinct non-executable preview is exposed.
+    prospective = canonical({
+        "schema": RECIPE_V3_SCHEMA, "preparation_sha256": preparation.sha256,
+        "inputs": {"source": sorted(graph.inventory.values(), key=lambda row: row["path"]),
+                   "toolchain": graph.zig},
+        "environment": {"LANG": "C", "LC_ALL": "C", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0"},
+        "stages": graph.stages,
+    })
+    _recipe(prospective, _sha(prospective), version3=True)
+    return CPythonBuildReviewPreview(canonical({
+        "schema": "lunar-cpython-build-review-preview-v1",
+        "status": "unapproved-review-preview", "configuration_review_version": 2,
+        "target": "x86_64-linux-musl", "solver": graph.solver,
+        "base_preparation_sha256": preparation.sha256,
+        "source_inventory_sha256": expected_source_inventory_sha256,
+        "configuration_header_sha256": expected_configuration_sha256,
+        "zig_manifest_sha256": _sha(zig_manifest_bytes),
+        "runtime_closure_sha256": graph.closure_sha256,
+        **({"producer_lifecycle_profile": producer_lifecycle_profile}
+           if producer_lifecycle_profile is not None else {}),
+        "source_inputs": sorted(graph.inventory.values(), key=lambda row: row["path"]),
+        "generated_sources": [_record(path, raw) for path, raw in sorted(graph.sources.items())],
+        "toolchain_inputs": graph.zig,
+        "configuration_outputs": [_record(path, raw) for path, raw in configuration_outputs],
+        "stages": graph.stages, "compile_roles": graph.compile_roles,
+        "freeze_tasks": graph.freeze_tasks,
+        "observed_concrete_stages_sha256": _sha(canonical(graph.stages)),
+        "missing_approval_artifacts": ["configuration/review.json"],
+        "configuration_review_approved": False, "review_binding_created": False,
+        "executable_recipe_returned": False, "build_performed": False,
+        "configured_closure_verified": False, "installation_accepted": False,
+        "runtime_execution_performed": False, "production_admission": False,
+        "immutable_custody_verified": False, "online_publication": False,
+    }))
 
 
 def _source_data_successor(base: ConcreteBuildRecipe) -> tuple[bytes, dict]:
