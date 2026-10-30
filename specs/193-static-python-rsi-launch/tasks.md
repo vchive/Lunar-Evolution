@@ -8,6 +8,20 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Delegated actual configuration review — 2026-10-30
+
+- [x] Record the user's explicit delegation and permit independent agent review
+  under the original exact-file/graph/pin requirements.
+- [x] Independently inspect both complete real packets and retain narrow approval
+  receipts and unchanged approved manifest copies. See
+  `delegated-configuration-review-20261030.md` for exact pins and scope.
+- [x] Preserve complete original command graphs and runtime-closure input pins;
+  retain build/custody/runtime/producer acceptance as separate requirements.
+- [ ] Execute the full configured CPython/freezer/static-ELF path using the
+  existing finite capture/direct-link generators and original runner/consumer.
+- [ ] Complete original custody, sealed startup/live-owner acceptance and the
+  first scheduler-context loader before enabling the production RSI CLI.
+
 ## Complete configuration review preview — 2026-10-30
 
 - [x] Share the original generation path and expose an explicit v2 pure preview,

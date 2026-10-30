@@ -16,7 +16,17 @@ existing positional construction and header-only recipe calls remain compatible.
 external review-manifest bytes, and a separately supplied expected manifest
 SHA256. There is no API that generates an approved manifest from an observation.
 The trusted caller obtains that pin through independent review; the binder
-cannot prove human independence merely by comparing SHA256 strings.
+cannot prove reviewer independence merely by comparing SHA256 strings.
+
+An independent reviewer may be a person or an agent explicitly delegated by the
+user. On 2026-10-30 the user authorized independent agent review of the two
+prepared real configuration packets and this specification change. The reviewer
+must be independent of the candidate-manifest and stage-graph generation work.
+The review receipt must retain that delegation, reviewer identity, exact input
+pins, scope, findings and decision. An agent that generated the candidate cannot
+approve its own output. Hash equality, a successful binder call or test results
+alone cannot supply an independent approval. This delegation does not widen
+build, custody, runtime or production acceptance.
 
 The exact-schema manifest binds the source inventory, complete Zig manifest,
 every original output's size/SHA256, the complete header directive inventory,
@@ -77,7 +87,8 @@ warning-only options may differ: `-Wall`, `-Wextra`, `-Wsign-compare`,
 `-Wno-unknown-warning-option`. Other options need an actual exact argv token;
 additional feature definitions, include roots and warning-error policies are
 not approved by re-signing a manifest. Full recipe adaptations still require
-independent human review of the exact files and exact stage graph.
+independent review of the exact files and exact stage graph under the reviewer
+authority above.
 Replacement, platform and module objects must also reach both static links
 through direct object arguments or the original explicit archive membership;
 merely declaring an unused compiled object is insufficient.
@@ -86,6 +97,11 @@ An independent reviewer must assess the complete eight files, cross defaults,
 feature directives, the expanded role flags and any fixed recipe adaptations,
 replacement objects, discovery/disabled module decisions, and static library/
 CRT/compiler-support closure. Pin equality does not perform that review.
+Approval must identify the exact candidate bytes and a separately retained
+expected SHA256; approved copies preserve those bytes. Any subsequent input or
+stage drift requires a new review. Configuration approval authorizes binding
+those inputs only; it is not evidence that a build succeeded or that its outputs
+have accepted custody, sealed startup, a live runtime owner or producer behavior.
 
 ## Recipe composition and non-circular graph pin
 
