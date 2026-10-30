@@ -47,8 +47,11 @@ the outer limit includes imports/setup and post-flow checks too. Only the test
 host bound becomes600+300 finite setup/readback allowance; production/control/
 build budgets stay unchanged, no retry/fallback. Oversized raw parameters also
 get short explicit IDs, preventing16MiB node names without changing test count.
-The successor must pass its own affected regression and full CI/source gate;
-original CI is not canceled or relabeled. Fresh OpenEvolve execution uses the
+The43fbe4ad nine-node affected run passed in379.4026s with zero failure/error/
+skip/retry; source bytes/modes matched before/after, and all427 src/tools files
+are identical to01. Independent terminal audit passed. The successor still
+requires its own full CI/source gate; original CI is not canceled or relabeled.
+Fresh OpenEvolve execution uses the
 actual01 software, same approved inputs/graph, original3000s and zero retry.
 This is the software-freeze observation; final CI/build status is in PR199 and
 the independent original evidence, not predicted here.

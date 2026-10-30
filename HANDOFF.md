@@ -52,7 +52,9 @@ SolveExecutionControl(600)晚于fixture准备才启动，外层600从新解释�
 还包含收尾只读复验；原失败没有唯一性能瓶颈结论。后继仅把外层测试上限明确为
 600flow+300有限准备/复验额度，不改变内部600、生产或构建预算，无retry/fallback。
 另为oversized raw参数加固定短ID，避免每个节点名复制16MiB字节；测试数量不变。
-只回归这两处测试修改的影响域，后继须自己的完整CI/source门；不取消或改写旧CI。
+仅这两处测试修改的9节点影响域已在 `43fbe4ad` 通过，379.4026秒含wrapper，
+零fail/error/skip/retry，2768源码文件前后相同；427个src/tools文件与01完全一致，
+已独审。后继仍须自己的完整CI/source门；不取消或改写旧CI。
 
 新profile对原202 compiler/2 linker原件的纯比较已通过，12种alias均受pin约束，
 旧失败未升级。正式fresh OpenEvolve单3000s/零retry已另起，用01d740f0软件及相同

@@ -44,8 +44,10 @@ Completing source preparation does not complete installation/runtime acceptance;
   distinguish the later original control600 from fixture import/setup/cleanup.
 - [x] Give only the synthetic interpreter's host bound a finite300s allowance;
   keep control/production/build budgets unchanged and add short oversized IDs.
-- [ ] Validate those test-only changes once, then complete successor CI/source
-  acceptance without canceling or relabeling the original failed CI.
+- [x] Validate43fbe4ad test-only changes once:9pass,0fail/error/skip/retry,
+  source bytes/modes equal;427src/tools identical to01, independent audit passed.
+- [ ] Complete successor CI/source acceptance without canceling or relabeling
+  the original failed CI.
 - [ ] Complete new-source CI and fresh configured builds; do not relabel the
   old refused attempt or replace custody/runtime acceptance with comparisons.
 
