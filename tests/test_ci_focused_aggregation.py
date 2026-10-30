@@ -453,7 +453,7 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
                                "tests/test_native_whole_scope_creator_transport.py",
                                "tests/test_rsi_native_scope_scheduler.py"]
     recipe = next(group for group in groups if group["id"] == "python-rsi-launch-source")
-    assert (recipe["expected_tests"], recipe["zero_skips"]) == (1374, True)
+    assert (recipe["expected_tests"], recipe["zero_skips"]) == (1441, True)
     assert "tests/test_static_python_zig_lld_capture.py" in recipe["files"]
     assert {"tests/test_static_python_zig_support_candidates.py",
             "tests/test_static_python_zig_support_selection.py",
@@ -464,7 +464,9 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
             "tests/test_static_python_rsi_vfs_lifetime.py",
             "tests/test_static_python_rsi_vfs_lifetime_entrypoints.py",
             "tests/test_static_python_lifetime_installation.py",
-            "tests/test_static_python_vfs_connected_stream_socket.py"}.issubset(recipe["files"])
+            "tests/test_static_python_vfs_connected_stream_socket.py",
+            "tests/test_static_python_worker_input_view.py",
+            "tests/test_static_python_worker_input_view_entrypoints.py"}.issubset(recipe["files"])
     assert {"tests/test_static_python_source_data_backend.py",
             "tests/test_static_python_source_data_graph.py",
             "tests/test_static_python_source_data_consumer.py"}.issubset(recipe["files"])
