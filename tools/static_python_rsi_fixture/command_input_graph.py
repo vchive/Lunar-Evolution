@@ -171,7 +171,8 @@ def _validate_dependency_command_graph(recipe: dict, *, source_data: bool) -> No
                     _fail("stage")
                 _archive(command, available)
                 archives += 1
-            elif argv[0] == "@toolchain/" + LINKER_PATH:
+            elif (argv[0] == "@toolchain/" + LINKER_PATH
+                  or source_data and argv[:2] == ["@toolchain/zig", "ld.lld"]):
                 link = _link(command)
                 if link is None or stage["stage"] not in {"freeze", "link"}:
                     _fail("link")

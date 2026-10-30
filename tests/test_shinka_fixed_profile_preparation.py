@@ -69,7 +69,8 @@ def synthetic_profile(monkeypatch):
     return result, originals, archive
 
 
-@pytest.mark.parametrize("raw", [b"", b"not an archive", b"x" * prepare.ARCHIVE_BYTES])
+@pytest.mark.parametrize("raw", [b"", b"not an archive", b"x" * prepare.ARCHIVE_BYTES],
+                         ids=["empty", "invalid-tar", "wrong-content-at-archive-size"])
 def test_wrong_archive_pin_refused_before_tar_processing(raw, monkeypatch):
     def forbidden(*_args, **_kwargs):
         raise AssertionError("unverified tar decoded")

@@ -1,3 +1,42 @@
+## Current P0/P1 — final CI and explicit direct LLD, 2026-10-30
+
+P0 completed: PR195 head3b807a6d merged into main as9f23f592 at
+2026-10-30T03:45:32Z. Its tree36444084 equals the verified synthetic935c1cb4;
+parents are exactly main0bff6b92/head3b807a6d. Run40991182505 passed all42
+execution/3focused gates. All45original artifacts and complete source/ZIP,
+partition/JUnit/focused checks passed independent audit. Each Python version
+has26268pass/134skip, with all37original failing keys explicitly passing;
+history2294+24 each passed without skips/retries. Original skips remain skips.
+
+P1: a separate branch adds the explicit, independently pinned `zig ld.lld` v4
+link profile through the original recipe/consumer. It reuses the original Zig
+record, leaves legacy/standalone/default support unchanged and keeps original
+deadlines, reports, input/output FD reads and exact depfile comparison. A new
+single object-only diagnostic actually compiled/linked with the fixed toolchain:
+1.742772s, rc0, genuine static ELF and depfile, zero retry and no ELF execution.
+That feasibility result does not establish support generation or CPython.
+
+Frozen7c4bb0a: sixteen complete files629=626pass/3new-fixture failures, zero
+error/skip, 18.565264s on Linux3.12. Only the new test file changed at b6665f52;
+its complete53case supplement passed with zero failure/error/skip in2.801458s.
+Product bytes/modes are identical. Applicable unique passing coverage is629,
+not682 or a complete single-final-tree run. Source, original XML/collection,
+22remote/local originals and module origins/refs match. Static checks pass.
+Two current archive-case display IDs now stay finite with full input/body ASTs
+unchanged; historical inventories remain original. The existing focused source
+group becomes680, retaining83groups/65zero-skip, expected sum7419.
+
+The `/tmp` inode-exhaustion preparation failure dispatched no test bodies;
+same-source execution used the explicit `/dev/shm` storage profile. Evidence:
+primary ignored `validation/zig-lld-direct-20261030/`. The independent successor
+is now rebased onto main9f23f592 and requires its own complete CI. Next support
+research is retained there as `support-next-step-research.json`; today's old-cache
+observations are not original-run provenance or support acceptance. Podman's
+per-command cache needs same-command finite export. Complete support/custody,
+implicit compiler/cache closure, CPython/freezer/runtime/solver/production CLI
+and P2 original-account/ownership acceptance remain open. The42root-prerequisite
+skips remain unaccepted; production admission and online publication stay false.
+
 ## Current P0 — final integration compatibility fixes, 2026-10-30
 
 Run40909497309 completed: 36/42 execution jobs passed; current-4/current-5

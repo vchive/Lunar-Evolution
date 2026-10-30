@@ -48,6 +48,7 @@ from tools.static_python_rsi_fixture.link_dependency_capture import (
 )
 from tools.static_python_rsi_fixture.runtime_closure import canonical
 from tools.static_python_rsi_fixture.standalone_linker import verify_standalone_linker_input
+from tools.static_python_rsi_fixture.zig_lld_linker import verify_zig_lld_linker_input
 
 
 class BuildDependencyError(RuntimeError):
@@ -255,6 +256,8 @@ def _run_dependency_checked_build(
     custody_backend: str | None = None,
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
     version4: bool = False,
     vfs_roots: bool = False,
     vfs_retained: bool = False,
@@ -273,6 +276,8 @@ def _run_dependency_checked_build(
     if (type(vfs_roots) is not bool or vfs_roots and not version4
             or type(vfs_retained) is not bool or vfs_retained and not (version4 and vfs_roots)):
         raise BuildDependencyError("custody_backend")
+    if not version4 and (zig_lld_profile_bytes is not None or expected_zig_lld_profile_sha256 is not None):
+        raise BuildDependencyError("recipe_profile")
     if version4 and (type(custody_backend) is not str or custody_backend != source_data_backend):
         raise BuildDependencyError("custody_backend")
     validate_plan = (validate_dependency_capture_plan_v4 if version4
@@ -282,6 +287,8 @@ def _run_dependency_checked_build(
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        **({"zig_lld_profile_bytes": zig_lld_profile_bytes,
+            "expected_zig_lld_profile_sha256": expected_zig_lld_profile_sha256} if version4 else {}),
     )
     (validate_dependency_command_graph_v4 if version4 else validate_dependency_command_graph)(recipe)
     if not version4 and custody_backend is not None and (type(custody_backend) is not str
@@ -313,6 +320,11 @@ def _run_dependency_checked_build(
         if standalone_profile_bytes is not None:
             verify_standalone_linker_input(
                 standalone_profile_bytes, expected_profile_sha256=expected_standalone_profile_sha256,
+                toolchain_root=toolchain_root, checkpoint=checkpoint,
+            )
+        if zig_lld_profile_bytes is not None:
+            verify_zig_lld_linker_input(
+                zig_lld_profile_bytes, expected_profile_sha256=expected_zig_lld_profile_sha256,
                 toolchain_root=toolchain_root, checkpoint=checkpoint,
             )
         runner = (run_pinned_build_v4_vfs_retained if vfs_retained else
@@ -369,7 +381,9 @@ def _run_dependency_checked_build(
             dependency_artifacts={path: retained[path] for path in compiler_paths}, **roots,
             **({"manifest_bytes": manifest_bytes, "expected_manifest_sha256": expected_manifest_sha256,
                 "standalone_profile_bytes": standalone_profile_bytes,
-                "expected_standalone_profile_sha256": expected_standalone_profile_sha256} if version4 else {}),
+                "expected_standalone_profile_sha256": expected_standalone_profile_sha256,
+                "zig_lld_profile_bytes": zig_lld_profile_bytes,
+                "expected_zig_lld_profile_sha256": expected_zig_lld_profile_sha256} if version4 else {}),
         )
         compare_linker = compare_linker_dependencies_v4 if version4 else compare_linker_dependencies
         linker = compare_linker(
@@ -377,6 +391,8 @@ def _run_dependency_checked_build(
             manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
             standalone_profile_bytes=standalone_profile_bytes,
             expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+            **({"zig_lld_profile_bytes": zig_lld_profile_bytes,
+                "expected_zig_lld_profile_sha256": expected_zig_lld_profile_sha256} if version4 else {}),
             output_inventory_bytes=inventory, expected_output_inventory_sha256=inventory_sha,
             dependency_artifacts={path: retained[path] for path in linker_paths}, **roots,
         )
@@ -452,6 +468,8 @@ def run_dependency_checked_build_v4(
     custody_backend: str = "podman-snapshots-source-data-v2",
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
 ) -> DependencyCheckedBuild:
     """Consume v4 actual source-data view evidence under the original budget.
 
@@ -466,6 +484,8 @@ def run_dependency_checked_build_v4(
         interrupted=interrupted, monotonic=monotonic, custody_backend=custody_backend,
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
         version4=True,
     )
 
@@ -479,6 +499,8 @@ def run_dependency_checked_build_v4_vfs(
     custody_backend: str = "podman-snapshots-source-data-vfs-v1",
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
 ) -> DependencyCheckedBuild:
     """Consume the explicit VFS root observation and exact persisted report.
 
@@ -492,6 +514,8 @@ def run_dependency_checked_build_v4_vfs(
         interrupted=interrupted, monotonic=monotonic, custody_backend=custody_backend,
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
         version4=True, vfs_roots=True,
     )
 
@@ -505,6 +529,8 @@ def run_dependency_checked_build_v4_vfs_retained(
     custody_backend: str = "podman-snapshots-source-data-vfs-retained-v1",
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
 ) -> DependencyCheckedBuild:
     """Consume original retained VFS snapshots and the exact persisted report.
 
@@ -518,5 +544,7 @@ def run_dependency_checked_build_v4_vfs_retained(
         interrupted=interrupted, monotonic=monotonic, custody_backend=custody_backend,
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
         version4=True, vfs_roots=True, vfs_retained=True,
     )
