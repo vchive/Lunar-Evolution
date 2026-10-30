@@ -22,7 +22,22 @@ from pathlib import Path
 from .producer_bootstrap import TrustedBootstrapDescriptor, TrustedBootstrapLaunch
 from .producer_grant_anchors import HeldProducerGrantPlan, ProducerGrantError
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 _SOURCE = Path(__file__).with_name("native_bootstrap.c")
+_SOURCE_NAMES = (
+    "native_bootstrap.c",
+    "native_producer_isolation.h",
+    "native_whole_scope_bootstrap.h",
+    "native_whole_scope_platform.h",
+    "native_whole_scope_protocol.h",
+    "native_whole_scope_successor_protocol.h",
+    "native_whole_scope_successor_resources.h",
+    "native_whole_scope_successor_bootstrap.h",
+)
 _MAX_BYTES = 8 * 1024 * 1024
 _MAX_PATH_BYTES = 4096
 _MAX_ARGC = 64
@@ -37,6 +52,68 @@ LINUX_IPC_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-ipc-control-v1"
 LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION = "native-bootstrap-linux-independent-guardian-v1"
 LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-posix-mq-control-v1"
 LINUX_KEYRING_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-keyring-control-v1"
+FIXED_LIVE_MODULES_SINK_FD = 198
+FIXED_PRODUCER_COMPLETION_SINK_FD = 197
+
+
+@dataclass(frozen=True, slots=True)
+class NativeBootstrapPrivateSink:
+    """Original host pipe identity, never a candidate-selected descriptor."""
+
+    fd: int
+    device: int
+    inode: int
+    deadline_monotonic_ns: int
+
+    def validate(self, *, reserved_fds: tuple[int, ...] = ()) -> None:
+        if fcntl is None:
+            _fail("native_bootstrap_private_sink_unsupported")
+        if (type(self.fd) is not int or not 2 < self.fd <= 0x7fffffff
+                or type(self.device) is not int or not 0 <= self.device < 2**64
+                or type(self.inode) is not int or not 0 < self.inode < 2**64
+                or type(self.deadline_monotonic_ns) is not int
+                or not 0 < self.deadline_monotonic_ns < 2**64
+                or self.fd in reserved_fds or FIXED_LIVE_MODULES_SINK_FD in reserved_fds):
+            _fail("native_bootstrap_private_sink_invalid")
+        try:
+            info = os.fstat(self.fd)
+            flags = fcntl.fcntl(self.fd, fcntl.F_GETFL)
+        except OSError as exc:
+            raise NativeBootstrapError("native_bootstrap_private_sink_invalid") from exc
+        if (not stat.S_ISFIFO(info.st_mode) or flags & os.O_ACCMODE != os.O_WRONLY
+                or flags & (getattr(os, "O_PATH", 0) | os.O_ASYNC)
+                or (info.st_dev, info.st_ino) != (self.device, self.inode)):
+            _fail("native_bootstrap_private_sink_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class NativeBootstrapCompletionSink:
+    """Independent completion writer for the explicitly selected v4 profile."""
+
+    fd: int
+    device: int
+    inode: int
+    deadline_monotonic_ns: int
+
+    def validate(self, *, reserved_fds: tuple[int, ...] = ()) -> None:
+        if fcntl is None:
+            _fail("native_bootstrap_private_sink_unsupported")
+        if (type(self.fd) is not int or not 2 < self.fd <= 0x7fffffff
+                or type(self.device) is not int or not 0 <= self.device < 2**64
+                or type(self.inode) is not int or not 0 < self.inode < 2**64
+                or type(self.deadline_monotonic_ns) is not int
+                or not 0 < self.deadline_monotonic_ns < 2**64
+                or self.fd in reserved_fds or FIXED_PRODUCER_COMPLETION_SINK_FD in reserved_fds):
+            _fail("native_bootstrap_private_sink_invalid")
+        try:
+            info = os.fstat(self.fd)
+            flags = fcntl.fcntl(self.fd, fcntl.F_GETFL)
+        except OSError as exc:
+            raise NativeBootstrapError("native_bootstrap_private_sink_invalid") from exc
+        if (not stat.S_ISFIFO(info.st_mode) or flags & os.O_ACCMODE != os.O_WRONLY
+                or flags & (getattr(os, "O_PATH", 0) | os.O_ASYNC)
+                or (info.st_dev, info.st_ino) != (self.device, self.inode)):
+            _fail("native_bootstrap_private_sink_invalid")
 
 
 class NativeBootstrapError(ValueError):
@@ -122,6 +199,25 @@ def native_bootstrap_source_path() -> Path:
     return _SOURCE
 
 
+def native_bootstrap_source_paths() -> tuple[Path, ...]:
+    """Return the complete finite source set used by this bootstrap build."""
+    return tuple(_SOURCE.with_name(name) for name in _SOURCE_NAMES)
+
+
+def _source_pin() -> str:
+    digest = hashlib.sha256()
+    try:
+        for path in native_bootstrap_source_paths():
+            raw = path.read_bytes()
+            digest.update(len(path.name).to_bytes(4, "big"))
+            digest.update(path.name.encode("ascii"))
+            digest.update(len(raw).to_bytes(8, "big"))
+            digest.update(raw)
+    except OSError as exc:
+        raise NativeBootstrapError("native_bootstrap_source_missing") from exc
+    return digest.hexdigest()
+
+
 def _platform_mode() -> str:
     if sys_platform := platform.system().lower():
         if sys_platform == "darwin":
@@ -154,7 +250,7 @@ def build_native_bootstrap_artifact(
     source = _SOURCE
     if not source.is_file():
         _fail("native_bootstrap_source_missing")
-    source_sha = _sha256(source)
+    source_sha = _source_pin()
     root = Path(output_dir).expanduser().absolute()
     try:
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -181,6 +277,8 @@ def build_native_bootstrap_artifact(
         raise NativeBootstrapError("native_bootstrap_build_timeout") from exc
     except (OSError, subprocess.CalledProcessError) as exc:
         raise NativeBootstrapError("native_bootstrap_build_failed") from exc
+    if _source_pin() != source_sha:
+        _fail("native_bootstrap_source_changed")
     try:
         output.chmod(0o700)
     except OSError as exc:
@@ -399,6 +497,83 @@ def encode_native_bootstrap_control_v2(
         raise NativeBootstrapError("native_bootstrap_grant_binding_invalid") from exc
 
 
+def encode_native_bootstrap_control_v3(
+    launch: TrustedBootstrapLaunch, *, target_path: str,
+    target_argv: tuple[str, ...], target_cwd: str | Path,
+    target_fd: int, bootstrap_fd: int, held_grants: HeldProducerGrantPlan,
+    private_sink: NativeBootstrapPrivateSink, reserved_fds: tuple[int, ...] = (),
+) -> bytes:
+    """Opt-in original pipe extension; omitted callers retain exact v2 bytes."""
+    if type(private_sink) is not NativeBootstrapPrivateSink or type(held_grants) is not HeldProducerGrantPlan:
+        _fail("native_bootstrap_private_sink_invalid")
+    if type(reserved_fds) is not tuple:
+        _fail("native_bootstrap_fd_invalid")
+    reserved = (*reserved_fds, target_fd, bootstrap_fd, *held_grants.pass_fds)
+    private_sink.validate(reserved_fds=reserved)
+    base = encode_native_bootstrap_control_v2(
+        launch, target_path=target_path, target_argv=target_argv, target_cwd=target_cwd,
+        target_fd=target_fd, bootstrap_fd=bootstrap_fd, held_grants=held_grants,
+        reserved_fds=(*reserved_fds, private_sink.fd, FIXED_LIVE_MODULES_SINK_FD),
+    )
+    extension = (_put_u32(private_sink.fd) + private_sink.device.to_bytes(8, "big")
+                 + private_sink.inode.to_bytes(8, "big")
+                 + private_sink.deadline_monotonic_ns.to_bytes(8, "big"))
+    if len(base) + len(extension) > 64 * 1024:
+        _fail("native_bootstrap_control_too_large")
+    private_sink.validate(reserved_fds=reserved)
+    return base[:5] + b"\x03" + base[6:] + extension
+
+
+def encode_native_bootstrap_control_v4(
+    launch: TrustedBootstrapLaunch, *, target_path: str,
+    target_argv: tuple[str, ...], target_cwd: str | Path,
+    target_fd: int, bootstrap_fd: int, held_grants: HeldProducerGrantPlan,
+    private_sink: NativeBootstrapPrivateSink, completion_sink: NativeBootstrapCompletionSink,
+    reserved_fds: tuple[int, ...] = (),
+) -> bytes:
+    """Explicit dual-pipe profile; existing v2 and v3 encoders remain unchanged."""
+    if (type(private_sink) is not NativeBootstrapPrivateSink
+            or type(completion_sink) is not NativeBootstrapCompletionSink
+            or type(held_grants) is not HeldProducerGrantPlan):
+        _fail("native_bootstrap_private_sink_invalid")
+    if (type(reserved_fds) is not tuple or len(reserved_fds) > 250
+            or any(type(fd) is not int or not 2 < fd <= 0x7fffffff for fd in reserved_fds)):
+        _fail("native_bootstrap_fd_invalid")
+    if (type(target_fd) is not int or not 2 < target_fd <= 0x7fffffff
+            or type(bootstrap_fd) is not int or not 2 < bootstrap_fd <= 0x7fffffff):
+        _fail("native_bootstrap_fd_invalid")
+    reserved = (*reserved_fds, target_fd, bootstrap_fd, *held_grants.pass_fds)
+    private_sink.validate(reserved_fds=reserved)
+    completion_sink.validate(reserved_fds=reserved)
+    if (FIXED_LIVE_MODULES_SINK_FD in reserved or FIXED_PRODUCER_COMPLETION_SINK_FD in reserved
+            or private_sink.fd == FIXED_PRODUCER_COMPLETION_SINK_FD
+            or completion_sink.fd == FIXED_LIVE_MODULES_SINK_FD
+            or private_sink.fd == completion_sink.fd
+            or (private_sink.device, private_sink.inode) == (completion_sink.device, completion_sink.inode)
+            or private_sink.deadline_monotonic_ns != completion_sink.deadline_monotonic_ns):
+        _fail("native_bootstrap_private_sink_invalid")
+    private_reserved = (*reserved, completion_sink.fd)
+    completion_reserved = (*reserved, private_sink.fd)
+    private_sink.validate(reserved_fds=private_reserved)
+    completion_sink.validate(reserved_fds=completion_reserved)
+    base = encode_native_bootstrap_control_v2(
+        launch, target_path=target_path, target_argv=target_argv, target_cwd=target_cwd,
+        target_fd=target_fd, bootstrap_fd=bootstrap_fd, held_grants=held_grants,
+        reserved_fds=(*reserved_fds, private_sink.fd, completion_sink.fd,
+                      FIXED_LIVE_MODULES_SINK_FD, FIXED_PRODUCER_COMPLETION_SINK_FD),
+    )
+    extension = b"".join(
+        _put_u32(sink.fd) + sink.device.to_bytes(8, "big") + sink.inode.to_bytes(8, "big")
+        + sink.deadline_monotonic_ns.to_bytes(8, "big")
+        for sink in (private_sink, completion_sink)
+    )
+    if len(base) + len(extension) > 64 * 1024:
+        _fail("native_bootstrap_control_too_large")
+    private_sink.validate(reserved_fds=private_reserved)
+    completion_sink.validate(reserved_fds=completion_reserved)
+    return base[:5] + b"\x04" + base[6:] + extension
+
+
 def native_bootstrap_command(
     artifact: NativeBootstrapArtifact | str | Path,
     *,
@@ -474,7 +649,50 @@ def native_bootstrap_command(
     return command
 
 
+def native_whole_scope_bootstrap_command(
+    executable: str | Path, *, control_fd: int, gate_fd: int, frame_fd: int,
+    controller_lifeline_fd: int, scope_enrollment_fd: int, scope_lifecycle_fd: int,
+    profile_fd: int, deadline_monotonic_ns: int,
+) -> tuple[str, ...]:
+    """Select the explicit pre-gate clone3 ABI; never upgrade the legacy flags."""
+    descriptors = (control_fd, gate_fd, frame_fd, controller_lifeline_fd,
+                   scope_enrollment_fd, scope_lifecycle_fd, profile_fd)
+    if (any(type(fd) is not int or not 2 < fd <= 0x7fffffff for fd in descriptors)
+            or len(set(descriptors)) != len(descriptors)
+            or type(deadline_monotonic_ns) is not int or not 0 < deadline_monotonic_ns < 2**64
+            or not isinstance(executable, (str, Path))):
+        _fail("native_bootstrap_whole_scope_command_invalid")
+    arguments = ("--control-fd", "--gate-fd", "--frame-fd", "--controller-lifeline-fd",
+                 "--scope-enrollment-fd", "--scope-lifecycle-fd", "--profile-fd")
+    command = (str(executable), "--whole-scope-v1")
+    for name, descriptor in zip(arguments, descriptors, strict=True):
+        command += (name, str(descriptor))
+    return command + ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
+
+
+def native_whole_scope_successor_bootstrap_command(
+    executable: str | Path, *, control_fd: int, gate_fd: int, frame_fd: int,
+    controller_lifeline_fd: int, scope_enrollment_fd: int, scope_lifecycle_fd: int,
+    profile_fd: int, deadline_monotonic_ns: int,
+) -> tuple[str, ...]:
+    """Explicit independent v4 B mode; the default ABI remains unchanged."""
+    descriptors = (control_fd, gate_fd, frame_fd, controller_lifeline_fd,
+                   scope_enrollment_fd, scope_lifecycle_fd, profile_fd)
+    if (any(type(fd) is not int or not 2 < fd <= 0x7fffffff for fd in descriptors)
+            or len(set(descriptors)) != len(descriptors)
+            or type(deadline_monotonic_ns) is not int or not 0 < deadline_monotonic_ns < 2**64
+            or not isinstance(executable, (str, Path))):
+        _fail("native_bootstrap_whole_scope_successor_command_invalid")
+    names = ("--control-fd", "--gate-fd", "--frame-fd", "--controller-lifeline-fd",
+             "--scope-enrollment-fd", "--scope-lifecycle-fd", "--profile-fd")
+    command = (str(executable), "--whole-scope-successor-v4")
+    for name, descriptor in zip(names, descriptors, strict=True):
+        command += (name, str(descriptor))
+    return command + ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
+
+
 __all__ = [
+    "FIXED_PRODUCER_COMPLETION_SINK_FD",
     "LINUX_CHILD_SUPERVISION",
     "LINUX_FD_CONTROL_IMPLEMENTATION",
     "LINUX_FD_HANDOFF_IMPLEMENTATION",
@@ -487,11 +705,16 @@ __all__ = [
     "LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION",
     "LINUX_SUBREAPER_IMPLEMENTATION",
     "NativeBootstrapArtifact",
+    "NativeBootstrapCompletionSink",
     "NativeBootstrapError",
     "build_native_bootstrap_artifact",
     "encode_native_bootstrap_control",
     "encode_native_bootstrap_control_v2",
+    "encode_native_bootstrap_control_v4",
     "load_native_bootstrap_artifact",
     "native_bootstrap_command",
     "native_bootstrap_source_path",
+    "native_bootstrap_source_paths",
+    "native_whole_scope_bootstrap_command",
+    "native_whole_scope_successor_bootstrap_command",
 ]

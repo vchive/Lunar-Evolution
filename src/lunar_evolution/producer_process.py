@@ -527,7 +527,24 @@ def _remove_executable_snapshot(snapshot: ProducerExecutableSnapshot | None, bat
         return
 
 
-def _atomic_json(path: Path, value: Mapping[str, object], *, exclusive: bool = False) -> None:
+def _atomic_json(
+    path: Path, value: Mapping[str, object], *, exclusive: bool = False,
+    capture_identity: bool = False,
+    retain_creation_owner: object | None = None,
+) -> tuple[str | int, ...] | None:
+    """Publish JSON; optionally retain the identity of the actual creation FD."""
+    if type(capture_identity) is not bool:
+        _fail("producer_process_receipt_write_unknown")
+    creation_slot = None
+    if retain_creation_owner is not None:
+        from .native_original_publication import _validate_publication_slot
+
+        creation_slot = _validate_publication_slot(
+            retain_creation_owner,
+            expected_role={"process-registration.json": "registration",
+                           "trusted-bootstrap-handoff.json": "handoff"}.get(path.name, ""),
+        )
+    retain_creator = capture_identity or creation_slot is not None
     data = _canonical(value)
 
     def write_all(fd: int) -> None:
@@ -540,17 +557,25 @@ def _atomic_json(path: Path, value: Mapping[str, object], *, exclusive: bool = F
     with _held_directory(path.parent, create=True) as parent:
         temporary = ".producer-receipt-" + secrets.token_hex(12)
         created = False
+        fd = -1
         try:
             fd = os.open(
-                temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                temporary, (os.O_RDWR if creation_slot is not None else os.O_WRONLY)
+                | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
                 0o600, dir_fd=parent,
             )
             created = True
             try:
                 write_all(fd)
                 os.fsync(fd)
+                if retain_creator:
+                    written_identity = os.fstat(fd)
             finally:
-                os.close(fd)
+                if not retain_creator:
+                    # Preserve the historical default's close-before-publication
+                    # ordering and None return. Only explicit pin capture holds it.
+                    closing_fd, fd = fd, -1
+                    os.close(closing_fd)
             if exclusive:
                 os.link(temporary, path.name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
                 os.unlink(temporary, dir_fd=parent)
@@ -558,11 +583,42 @@ def _atomic_json(path: Path, value: Mapping[str, object], *, exclusive: bool = F
                 os.replace(temporary, path.name, src_dir_fd=parent, dst_dir_fd=parent)
             created = False
             os.fsync(parent)
+            if retain_creator:
+                # This is the original write FD, never a reopen/stat used to
+                # reconstruct an origin. Link/unlink may change ctime; bind its
+                # final value while this same original inode is still held.
+                published = os.fstat(fd)
+                named = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+
+                def stable(info: os.stat_result) -> tuple[int, ...]:
+                    return (
+                        info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+                        info.st_nlink, info.st_size, info.st_mtime_ns,
+                    )
+
+                if (not stat.S_ISREG(published.st_mode) or published.st_nlink != 1
+                        or published.st_size != len(data)
+                        or stable(published) != stable(written_identity)
+                        or stable(named) != stable(published)
+                        or named.st_ctime_ns != published.st_ctime_ns):
+                    raise OSError("publication identity changed")
+                if creation_slot is not None:
+                    creation_slot._capture_created(
+                        descriptor=fd, parent=parent, name=path.name, raw=data,
+                    )
+                if capture_identity:
+                    return (
+                        hashlib.sha256(data).hexdigest(), published.st_size,
+                        published.st_dev, published.st_ino,
+                        published.st_mtime_ns, published.st_ctime_ns,
+                    )
         except FileExistsError as exc:
             raise ProducerProcessError("producer_process_attestation_replayed") from exc
         except OSError as exc:
             raise ProducerProcessError("producer_process_receipt_write_unknown") from exc
         finally:
+            if fd >= 0:
+                os.close(fd)
             if created:
                 try:
                     os.unlink(temporary, dir_fd=parent)

@@ -303,3 +303,57 @@ and all driver/leaf exits and obtain independent evidence review. Full required
 33-job GitHub CI is a separate required gate. Root owns commit, push, PR, final
 acceptance and main integration. Foundation checkpoint commits may preserve
 reviewed work, but do not represent delivery of the complete serial behavior.
+
+
+## Adjacent historical rejection material accounting — 2026-10-28
+
+The private historical reader may count an already observed C1/C2 pair with one
+complete material-domain walk. It first retains the original C1 validation and
+full future-P reservation. The original C2 transition must still independently
+validate the complete bounded prefix, associations, rejection index, unchanged
+non-P fields and the actual P pin. Only then may the private kernel insert that
+P into the complete C1 path/inode domain and check its aggregate bound.
+
+Keep the standalone C1 and C2 APIs independent. Do not retain mutable tables or
+reuse a result between observations/operations. Preserve every original file
+read, before/after material observation, fresh SQL/reference matcher, final
+history comparison, callback, policy/fingerprint and original deadline. The
+reserved executable graph must pin the actual new helper and its dependencies.
+
+The focused matrix compares old independent totals/refusals against the joint
+reader for mixed prefixes, aliases, source tables, strict types, 128KiB C2 bounds,
+future-P reservation and the exact aggregate cap. Real call profiling must verify
+two complete material walks become one without replacing their parsers. Include
+helper/code/kwdefault drift refusal. This pure computation change is not evidence
+that the three-child mixed run now completes within its original 600 seconds.
+# Idle checkpoint polling follow-up — 2026-10-28
+
+The `2fde3537` mixed fixture still exhausted its original 600-second allowance.
+Of 120 sparse stack samples, the worker waited in the publication mailbox in
+87; main-thread samples included complete checkpoint/reference walks while it
+serviced that worker. These are stack locations, not CPU percentages.
+
+Only the owner-thread `hot=True` wait uses a new private fresh-tail reader. It
+requires the original controller lock, rereads the exact latest SQL row, decodes
+fresh JSON, verifies its digest and compares the original head and wave payload.
+It does not acknowledge an event or validate historical completeness. A changed
+middle row can wait until the next full gate for detection. Every pending event,
+ACK, release, settlement and final join retains the complete existing history,
+reference-row and physical evidence checks. Default owner reads and worker reads
+remain complete. There is no retained validation result or new execution budget.
+
+Concentrated regression must include tail/payload/parent drift, loss of the live
+lock, fresh returned JSON, and an unchanged tail with a corrupt middle row: the
+idle observation may pass, but the next original full gate must refuse before
+any acknowledgement. Existing idle-event/final-join tests remain required.
+
+
+The reserved owner check and success-fixed gate also share their own immediately
+adjacent complete history read with the wave-head matcher. Only those two gates
+select the explicit `match_active_owner=True` internal path, after a pure
+thread/lease/wave assertion and before physical observations. Non-reserved paths
+keep their original independent active-owner read. Ordinary history/readback
+paths keep the default false flag: a persisted successor may legally precede
+wave adoption while `checkpoint_transition` is active. The final independent
+complete history read after physical evidence remains mandatory. No detached
+checkpoint or cached validation result authorizes any event.

@@ -31,9 +31,10 @@ _CONTROLLER_READERS = (
 )
 _LEDGER_READERS = (
     "_assert_controller_lock", "_checkpoint_binding", "_checkpoint_digest", "_checkpoint_python_references",
-    "_checkpoint_reference_rows_tx", "_connect", "_controller_checkpoint_history_tx", "_head",
+    "_checkpoint_reference_rows_tx", "_connect", "_controller_checkpoint_history_tx",
+    "_controller_checkpoint_history_observation_tx", "_head",
     "_is_canonical_episode", "_native_claim_plan", "_native_claim_row", "_native_result_status",
-    "_python_admission_row", "_python_admission_state_tx", "_row_to_record",
+    "_python_admission_row", "_python_admission_state_tx", "_row_to_record", "_row_to_record_cached",
     "_select_python_producer_checkpoint_tx", "_validate_python_producer_staging_history_tx",
     "controller_checkpoint", "controller_checkpoint_history", "controller_lock_held", "episode_result",
     "get", "get_episode", "get_run", "history", "inspect_native_episode_claim",

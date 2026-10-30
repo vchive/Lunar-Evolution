@@ -14,11 +14,12 @@ while giving the local fixture path one formal entry point for future scheduler 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -29,9 +30,15 @@ from .automatic_solve_lifecycle import (
     SolveExecutionControl,
 )
 from .native_bootstrap import NativeBootstrapArtifact
+from .native_fixed_live_sink import (
+    FixedPythonLiveSinkRequest,
+    _FixedPythonLiveSinkPin,
+    _pin_fixed_python_live_sink_request,
+)
 from .native_trusted_attempt import (
     NativeTrustedAttemptError,
     NativeTrustedAttemptObservation,
+    _original_native_completion_pin,
     run_native_trusted_attempt,
 )
 from .native_trusted_failure import (
@@ -42,6 +49,7 @@ from .native_trusted_failure import (
 from .native_trusted_output import (
     NativeTrustedOutputError,
     NativeTrustedOutputPreparation,
+    _native_output_envelope_pin,
     prepare_native_trusted_output,
 )
 from .native_trusted_receipt import (
@@ -49,7 +57,7 @@ from .native_trusted_receipt import (
     persist_native_trusted_execution_receipt,
     recover_native_trusted_execution_receipt,
 )
-from .producer_broker_ipc import ProducerBrokerConfig
+from .producer_broker_ipc import ProducerBrokerConfig, ProducerBrokerObservation
 from .producer_bundle_handoff import BundleGroup
 from .producer_bundle_publication import ProducerBundlePublicationJournal
 from .producer_bundle_transaction import (
@@ -66,6 +74,11 @@ from .python_producer_admission_handoff import (
     parse_python_producer_admission_handoff_file_pin,
     read_python_producer_admission_handoff_pinned,
 )
+from .static_python_fixed_live_modules import (
+    MAX_FIXED_LIVE_MODULES_BYTES,
+    FixedPythonBoundLiveModules,
+)
+from .static_python_producer_completion import MAX_COMPLETION_BYTES
 
 
 class NativeTrustedSchedulerError(ValueError):
@@ -126,6 +139,85 @@ def _prepublication_evidence(receipt: ProducerExecutionReceipt, output: NativeTr
                      sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     parse_producer_execution_receipt(json.loads(raw)[0])
     return raw
+
+
+def _native_handoff_evidence(
+    run: NativeTrustedProducerRun, sink_pin: _FixedPythonLiveSinkPin,
+) -> tuple:
+    """Pin original current-call evidence; never acquire or authorize a runtime."""
+    if (type(run) is not NativeTrustedProducerRun
+            or type(run.attempt) is not NativeTrustedAttemptObservation
+            or type(sink_pin) is not _FixedPythonLiveSinkPin
+            or run.publication is not None or run.status != "prepared"
+            or run.deadline_scope not in {"caller_lifecycle", "native_attempt_only"}):
+        raise ValueError("original native preparation required")
+    _FixedPythonLiveSinkPin.assert_current(
+        sink_pin, sink_pin.request, target_sha256=sink_pin.target_sha256,
+    )
+    observed = run.attempt.live_modules_observation
+    if (type(observed) is not FixedPythonBoundLiveModules
+            or type(observed.canonical_bytes) is not bytes
+            or not 0 < len(observed.canonical_bytes) <= MAX_FIXED_LIVE_MODULES_BYTES
+            or type(observed.observation_sha256) is not str
+            or hashlib.sha256(observed.canonical_bytes).hexdigest() != observed.observation_sha256
+            or observed.installation_sha256 != sink_pin.request.expected_installation_sha256):
+        raise ValueError("original native observation required")
+    compared = FixedPythonLiveSinkRequest.compare(
+        sink_pin.request, observed.canonical_bytes,
+        image_device=observed.image_device, image_inode=observed.image_inode,
+        target_pid=observed.target_pid, manifest_sha256=observed.manifest_sha256,
+    )
+    if compared != observed:
+        raise ValueError("original native observation changed")
+    # Exact scalar/tuple/bytes fields are immutable. Identity pins also reject a
+    # same-byte replacement of an original snapshot or observation field.
+    observation_fields = tuple(
+        (id(value), value) for value in (getattr(observed, field.name) for field in fields(observed))
+    )
+    broker = run.attempt.broker_observation
+    if broker is not None and (
+        type(broker) is not ProducerBrokerObservation or type(broker.journal_path) is not type(Path())
+    ):
+        raise ValueError("original native broker observation required")
+    # Completion material remains an opaque diagnostic at this boundary. Keep
+    # each original immutable bytes object alive and pin its identity; exporting
+    # only its bounded size/digest cannot turn a reconstructed wire into the
+    # original channel acquisition. The overflow reader retains at most one
+    # sentinel byte beyond the wire limit, and an empty partial read is valid.
+    completion_fields = []
+    for name, minimum, maximum in (
+        ("producer_completion_bytes", 1, MAX_COMPLETION_BYTES),
+        ("producer_completion_partial_bytes", 0, MAX_COMPLETION_BYTES + 1),
+    ):
+        value = getattr(run.attempt, name)
+        if value is None:
+            continue
+        if type(value) is not bytes or not minimum <= len(value) <= maximum:
+            raise ValueError("original native completion material required")
+        completion_fields.append((name, id(value), value))
+    attempt_wire = asdict(run.attempt)
+    del attempt_wire["live_modules_observation"]
+    for name in ("producer_completion_bytes", "producer_completion_partial_bytes"):
+        if attempt_wire[name] is None:
+            del attempt_wire[name]
+    for name, _identity, value in completion_fields:
+        attempt_wire[name] = {"size": len(value), "sha256": hashlib.sha256(value).hexdigest()}
+    if broker is not None:
+        # This exact host-owned field is a Path in a real attempt. Preserve its
+        # value explicitly; no generic default=str may hide foreign evidence.
+        attempt_wire["broker_observation"]["journal_path"] = str(broker.journal_path)
+    attempt_bytes = json.dumps(attempt_wire, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"), allow_nan=False).encode("utf-8")
+    pinned = (id(run), id(run.attempt), id(run.receipt), id(run.output), id(observed),
+              run.deadline_scope, observation_fields, attempt_bytes,
+              _prepublication_evidence(run.receipt, run.output),
+              _native_output_envelope_pin(run.output))
+    # Preserve the pre-completion evidence shape when both optional fields are
+    # absent. With material present, equality also checks original byte identity.
+    acquisition = _original_native_completion_pin(run.attempt)
+    if acquisition is not None:
+        return (*pinned, tuple(completion_fields), acquisition)
+    return pinned + (tuple(completion_fields),) if completion_fields else pinned
 
 
 def _prepublication_control_pin(control: SolveExecutionControl | None) -> tuple | None:
@@ -289,11 +381,15 @@ def _run_native_trusted_producer(
     python_handoff_after_execution: Callable[
         [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
     ] | None = None,
+    python_handoff_after_native_execution: Callable[
+        [NativeTrustedProducerRun], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
     _python_prepublication: bool = False,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure | _NativeTrustedPythonProducerPreparation:
     """Run one pinned native producer through the formal local boundaries.
 
@@ -316,20 +412,22 @@ def _run_native_trusted_producer(
         raise NativeTrustedSchedulerError("native_trusted_scheduler_groups_invalid")
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_cancellation_invalid")
-    python_join = any(value is not None for value in (
-        python_handoff_after_execution, prepared_observer, evidence_revalidator,
-    ))
+    if python_handoff_after_execution is not None and python_handoff_after_native_execution is not None:
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_python_handoff_supplier_conflict")
+    supplier = (python_handoff_after_execution if python_handoff_after_native_execution is None
+                else python_handoff_after_native_execution)
+    python_join = any(value is not None for value in (supplier, prepared_observer, evidence_revalidator))
     if type(_python_prepublication) is not bool:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_python_prepublication_invalid")
     if _python_prepublication and (
         strategy is not None or prepared_observer is not None or known_failure is not False
         or producer_multi_episode_publication is not False or lineage_owner is not None
-        or not callable(python_handoff_after_execution) or not callable(evidence_revalidator)
+        or not callable(supplier) or not callable(evidence_revalidator)
     ):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_python_prepublication_invalid")
     if not _python_prepublication and python_join and (
         strategy is None or not all(callable(value) for value in (
-            python_handoff_after_execution, prepared_observer, evidence_revalidator,
+            supplier, prepared_observer, evidence_revalidator,
         ))
     ):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_python_join_invalid")
@@ -342,6 +440,14 @@ def _run_native_trusted_producer(
 
         if type(lineage_owner) is not RSIPublicationLineage:
             raise NativeTrustedSchedulerError("native_trusted_scheduler_multi_episode_configuration_invalid")
+    native_sink_pin = None
+    if python_handoff_after_native_execution is not None:
+        try:
+            native_sink_pin = _pin_fixed_python_live_sink_request(
+                live_modules_sink, target_sha256=intent.executable_sha256,
+            )
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise NativeTrustedSchedulerError("native_trusted_scheduler_python_native_sink_required") from exc
     _check_parent_deadline(parent_deadline)
     original_control_pin = _prepublication_control_pin(execution_control) if _python_prepublication else None
     control, checkpoint = _lifecycle_control(execution_control, cancelled, parent_deadline)
@@ -381,6 +487,7 @@ def _run_native_trusted_producer(
             cancelled=control.is_cancelled if control is not None else cancelled,
             parent_deadline=control.deadline if control is not None else None,
             monotonic=control._clock if control is not None else time.monotonic,
+            **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
         )
     except NativeTrustedAttemptError as exc:
         if exc.code == "native_trusted_attempt_cancelled":
@@ -440,14 +547,27 @@ def _run_native_trusted_producer(
     if output.execution_receipt_sha256 != receipt.receipt_sha256:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_receipt_binding_mismatch")
 
+    prepared_run = NativeTrustedProducerRun(
+        attempt=attempt, receipt=receipt, output=output,
+        deadline_scope=("caller_lifecycle" if control is not None else "native_attempt_only"),
+    )
+
     publication_options: dict[str, Any] = {}
     if python_join:
         checkpoint("native_producer_python_handoff")
         try:
-            original_evidence = _prepublication_evidence(receipt, output) if _python_prepublication else None
+            # Keep the original object alive as well as its immutable field
+            # snapshot; replacement cannot exploit reuse of a discarded id.
+            original_live_observation = attempt.live_modules_observation if native_sink_pin is not None else None
+            native_evidence = (None if native_sink_pin is None
+                               else _native_handoff_evidence(prepared_run, native_sink_pin))
+            original_evidence = (_prepublication_evidence(receipt, output)
+                                 if _python_prepublication or native_sink_pin is not None else None)
             original_receipt_sha256 = receipt.receipt_sha256
             original_admission_sha256 = output.admission_plan.digest()
-            supplied = python_handoff_after_execution(receipt, output)
+            supplied = (python_handoff_after_execution(receipt, output)
+                        if python_handoff_after_native_execution is None
+                        else python_handoff_after_native_execution(prepared_run))
             # The callback supplies the independently retained creation pin. Never
             # discover a current pin from a filename or reconstruct late observations.
             if (type(supplied) is not PythonProducerAdmissionHandoffSidecar
@@ -463,8 +583,11 @@ def _run_native_trusted_producer(
             if (receipt.receipt_sha256 != original_receipt_sha256
                     or output.execution_receipt_sha256 != original_receipt_sha256
                     or output.admission_plan.digest() != original_admission_sha256
-                    or (_python_prepublication
-                        and _prepublication_evidence(receipt, output) != original_evidence)):
+                    or (original_evidence is not None
+                        and _prepublication_evidence(receipt, output) != original_evidence)
+                    or (native_sink_pin is not None
+                        and (attempt.live_modules_observation is not original_live_observation
+                             or _native_handoff_evidence(prepared_run, native_sink_pin) != native_evidence))):
                 raise ValueError("original execution evidence changed")
             retained = read_python_producer_admission_handoff_pinned(
                 root / "evolution" / "producer-batches" / intent.journal_id
@@ -483,6 +606,11 @@ def _run_native_trusted_producer(
                     or handoff.dependency_sha256 != dependency_sha256
                     or handoff.environment_sha256 != environment_sha256):
                 raise ValueError("handoff execution binding mismatch")
+            if native_sink_pin is not None and (
+                attempt.live_modules_observation is not original_live_observation
+                or _native_handoff_evidence(prepared_run, native_sink_pin) != native_evidence
+            ):
+                raise ValueError("original native preparation changed")
             if _python_prepublication:
                 # Hooks cannot refresh the original creator pin, execution or budget.
                 # Re-read after the last hook, before returning any usable evidence.
@@ -507,13 +635,13 @@ def _run_native_trusted_producer(
                         or receipt.receipt_sha256 != original_receipt_sha256
                         or output.execution_receipt_sha256 != original_receipt_sha256
                         or output.admission_plan.digest() != original_admission_sha256
-                        or _prepublication_evidence(receipt, output) != original_evidence):
+                        or _prepublication_evidence(receipt, output) != original_evidence
+                        or (native_sink_pin is not None
+                            and (attempt.live_modules_observation is not original_live_observation
+                                 or _native_handoff_evidence(prepared_run, native_sink_pin) != native_evidence))):
                     raise ValueError("original preparation evidence changed")
                 return _NativeTrustedPythonProducerPreparation(
-                    run=NativeTrustedProducerRun(
-                        attempt=attempt, receipt=receipt, output=output,
-                        deadline_scope=("caller_lifecycle" if control is not None else "native_attempt_only"),
-                    ),
+                    run=prepared_run,
                     handoff=reread,
                 )
             publication_options = {
@@ -576,10 +704,14 @@ def _prepare_native_trusted_python_producer(
     dependency_sha256: str, environment_sha256: str,
     python_handoff_after_execution: Callable[
         [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
-    ],
+    ] | None = None,
+    python_handoff_after_native_execution: Callable[
+        [NativeTrustedProducerRun], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None,
     evidence_revalidator: Callable[[str], None],
     execution_control: SolveExecutionControl | None = None, cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> _NativeTrustedPythonProducerPreparation:
     """Stop after original receipt/output/handoff; never evaluate or publish.
 
@@ -595,7 +727,9 @@ def _prepare_native_trusted_python_producer(
         environment_sha256=environment_sha256, execution_control=execution_control,
         cancelled=cancelled, parent_deadline=parent_deadline,
         python_handoff_after_execution=python_handoff_after_execution,
+        python_handoff_after_native_execution=python_handoff_after_native_execution,
         evidence_revalidator=evidence_revalidator, _python_prepublication=True,
+        **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
     )
 
 
@@ -610,10 +744,14 @@ def run_native_trusted_producer(
     python_handoff_after_execution: Callable[
         [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
     ] | None = None,
+    python_handoff_after_native_execution: Callable[
+        [NativeTrustedProducerRun], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> NativeTrustedProducerRun:
     """Run the historical success-only receipt/output/publication entry point once."""
     return _run_native_trusted_producer(
@@ -624,9 +762,11 @@ def run_native_trusted_producer(
         environment_sha256=environment_sha256, strategy=strategy, execution_control=execution_control,
         cancelled=cancelled, parent_deadline=parent_deadline, known_failure=False,
         python_handoff_after_execution=python_handoff_after_execution,
+        python_handoff_after_native_execution=python_handoff_after_native_execution,
         prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
         producer_multi_episode_publication=producer_multi_episode_publication,
         lineage_owner=lineage_owner,
+        **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
     )
 
 
@@ -641,10 +781,14 @@ def run_native_trusted_producer_outcome(
     python_handoff_after_execution: Callable[
         [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
     ] | None = None,
+    python_handoff_after_native_execution: Callable[
+        [NativeTrustedProducerRun], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run once, returning verified process failure or the unchanged success result.
 
@@ -659,9 +803,11 @@ def run_native_trusted_producer_outcome(
         environment_sha256=environment_sha256, strategy=strategy, execution_control=execution_control,
         cancelled=cancelled, parent_deadline=parent_deadline, known_failure=True,
         python_handoff_after_execution=python_handoff_after_execution,
+        python_handoff_after_native_execution=python_handoff_after_native_execution,
         prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
         producer_multi_episode_publication=producer_multi_episode_publication,
         lineage_owner=lineage_owner,
+        **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
     )
 
 

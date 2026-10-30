@@ -1681,7 +1681,7 @@ class RSILearningController:
             kind = type(value)
             if depth > 48:
                 raise RSILearningError("rsi_python_admission_flow_state_invalid")
-            if value is None or any(kind is scalar for scalar in (str, bool, int, float)):
+            if value is None or kind is str or kind is bool or kind is int or kind is float:
                 return
             if kind is dict:
                 if any(type(key) is not str for key in value):
@@ -1692,7 +1692,14 @@ class RSILearningController:
             else:
                 raise RSILearningError("rsi_python_admission_flow_state_invalid")
             for child in children:
-                validate(child, depth + 1)
+                child_kind = type(child)
+                child_depth = depth + 1
+                if child_depth > 48:
+                    raise RSILearningError("rsi_python_admission_flow_state_invalid")
+                if (child is None or child_kind is str or child_kind is bool
+                        or child_kind is int or child_kind is float):
+                    continue
+                validate(child, child_depth)
 
         if type(state) is not dict:
             raise RSILearningError("rsi_python_admission_flow_state_invalid")
@@ -1935,10 +1942,18 @@ class RSILearningController:
         if self._python_admission_flow_payload(wave.state) != wave.payload:
             raise RSILearningError("rsi_python_brs_admission_stale")
 
-    def _python_admission_active_brs_owner(self, wave: _PythonAdmissionBRSWave):
+    def _python_admission_active_brs_owner(self, wave: _PythonAdmissionBRSWave, *, idle_poll: bool = False):
+        if type(idle_poll) is not bool:
+            raise RSILearningError("rsi_python_brs_admission_identity_invalid")
         self._python_admission_assert_brs_wave(wave, owner=True)
         with wave.ledger.read_only_observations():
-            checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
+            checkpoint = (wave.ledger._controller_checkpoint_idle_head(wave.run_id) if idle_poll
+                          else wave.ledger.controller_checkpoint(wave.run_id))
+        return self._python_admission_match_brs_owner_checkpoint(wave, checkpoint)
+
+    def _python_admission_match_brs_owner_checkpoint(self, wave: _PythonAdmissionBRSWave, checkpoint):
+        """Match an internal fresh observation; this helper does not read or authorize history."""
+        self._python_admission_assert_brs_wave(wave, owner=True)
         if (checkpoint is None or checkpoint[0] != wave.checkpoint_sha256
                 or self._python_admission_flow_payload(checkpoint[1]) != wave.payload):
             raise RSILearningError("rsi_python_brs_admission_stale")
@@ -2450,7 +2465,18 @@ class RSILearningController:
         scope = (wave, handoff, {})
         self._python_admission_brs_local.full_gate_scope = scope
         try:
-            yield
+            ledger = getattr(self, "ledger", None)
+            # Keep minimal compatibility fixtures on their original path; real
+            # owners use the exact ledger and one bounded publication operation.
+            projection_scope = (ledger._checkpoint_projection_scope()
+                                if type(ledger) is RSILedger else nullcontext())
+            # Reserved wire reuse is optional and independently guarded by a
+            # complete live policy graph before and after each comparison.
+            # Avoid automatically adding those graph walks on this owner path.
+            # Keep the ledger's separate row projection and perform every wire
+            # comparison instead; all physical and final-history gates remain.
+            with projection_scope:
+                yield
         finally:
             if getattr(self._python_admission_brs_local, "full_gate_scope", None) is scope:
                 self._python_admission_brs_local.full_gate_scope = None

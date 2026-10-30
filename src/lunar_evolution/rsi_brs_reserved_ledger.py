@@ -276,7 +276,7 @@ def _observe_reserved_brs_ledger(
         requests[key] = request
     records = {key: [] for key in (run_id, *episode_ids)}
     for row in groups["rsi_records"]:
-        record = RSILedger._row_to_record(row)
+        record = RSILedger._row_to_record_cached(ledger, row, class_static=True)
         previous = records[record.logical_id]
         if (record.revision != len(previous)
                 or record.parent_record_sha256 != (previous[-1].record_sha256 if previous else None)

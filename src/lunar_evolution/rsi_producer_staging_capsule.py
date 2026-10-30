@@ -10,6 +10,7 @@ import hashlib
 import math
 import os
 import re
+from itertools import chain
 from pathlib import Path, PosixPath
 from typing import NoReturn
 
@@ -52,25 +53,46 @@ def _shape(value: object, *, depth: int = 0, remaining: list[int] | None = None)
     if kind is dict:
         if len(value) > 10_000 or any(type(key) is not str for key in value):
             _fail("shape_invalid")
-        for key, item in value.items():
-            _shape(key, depth=depth + 1, remaining=remaining)
-            _shape(item, depth=depth + 1, remaining=remaining)
+        items = chain.from_iterable(value.items())
     elif kind is list:
         if len(value) > 10_000:
             _fail("shape_invalid")
-        for item in value:
-            _shape(item, depth=depth + 1, remaining=remaining)
-    elif kind is str:
-        if len(value) > 128 * 1024:
+        items = value
+    else:
+        if kind is str:
+            if len(value) > 128 * 1024:
+                _fail("shape_invalid")
+        elif kind is int:
+            if value.bit_length() > 4096:
+                _fail("shape_invalid")
+        elif kind is float:
+            if not math.isfinite(value):
+                _fail("shape_invalid")
+        elif value is not None and kind is not bool:
             _fail("shape_invalid")
-    elif kind is int:
-        if value.bit_length() > 4096:
+        return
+    for item in items:
+        child_depth = depth + 1
+        child_kind = type(item)
+        if child_kind is dict or child_kind is list:
+            _shape(item, depth=child_depth, remaining=remaining)
+            continue
+        # Keep each key/value occurrence's node and depth checks fresh while
+        # avoiding a recursive Python call for exact scalar leaves.
+        remaining[0] -= 1
+        if remaining[0] < 0 or child_depth > 48:
             _fail("shape_invalid")
-    elif kind is float:
-        if not math.isfinite(value):
+        if child_kind is str:
+            if len(item) > 128 * 1024:
+                _fail("shape_invalid")
+        elif child_kind is int:
+            if item.bit_length() > 4096:
+                _fail("shape_invalid")
+        elif child_kind is float:
+            if not math.isfinite(item):
+                _fail("shape_invalid")
+        elif item is not None and child_kind is not bool:
             _fail("shape_invalid")
-    elif value is not None and kind is not bool:
-        _fail("shape_invalid")
 
 
 def _encode(value: object, maximum: int, suffix: str) -> bytes:

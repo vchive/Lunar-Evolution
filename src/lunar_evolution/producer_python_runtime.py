@@ -121,13 +121,11 @@ def _path_reference(value: object, *, absolute: bool, dot: bool = False) -> str:
 
 
 def _path(value: object, *, absolute: bool, dot: bool = False) -> str:
-    """Validate a canonical POSIX path without constructing a pathlib object.
+    """Validate canonical POSIX spelling without reconstructing its components.
 
-    The lexical normalization mirrors ``Path(value).as_posix()`` on the supported
-    POSIX runtime: one or more leading slashes collapse to ``/`` except exactly
-    two, which pathlib preserves as ``//``; empty and ``.`` components disappear;
-    ``..`` components remain visible and are then rejected.  The canonical string
-    comparison keeps every existing strictness check intact.
+    Empty, ``.`` and ``..`` components cannot occur in accepted non-root text.
+    Reject their spellings directly; only ``.`` and ``/`` need special part counts.
+    Every call still validates the original exact string and its UTF-8 byte bound.
     """
     if type(value) is not str or not value or any(char in value for char in "\x00\r\n\\"):
         _fail("path_invalid")
@@ -137,20 +135,20 @@ def _path(value: object, *, absolute: bool, dot: bool = False) -> str:
         is_absolute = value.startswith("/")
         if is_absolute is not absolute:
             _fail("path_invalid")
-        if is_absolute:
-            if value.startswith("//") and not value.startswith("///"):
-                root, remainder = "//", value[2:]
-            else:
-                root, remainder = "/", value.lstrip("/")
+        if value == ".":
+            if 0 > _MAX_PATH_PARTS or not dot:
+                _fail("path_invalid")
+        elif value == "/":
+            if 1 > _MAX_PATH_PARTS:
+                _fail("path_invalid")
         else:
-            root, remainder = "", value
-        parts = tuple(part for part in remainder.split("/") if part and part != ".")
-        if (len(parts) + (1 if is_absolute else 0) > _MAX_PATH_PARTS
-                or ".." in parts or (value == "." and not dot)):
-            _fail("path_invalid")
-        canonical = (root + "/".join(parts)) if is_absolute else ("/".join(parts) or ".")
-        if canonical != value or (absolute and value.startswith("//")):
-            _fail("path_invalid")
+            if value.endswith("/") or "//" in value:
+                _fail("path_invalid")
+            if (value == ".." or value.startswith(("./", "../"))
+                    or value.endswith(("/.", "/..")) or "/./" in value or "/../" in value):
+                _fail("path_invalid")
+            if value.count("/") + 1 > _MAX_PATH_PARTS:
+                _fail("path_invalid")
     except (TypeError, ValueError, UnicodeError):
         _fail("path_invalid")
     return value
@@ -209,7 +207,11 @@ class PythonRuntimeFileDeclaration(_DTO):
         _path(self.relative_path, absolute=False)
         if type(self.role) is not str or self.role not in _ROLE_SLOTS:
             _fail("role_invalid")
-        basename = Path(self.relative_path).name.casefold()
+        value = self.relative_path
+        if type(value) is str and value != "." and not value.endswith(("/", "/.")):
+            basename = value.rpartition("/")[2].casefold()
+        else:
+            basename = Path(value).name.casefold()
         if basename.endswith(".pth") or basename in {"sitecustomize.py", "usercustomize.py"}:
             _fail("listed_import_hook")
 
@@ -414,10 +416,11 @@ def _root_paths(value: object) -> dict[str, Path]:
         if label in result:
             _fail("root_duplicate")
         result[label] = path
-    values = list(result.values())
+    values = [str(path) for path in result.values()]
     for index, path in enumerate(values):
         for other in values[index + 1:]:
-            if path == other or path in other.parents or other in path.parents:
+            if (path == other or other.startswith(path if path == "/" else path + "/")
+                    or path.startswith(other if other == "/" else other + "/")):
                 _fail("roots_overlap")
     return dict(sorted(result.items()))
 
@@ -492,8 +495,13 @@ def _directory_paths(
         directories.extend(root / item.relative_path for item in imports if item.root_label == label)
         for path in directories:
             _path(path.as_posix(), absolute=True)
-            for ancestor in (path, *path.parents):
+            # Every collected directory already has its complete ancestor
+            # chain. Keep each path check above, but avoid rebuilding that
+            # same chain after reaching the first collected ancestor.
+            ancestor = path
+            while ancestor not in wanted:
                 add(ancestor)
+                ancestor = ancestor.parent
         result[label] = tuple(sorted(wanted, key=lambda item: item.as_posix()))
     return result
 

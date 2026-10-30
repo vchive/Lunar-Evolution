@@ -14,6 +14,7 @@ import re
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import nullcontext
 
 from .candidate_evaluation_spec import canonical_json
 from .rsi_brs_mailbox_evidence import (
@@ -424,7 +425,7 @@ class _PrimitiveExchange:
         self.admission_kind = None
         self.admission_state = "unused"
 
-    def submit(self, event: tuple, check) -> None:
+    def submit(self, event: tuple, check, *, wait_check=None) -> None:
         if (type(event) is not tuple or not event or type(event[0]) is not str
                 or event[0] not in STAGES[:3]):
             _fail("observation_drift")
@@ -442,6 +443,10 @@ class _PrimitiveExchange:
             _fail("observation_drift")
         if type(self.condition) is not threading.Condition or not callable(check):
             _fail("observation_drift")
+        if wait_check is not None:
+            if not callable(wait_check):
+                _fail("observation_drift")
+            return _PrimitiveExchange._submit_waiting(self, event, check, wait_check)
         with self.condition:
             if (type(self.events) is not list or type(self.acked) is not int
                     or not 0 <= self.acked <= len(self.events) <= 3 or type(self.failed) is not bool):
@@ -463,6 +468,64 @@ class _PrimitiveExchange:
                     self.condition.notify_all()
                     _fail("callback_unknown")
                 self.condition.wait(.05)
+
+    def _submit_waiting(self, event: tuple, check, wait_check) -> None:
+        """Keep cold stage/ACK gates while idle polls use live control checks."""
+        if type(self) is not _PrimitiveExchange:
+            _fail("observation_drift")
+        condition, events, deadline = self.condition, self.events, self.deadline
+
+        def scope():
+            if (type(self) is not _PrimitiveExchange or type(condition) is not threading.Condition
+                    or self.condition is not condition
+                    or self.events is not events or type(events) is not list
+                    or self.deadline is not deadline):
+                _fail("observation_drift")
+
+        # The callback may change transport handles. Recheck them before any
+        # Condition operation; no caller callback executes under this lock.
+        check()
+        scope()
+        with condition:
+            if (type(self.acked) is not int or not 0 <= self.acked <= len(events) <= 3
+                    or type(self.failed) is not bool):
+                _fail("observation_drift")
+            if self.failed or len(events) >= 3:
+                _fail("worker_unavailable")
+            events.append(event)
+            position = len(events)
+            condition.notify_all()
+
+        def ready():
+            scope()
+            if (type(self.acked) is not int or not 0 <= self.acked <= position
+                    or len(events) != position or events[position - 1] is not event
+                    or type(self.failed) is not bool):
+                _fail("observation_drift")
+            if self.failed:
+                _fail("callback_unknown")
+            return self.acked == position
+
+        while True:
+            with condition:
+                if ready():
+                    break
+                if deadline is not None and time.monotonic() >= deadline:
+                    self.failed = True
+                    condition.notify_all()
+                    _fail("callback_unknown")
+            wait_check()
+            scope()
+            with condition:
+                if not ready():
+                    condition.wait(.05)
+        # ACK is a transport fact, not permission to enter the callback or
+        # settle a completed callback. Each stage gets its own fresh cold gate.
+        check()
+        scope()
+        with condition:
+            if not ready():
+                _fail("observation_drift")
 
     def fail(self) -> None:
         with self.condition:
@@ -599,22 +662,42 @@ class _BRSWorkerTerminalEndpoint:
             _fail("worker_unavailable")
         self._status = "inflight"
         exchange = self._exchange
+        condition = exchange.condition if wait_check is not None else None
+
+        def transport():
+            _BRSWorkerTerminalEndpoint._identity(self)
+            if (self._exchange is not exchange or type(condition) is not threading.Condition
+                    or exchange.condition is not condition):
+                _fail("observation_drift")
+
         try:
+            if wait_check is not None:
+                transport()
             # Full source/manifest/fingerprint validation gates entry and every
             # post-response transition.  While the owner mailbox is waiting,
             # callers may supply a cheap liveness check so a long wait does not
             # repeatedly rescan immutable staging evidence.
             check()
+            if wait_check is not None:
+                transport()
             waiting = check if wait_check is None else wait_check
+
+            def hot():
+                waiting()
+                transport()
+
             response = BRSOwnerPublicationMailbox.request(
                 self._mailbox, request,
-                check=lambda: _BRSWorkerTerminalEndpoint._wait_check(self, waiting),
+                check=lambda: _BRSWorkerTerminalEndpoint._wait_check(
+                    self, waiting if wait_check is None else hot),
             )
             check()
+            if wait_check is not None:
+                transport()
             handoff = BRSSelectedChildHandoff(**json.loads(self._handoff_bytes))
             gate = deliver_brs_owner_result(response, request, handoff,
                                            expected_native_plan_sha256=self._plan_sha256)
-            with exchange.condition:
+            with (exchange.condition if wait_check is None else condition):
                 if gate.delivery.publication_status == "all_rejected":
                     if (type(exchange.admission_offer) is not bytes
                             or type(exchange.admission_kind) is not str or exchange.admission_kind != "rejection"
@@ -638,23 +721,48 @@ class _BRSWorkerTerminalEndpoint:
                        request.payload, request.request_sha256),
                       (response.run_id, response.episode_id, response.handoff_sha256,
                        response.request_sha256, response.payload, response.response_sha256))
-            self._exchange.submit(("delivery", *fields), check)
+            def submit(event):
+                if wait_check is None:
+                    # Preserve the two-argument compatibility seam and every
+                    # legacy check invocation when no hot waiter was supplied.
+                    self._exchange.submit(event, check)
+                    return
+
+                def cold():
+                    check()
+                    transport()
+
+                exchange.submit(event, cold, wait_check=hot)
+
+            submit(("delivery", *fields))
+
+            callback_entered = False
 
             def invoke(delivery):
-                self._exchange.submit(("callback_started",), check)
+                nonlocal callback_entered
+                submit(("callback_started",))
+                callback_entered = True
                 return callback(delivery)
 
             try:
                 value = gate.settle(invoke)
             except BaseException:
-                self._exchange.submit(("callback_finished", "unknown"), check)
+                if wait_check is None or callback_entered:
+                    submit(("callback_finished", "unknown"))
                 raise
-            self._exchange.submit(("callback_finished", "returned"), check)
+            submit(("callback_finished", "returned"))
             self._status = "settled"
             return value
         except BaseException:
             self._status = "unknown"
-            _PrimitiveExchange.fail(exchange)
+            if wait_check is None:
+                _PrimitiveExchange.fail(exchange)
+            elif type(condition) is threading.Condition:
+                # A failed caller check may have replaced the live transport.
+                # Wake only the original owner; never enter a foreign handle.
+                with condition:
+                    exchange.failed = True
+                    condition.notify_all()
             raise
 
 
@@ -683,9 +791,8 @@ class BRSOwnerTerminalLifecycle:
     def worker_endpoint(self) -> _BRSWorkerTerminalEndpoint:
         return self._endpoint
 
-    def _fixed(self) -> None:
+    def _scope_identity(self) -> None:
         from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
-        from .rsi_python_brs_native_dispatch import _original_control
 
         if type(self) is not BRSOwnerTerminalLifecycle or self._poisoned:
             _fail("session_unavailable")
@@ -701,8 +808,8 @@ class BRSOwnerTerminalLifecycle:
                     self._scope, (self._owner, self._mailbox, self._future, self._executor,
                                   self._thread, self._endpoint, self._exchange, self._exchange.condition), strict=True))):
             _fail("session_drift")
-        _original_control(self._owner)
-        _BRSLineageCheckpointOwner._identity(self._owner)
+
+    def _transport_identity(self) -> None:
         if (self._mailbox._owner_thread != self._owner._thread
                 or self._mailbox._worker_thread != self._thread.ident
                 or self._thread not in self._executor._threads
@@ -714,6 +821,68 @@ class BRSOwnerTerminalLifecycle:
                 or self._mailbox._terminal_lifecycle_opened is not True
                 or self._executor._max_workers != 1):
             _fail("session_drift")
+
+    def _fixed(self) -> None:
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_python_brs_native_dispatch import _original_control
+
+        self._scope_identity()
+        _original_control(self._owner)
+        _BRSLineageCheckpointOwner._identity(self._owner)
+        self._transport_identity()
+
+    def _idle(self) -> None:
+        """Check original live handles/control, without granting an event ACK."""
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_python_brs_native_dispatch import _original_control
+
+        self._scope_identity()
+        owner = _original_control(self._owner)
+        self._transport_identity()
+        if (owner._poisoned or threading.get_ident() != owner._thread
+                or self._exchange.deadline != owner._before_control.deadline):
+            _fail("session_drift")
+        _BRSLineageCheckpointOwner._before_control_live(owner)
+        if owner._plan.deadline_unix is not None and time.time() >= owner._plan.deadline_unix:
+            _fail("session_expired")
+
+    def _join_worker(self, check, *, hot_check=None) -> None:
+        """Reserve full observation for pending events and the final join gate."""
+        if hot_check is not None and not callable(hot_check):
+            _fail("check_invalid")
+        if hot_check is None:
+            while not Future.done(self._future):
+                check()
+                if not self._drain():
+                    with self._exchange.condition:
+                        self._exchange.condition.wait(.05)
+        else:
+            while True:
+                self._idle()
+                hot_check()
+                # The live cancellation callback may have changed a session
+                # handle. Refuse it before touching a Condition or Future.
+                self._scope_identity()
+                self._transport_identity()
+                with self._exchange.condition:
+                    index, events = self._exchange.acked, self._exchange.events
+                    if (type(index) is not int or type(events) is not list
+                            or not 0 <= index <= len(events) <= 3
+                            or type(self._exchange.failed) is not bool or self._exchange.failed):
+                        _fail("observation_drift")
+                    pending = index < len(events)
+                    done = Future.done(self._future)
+                    if not pending and not done:
+                        self._exchange.condition.wait(.05)
+                if pending:
+                    check()
+                    self._drain()
+                elif done:
+                    break
+            # A done Future is not validation of its result or retained scope.
+            # Rebuild the full gates even when it finishes without another event.
+            check()
+            self._fixed()
 
     def _append(self, stage: str, facts: dict) -> None:
         self._fixed()
@@ -912,11 +1081,13 @@ class BRSOwnerTerminalLifecycle:
             _PrimitiveExchange.fail(exchange)
             raise
 
-    def serve(self, original_preparation, *, check, timeout: float = .05):
+    def serve(self, original_preparation, *, check, timeout: float = .05, hot_check=None):
         """Run the old bridge, drain real worker events, and join the original executor."""
         from .rsi_python_brs_owner_bridge import run_brs_owner_publication_mailbox
 
         self._fixed()
+        if hot_check is not None and not callable(hot_check):
+            _fail("check_invalid")
         if self._started:
             _fail("session_unavailable")
         self._started = True
@@ -941,13 +1112,13 @@ class BRSOwnerTerminalLifecycle:
             # bounded join loop; the scope is discarded before resume or any
             # later lifecycle operation.
             from .rsi_brs_publication_lineage import _policy_observation_scope
+            from .rsi_store import RSILedger
 
-            with _policy_observation_scope():
-                while not Future.done(self._future):
-                    check()
-                    if not self._drain():
-                        with self._exchange.condition:
-                            self._exchange.condition.wait(.05)
+            ledger = getattr(self._owner, "_ledger", None)
+            projection_scope = (ledger._checkpoint_projection_scope()
+                                if type(ledger) is RSILedger else nullcontext())
+            with _policy_observation_scope(), projection_scope:
+                self._join_worker(check, hot_check=hot_check)
             while self._drain():
                 pass
             BRSOwnerPublicationMailbox.close(self._mailbox)

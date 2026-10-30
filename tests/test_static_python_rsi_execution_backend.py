@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -137,7 +139,14 @@ def test_real_inert_children_complete_fixed_graph_and_retain_evidence(build_fixt
     assert report.runtime_execution_performed is False
     assert report.production_admission is False
     assert json.loads((workspace / "attempt.json").read_bytes())["status"] == "started"
-    assert json.loads((workspace / "report.json").read_bytes())["status"] == "complete"
+    wire = json.loads((workspace / "report.json").read_bytes())
+    assert wire["status"] == "complete"
+    assert set(wire) == {
+        "schema", "recipe_sha256", "completed_stages", "stage_evidence", "status", "reason",
+        "configured_closure_verified", "installation_accepted", "runtime_execution_performed",
+        "production_admission",
+    }
+    assert report.failure_detail is report.persistence_error is None
     for stage in report.stage_evidence:
         command = stage["commands"][0]
         assert command["direct_child_reaped"] is True
@@ -355,6 +364,10 @@ def test_report_write_failure_carries_partial_report(build_fixture, monkeypatch)
         _run(build_fixture)
     assert caught.value.report.status == "partial"
     assert caught.value.report.reason == "report_write_failed"
+    assert caught.value.report.failure_detail is None
+    assert caught.value.report.persistence_error == {
+        "stage": None, "command_index": None, "operation": "report.write", "errno": None,
+    }
     assert caught.value.__context__ is None
 
 
@@ -391,3 +404,174 @@ def test_interruption_inside_input_copy_stops_before_any_child(build_fixture, mo
     assert called == []
     assert caught.value.report.completed_stages == ()
     assert (build_fixture[3] / "source/compile.data").stat().st_size == 65536
+
+
+@pytest.mark.parametrize("error_number", [errno.ENOSPC, errno.EDQUOT])
+def test_workspace_resource_failure_is_not_a_freshness_refusal(build_fixture, monkeypatch, error_number):
+    workspace = build_fixture[3]
+    mkdir = Path.mkdir
+    launched = []
+    original_error = OSError(error_number, "private fixture details", str(workspace))
+
+    def fail_workspace(path, *args, **kwargs):
+        if path == workspace:
+            raise original_error
+        return mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_workspace)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: launched.append(args))
+    with pytest.raises(BuildExecutionError, match="workspace_io_failure") as caught:
+        _run(build_fixture)
+    report = caught.value.report
+    assert report.status == "partial" and report.completed_stages == report.stage_evidence == ()
+    assert report.failure_detail == {
+        "stage": None, "command_index": None, "operation": "workspace.mkdir", "errno": error_number,
+    }
+    assert report.persistence_error is None
+    assert launched == [] and not workspace.exists()
+    assert caught.value.__context__ is None
+    assert "private" not in str(caught.value) and str(workspace) not in str(caught.value)
+    original_error.errno = errno.EINVAL
+    assert report.failure_detail["errno"] == error_number
+    with pytest.raises(TypeError):
+        report.failure_detail["errno"] = errno.EINVAL
+
+
+def test_attempt_write_failure_preserves_errno_and_stops_before_children(build_fixture, monkeypatch):
+    from tools.static_python_rsi_fixture import execution_backend
+
+    original = execution_backend._write_once
+    launched = []
+
+    def write(path, raw):
+        if path.name == "attempt.json":
+            raise OSError(errno.ENOSPC, "private fixture details", str(path))
+        return original(path, raw)
+
+    monkeypatch.setattr(execution_backend, "_write_once", write)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: launched.append(args))
+    with pytest.raises(BuildExecutionError, match="attempt_io_failure") as caught:
+        _run(build_fixture)
+    report = caught.value.report
+    assert report.failure_detail == {
+        "stage": None, "command_index": None, "operation": "attempt.write", "errno": errno.ENOSPC,
+    }
+    assert report.completed_stages == () and report.persistence_error is None
+    wire = json.loads((build_fixture[3] / "report.json").read_bytes())
+    assert wire["failure_detail"] == report.failure_detail
+    assert wire["reason"] == "attempt_io_failure" and "private" not in json.dumps(wire)
+    assert (build_fixture[3] / "recipe.json").is_file() and launched == []
+
+
+def test_stage_directory_failure_retains_stage_command_and_errno(build_fixture, monkeypatch):
+    workspace = build_fixture[3]
+    mkdir = Path.mkdir
+
+    def fail_logs(path, *args, **kwargs):
+        if path == workspace / "logs/freeze/0":
+            raise OSError(errno.EDQUOT, "private fixture details", str(path))
+        return mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_logs)
+    with pytest.raises(BuildExecutionError, match="attempt_io_failure") as caught:
+        _run(build_fixture)
+    report = caught.value.report
+    assert report.completed_stages == ("configure",)
+    assert report.failure_detail == {
+        "stage": "freeze", "command_index": 0, "operation": "logs.mkdir", "errno": errno.EDQUOT,
+    }
+    assert report.stage_evidence[-1]["stage"] == "freeze"
+    assert report.stage_evidence[-1]["commands"] == ()
+    assert not (workspace / "work/freeze.out").exists()
+    assert not (workspace / "work/compile.out").exists()
+
+
+def test_command_spawn_failure_retains_errno_without_retry(build_fixture, monkeypatch):
+    popen = subprocess.Popen
+    dispatches = []
+
+    def fail_freeze(argv, **kwargs):
+        dispatches.append(argv)
+        if len(dispatches) == 2:
+            raise OSError(errno.EDQUOT, "private fixture details")
+        return popen(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", fail_freeze)
+    with pytest.raises(BuildExecutionError, match="command_io_failure") as caught:
+        _run(build_fixture)
+    report = caught.value.report
+    assert len(dispatches) == 2 and report.completed_stages == ("configure",)
+    assert report.failure_detail == {
+        "stage": "freeze", "command_index": 0, "operation": "command.spawn", "errno": errno.EDQUOT,
+    }
+    command = report.stage_evidence[-1]["commands"][0]
+    assert command["failure_detail"] == report.failure_detail
+    assert command["returncode"] is None and command["direct_child_reaped"] is False
+    assert not (build_fixture[3] / "work/compile.out").exists()
+
+
+@pytest.mark.parametrize("primary_failure", ["command_failed", "deadline_expired"])
+def test_terminal_write_failure_preserves_original_reason(build_fixture, monkeypatch, primary_failure):
+    from tools.static_python_rsi_fixture import execution_backend
+
+    original = execution_backend._write_once
+    writes = []
+
+    def write(path, raw):
+        writes.append(path.name)
+        if path.name == "report.json":
+            raise OSError(errno.ENOSPC, "private fixture details", str(path))
+        return original(path, raw)
+
+    monkeypatch.setattr(execution_backend, "_write_once", write)
+    if primary_failure == "command_failed":
+        _mode(build_fixture, "freeze", "nonzero")
+        controls = {}
+    else:
+        controls = {"deadline": 1, "monotonic": lambda: 1 if
+                    (build_fixture[3] / "work/configure.out").exists() else 0}
+    with pytest.raises(BuildExecutionError, match=primary_failure) as caught:
+        _run(build_fixture, **controls)
+    report = caught.value.report
+    assert report.reason == primary_failure and report.status == "partial"
+    assert report.completed_stages == (("configure",) if primary_failure == "command_failed" else ())
+    assert report.stage_evidence[-1]["commands"][0]["direct_child_reaped"] is True
+    assert report.failure_detail is None
+    assert report.persistence_error == {
+        "stage": None, "command_index": None, "operation": "report.write", "errno": errno.ENOSPC,
+    }
+    assert writes.count("report.json") == 1 and caught.value.__context__ is None
+    assert not (build_fixture[3] / "report.json").exists()
+    assert not (build_fixture[3] / "work/compile.out").exists()
+    with pytest.raises(TypeError):
+        report.persistence_error["errno"] = errno.EINVAL
+
+
+def test_terminal_write_failure_separately_retains_primary_io_error(build_fixture, monkeypatch):
+    from tools.static_python_rsi_fixture import execution_backend
+
+    original = execution_backend._write_once
+    writes = []
+
+    def write(path, raw):
+        writes.append(path.name)
+        if path.name == "attempt.json":
+            raise OSError(errno.EDQUOT, "private attempt details", str(path))
+        if path.name == "report.json":
+            raise OSError(errno.ENOSPC, "private report details", str(path))
+        return original(path, raw)
+
+    monkeypatch.setattr(execution_backend, "_write_once", write)
+    with pytest.raises(BuildExecutionError, match="attempt_io_failure") as caught:
+        _run(build_fixture)
+    report = caught.value.report
+    assert report.reason == "attempt_io_failure" and report.completed_stages == ()
+    assert report.failure_detail == {
+        "stage": None, "command_index": None, "operation": "attempt.write", "errno": errno.EDQUOT,
+    }
+    assert report.persistence_error == {
+        "stage": None, "command_index": None, "operation": "report.write", "errno": errno.ENOSPC,
+    }
+    assert writes == ["recipe.json", "attempt.json", "report.json"]
+    assert (build_fixture[3] / "recipe.json").is_file()
+    assert caught.value.__context__ is None

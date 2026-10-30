@@ -8,7 +8,7 @@ import stat
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 
 class SessionTranscript:
@@ -49,6 +49,25 @@ class SessionTranscript:
         self.max_total_bytes = max_total_bytes
         self.redactions = tuple(secret for secret in redactions if secret)
 
+    def create_fresh(self) -> None:
+        """Reserve an empty confined history without replaying an existing file."""
+        if self._confined_workspace is None:
+            raise ValueError("fresh transcript requires a confined workspace")
+        with self._confined_parent(create=True) as parent:
+            descriptor = os.open(
+                self.path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600, dir_fd=parent,
+            )
+            os.close(descriptor)
+
+    def _read_tail(self, stream: BinaryIO) -> bytes:
+        observed = os.fstat(stream.fileno())
+        if not stat.S_ISREG(observed.st_mode):
+            raise ValueError("transcript must be a regular file")
+        limit = self.max_total_bytes * 2
+        stream.seek(max(0, observed.st_size - limit))
+        return stream.read(limit)
+
     def load(self) -> list[dict[str, object]]:
         if self._confined_workspace is not None:
             self._validate_confined_path()
@@ -58,20 +77,17 @@ class SessionTranscript:
                         self.path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent,
                     )
                     with os.fdopen(descriptor, "rb") as stream:
-                        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                            raise ValueError("confined transcript must be a regular file")
-                        raw = stream.read()
+                        raw = self._read_tail(stream)
             except FileNotFoundError:
                 return []
         else:
             if not self.path.is_file():
                 return []
             try:
-                raw = self.path.read_bytes()
+                with self.path.open("rb") as stream:
+                    raw = self._read_tail(stream)
             except OSError:
                 return []
-        if len(raw) > self.max_total_bytes * 2:
-            raw = raw[-self.max_total_bytes * 2 :]
         messages: list[dict[str, object]] = []
         for line in raw.decode("utf-8", errors="replace").splitlines():
             try:

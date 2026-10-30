@@ -21,6 +21,7 @@ from . import _benchmark_files as files
 from .algorithm import AlgorithmProblemContract
 from .candidate_evaluation_spec import canonical_json, strict_json
 from .native_bootstrap import NativeBootstrapArtifact, load_native_bootstrap_artifact
+from .native_fixed_u_inputs import checked_fixed_u_input_owner
 from .producer_launcher import (
     ProducerLaunchAttestation,
     ProducerLaunchIntent,
@@ -90,7 +91,7 @@ def _config(content: bytes) -> tuple[dict[str, Any], str]:
     return value, contract.digest()
 
 
-def _read_bound_file(path: Path) -> tuple[bytes, dict[str, Any]]:
+def _read_bound_file(path: Path, *, fixed_u_owner=None, require_unexpired: bool = False) -> tuple[bytes, dict[str, Any]]:
     """Read bounded bytes and identity from the same held no-follow descriptor."""
     with _held_directory(path.parent) as directory:
         before = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
@@ -102,10 +103,12 @@ def _read_bound_file(path: Path) -> tuple[bytes, dict[str, Any]]:
             opened = os.fstat(descriptor)
             names = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
             if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
-                    or stat.S_IMODE(opened.st_mode) != 0o400
+                    or (fixed_u_owner is None and stat.S_IMODE(opened.st_mode) != 0o400)
                     or opened.st_size > MAX_PRODUCER_LAUNCH_INPUT_BYTES
                     or any(getattr(before, key) != getattr(opened, key) for key in names)):
                 _fail("file_invalid")
+            if fixed_u_owner is not None:
+                fixed_u_owner.check_file_info(path, opened, require_unexpired=require_unexpired)
             chunks = []
             remaining = MAX_PRODUCER_LAUNCH_INPUT_BYTES + 1
             while remaining:
@@ -121,6 +124,8 @@ def _read_bound_file(path: Path) -> tuple[bytes, dict[str, Any]]:
                     or any(getattr(opened, key) != getattr(after, key) for key in names)
                     or any(getattr(after, key) != getattr(named, key) for key in names)):
                 _fail("input_changed")
+            if fixed_u_owner is not None:
+                fixed_u_owner.check_file_info(path, after, require_unexpired=require_unexpired)
             metadata = {
                 "name": path.name, "size": len(content), "sha256": _sha(content),
                 "device": opened.st_dev, "inode": opened.st_ino,
@@ -250,18 +255,25 @@ def _not_started(batch: Path, *, allow_binding: bool = False) -> None:
             _fail("attempt_already_started")
 
 
-def _read_inputs(root: Path, batch: Path) -> ProducerLaunchInputDescriptor:
+def _read_inputs(root: Path, batch: Path, *, fixed_u_owner=None, require_unexpired: bool = False) -> ProducerLaunchInputDescriptor:
     path = batch / _INPUT_DIRECTORY
+    if fixed_u_owner is not None:
+        fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner, require_unexpired=require_unexpired)
+        fixed_u_owner.check_context(root, batch, _INPUT_DIRECTORY, require_unexpired=require_unexpired)
     with _held_directory(path) as directory:
-        if stat.S_IMODE(os.fstat(directory).st_mode) != 0o500:
+        if stat.S_IMODE(os.fstat(directory).st_mode) != (0o500 if fixed_u_owner is None else 0o550):
             _fail("input_directory_invalid")
         with os.scandir(directory) as entries:
             if {entry.name for entry in entries} != {"config.json", "manifest.json"}:
                 _fail("input_directory_changed")
-        manifest_bytes, manifest_file = _read_bound_file(path / "manifest.json")
+        manifest_bytes, manifest_file = _read_bound_file(
+            path / "manifest.json", fixed_u_owner=fixed_u_owner, require_unexpired=require_unexpired,
+        )
         manifest = strict_json(manifest_bytes, MAX_PRODUCER_LAUNCH_INPUT_BYTES)
-        if (not isinstance(manifest, dict) or set(manifest) != _MANIFEST_FIELDS
-                or manifest["schema_version"] != "1" or manifest["protocol"] != _INPUT_PROTOCOL
+        fields = _MANIFEST_FIELDS if fixed_u_owner is None else _MANIFEST_FIELDS | {"input_security"}
+        if (not isinstance(manifest, dict) or set(manifest) != fields
+                or manifest["schema_version"] != ("1" if fixed_u_owner is None else "2")
+                or manifest["protocol"] != _INPUT_PROTOCOL
                 or _canonical(manifest) != manifest_bytes
                 or manifest["manifest_sha256"] != _digest(manifest, "manifest_sha256")
                 or manifest["manifest_file_identity"] != {
@@ -270,7 +282,13 @@ def _read_inputs(root: Path, batch: Path) -> ProducerLaunchInputDescriptor:
                 or manifest["journal_id"] != batch.name or manifest["workspace_identity"] != _node(root)
                 or manifest["batch_identity"] != _node(batch) or manifest["inputs_identity"] != _node(path)):
             _fail("manifest_invalid")
-        content, config_file = _read_bound_file(path / "config.json")
+        if fixed_u_owner is not None:
+            fixed_u_owner.check_manifest(root, path, manifest_bytes, require_unexpired=require_unexpired)
+            if manifest["input_security"] != fixed_u_owner.binding(require_unexpired=require_unexpired):
+                _fail("manifest_invalid")
+        content, config_file = _read_bound_file(
+            path / "config.json", fixed_u_owner=fixed_u_owner, require_unexpired=require_unexpired,
+        )
         if manifest["files"] != [config_file]:
             _fail("input_changed")
         _value, contract_sha = _config(content)
@@ -285,20 +303,39 @@ def _read_inputs(root: Path, batch: Path) -> ProducerLaunchInputDescriptor:
 
 def prepare_producer_launch_inputs(
     workspace: str | Path, *, journal_id: str, config: Mapping[str, object],
+    fixed_u_owner=None,
 ) -> ProducerLaunchInputDescriptor:
     """Stage a canonical config create-only, then append its argv fragment before attestation.
 
     Config must carry a complete normalized AlgorithmProblemContract. Partial staging is retained
     as diagnostic evidence; retries cannot overwrite it or silently reuse an existing batch.
+    Distinct-user ACLs are available only through the original explicit fixed-U
+    child owner. The ordinary v1 0400/0500 contract remains unchanged.
     """
     try:
+        if fixed_u_owner is not None:
+            fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner)
         if not isinstance(config, Mapping):
             _fail("config_invalid")
         content = _canonical(dict(config))
         _value, contract_sha = _config(content)
-        root, batch = _batch(workspace, journal_id, create=True)
+        root, batch = _batch(workspace, journal_id, create=fixed_u_owner is None)
         with _recovery_lock(batch):
             _not_started(batch)
+            if fixed_u_owner is not None:
+                def fixed_manifest(identities, manifest_identity, security):
+                    value = {
+                        "schema_version": "2", "protocol": _INPUT_PROTOCOL, "journal_id": journal_id,
+                        "config_sha256": _sha(content), "contract_sha256": contract_sha,
+                        "workspace_identity": _node(root), "batch_identity": _node(batch),
+                        "inputs_identity": _node(batch / _INPUT_DIRECTORY), "files": identities,
+                        "manifest_file_identity": manifest_identity, "input_security": security,
+                    }
+                    value["manifest_sha256"] = _digest(value, "manifest_sha256")
+                    return _canonical(value)
+
+                fixed_u_owner.prepare(root, batch, _INPUT_DIRECTORY, (("config.json", content),), fixed_manifest)
+                return _read_inputs(root, batch, fixed_u_owner=fixed_u_owner, require_unexpired=True)
             with _held_directory(batch) as parent:
                 os.mkdir(_INPUT_DIRECTORY, 0o700, dir_fd=parent)
                 created = os.stat(_INPUT_DIRECTORY, dir_fd=parent, follow_symlinks=False)
@@ -379,16 +416,19 @@ def _launch_payload(
 def bind_producer_launch_inputs(
     workspace: str | Path, *, intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
     artifact: NativeBootstrapArtifact, inputs: ProducerLaunchInputDescriptor,
+    fixed_u_owner=None,
 ) -> ProducerLaunchInputDescriptor:
     """Bind intent/attestation/bootstrap create-only before a lifecycle claim or gate release."""
     if (not isinstance(intent, ProducerLaunchIntent) or not isinstance(attestation, ProducerLaunchAttestation)
             or not isinstance(artifact, NativeBootstrapArtifact) or not isinstance(inputs, ProducerLaunchInputDescriptor)):
         _fail("input_invalid")
     try:
+        if fixed_u_owner is not None:
+            fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner)
         root, batch = _batch(workspace, intent.journal_id)
         with _recovery_lock(batch):
             _not_started(batch)
-            retained = _read_inputs(root, batch)
+            retained = _read_inputs(root, batch, fixed_u_owner=fixed_u_owner, require_unexpired=True)
             if retained != inputs:
                 _fail("descriptor_changed")
             payload = _launch_payload(intent, attestation, artifact, retained)
@@ -397,6 +437,7 @@ def bind_producer_launch_inputs(
                                     identity_field="binding_file_identity", digest_field="binding_sha256")
             validated = validate_producer_launch_inputs(
                 root, intent=intent, attestation=attestation, artifact=artifact, require_unexpired=True,
+                **({"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}),
             )
             if validated is None or validated.launch_binding_sha256 != value["binding_sha256"]:
                 _fail("binding_changed")
@@ -411,17 +452,22 @@ def bind_producer_launch_inputs(
 def validate_producer_launch_inputs(
     workspace: str | Path, *, intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
     artifact: NativeBootstrapArtifact, require_unexpired: bool = False,
+    fixed_u_owner=None,
 ) -> ProducerLaunchInputDescriptor | None:
     """Read exact inputs/binding without writes, locks, launch, replay or renewed budget.
 
     Legacy intents without a marker or retained material return None. A marker or staged material
     forbids downgrade. require_unexpired follows the RSI composition interface; this neutral
     configuration has no independent deadline and leaves the original native intent budget intact.
+    The explicit fixed-U profile also retains its original monotonic deadline:
+    expired diagnostics retain only original-pin inspection, never launch authority.
     """
     if (not isinstance(intent, ProducerLaunchIntent) or not isinstance(attestation, ProducerLaunchAttestation)
             or not isinstance(artifact, NativeBootstrapArtifact) or type(require_unexpired) is not bool):
         _fail("input_invalid")
     try:
+        if fixed_u_owner is not None:
+            fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner, require_unexpired=require_unexpired)
         marker = _marker(intent)
         root = files.absolute_path(workspace)
         batch = root / "evolution" / "producer-batches" / intent.journal_id
@@ -433,7 +479,7 @@ def validate_producer_launch_inputs(
         if marker is None:
             _fail("marker_missing")
         root, batch = _batch(root, intent.journal_id)
-        retained = _read_inputs(root, batch)
+        retained = _read_inputs(root, batch, fixed_u_owner=fixed_u_owner, require_unexpired=require_unexpired)
         raw, binding_file = _read_bound_file(path)
         expected = _launch_payload(
             intent, attestation, artifact, retained,
@@ -443,7 +489,7 @@ def validate_producer_launch_inputs(
         if (not isinstance(value, dict) or set(value) != _BINDING_FIELDS
                 or value != expected or raw != _canonical(value)):
             _fail("binding_changed")
-        if _read_inputs(root, batch) != retained:
+        if _read_inputs(root, batch, fixed_u_owner=fixed_u_owner, require_unexpired=require_unexpired) != retained:
             _fail("input_changed")
         if _read_bound_file(path) != (raw, binding_file):
             _fail("binding_changed")

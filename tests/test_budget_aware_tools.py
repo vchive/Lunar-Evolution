@@ -1,7 +1,6 @@
 """Invocation budgets must reach tools without becoming stale session state."""
 
 import json
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -152,9 +151,9 @@ def test_profile_commands_recompute_deadline_without_mutating_registry(tmp_path,
     def run(command, **kwargs):
         observed.append(kwargs["timeout"])
         clock.now += 2
-        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+        return b"ok", b"", "succeeded", 0, None
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", run)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", run)
     tools = LocalToolRegistry(allow_exec=True, command_timeout=30)
     calls = tuple(ToolCall(str(i), "run_command", {"command": ["fixture"]}) for i in range(2))
     model = Model([ModelTurn("", calls), ModelTurn("done")], clock)
@@ -176,9 +175,9 @@ def test_expired_profile_does_not_spawn_later_command_or_accept_final(tmp_path, 
     def run(command, **kwargs):
         spawned.append(kwargs["timeout"])
         clock.now = 10
-        raise subprocess.TimeoutExpired(command, kwargs["timeout"], output=b"saved")
+        return b"saved", b"", "timed_out", None, "process_timed_out"
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", run)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", run)
     calls = tuple(ToolCall(str(i), "run_command", {"command": ["fixture"]}) for i in range(2))
     tools = LocalToolRegistry(allow_exec=True)
     model = Model([ModelTurn("", calls), ModelTurn("forbidden success")], clock)
@@ -197,9 +196,9 @@ def test_deadline_scope_rejects_expired_and_restores_nested_exception(tmp_path, 
 
     def run(command, **kwargs):
         observed.append(kwargs["timeout"])
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return b"", b"", "succeeded", 0, None
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", run)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", run)
     tools = LocalToolRegistry(allow_exec=True, command_timeout=3)
     with tools.execution_deadline(2):
         with pytest.raises(RuntimeError), tools.execution_deadline(5):
@@ -218,9 +217,9 @@ def test_deadlines_are_context_local_for_shared_registry(tmp_path, monkeypatch):
     barrier = Barrier(2)
 
     def run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 0, stdout=str(kwargs["timeout"]), stderr="")
+        return str(kwargs["timeout"]).encode(), b"", "succeeded", 0, None
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", run)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", run)
     tools = LocalToolRegistry(allow_exec=True)
 
     def invoke(limit):
@@ -235,13 +234,13 @@ def test_deadlines_are_context_local_for_shared_registry(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("stdout,stderr", [
     (b"checkpoint-ready", None), (None, b"checkpoint-ready"),
-    (b"check", b"point-ready"), ("check", b"point-ready"), (None, None),
+    (b"check", b"point-ready"), (b"checkpoint", b"-ready"), (None, None),
 ])
 def test_command_timeout_preserves_available_streams(tmp_path, monkeypatch, stdout, stderr):
     def run(command, **kwargs):
-        raise subprocess.TimeoutExpired(command, kwargs["timeout"], output=stdout, stderr=stderr)
+        return stdout or b"", stderr or b"", "timed_out", None, "process_timed_out"
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", run)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", run)
     result = LocalToolRegistry(allow_exec=True).execute("run_command", {"command": ["fixture"]}, tmp_path)
     assert not result.success
     assert result.output.startswith("command timed out")

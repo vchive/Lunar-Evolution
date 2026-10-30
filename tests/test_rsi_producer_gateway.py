@@ -123,6 +123,27 @@ def test_python_handoff_is_mandatory(tmp_path, monkeypatch):
         PythonProducerRSIExecutionConfig("openevolve", value.ledger, inputs)
 
 
+def test_execution_config_accepts_explicit_native_supplier_as_the_only_handoff_form(tmp_path, monkeypatch):
+    value = _fixture(tmp_path, monkeypatch)
+    # Isolate this facade's either-supplier requirement. The real static sink,
+    # immutable input and native launch gates have dedicated component tests;
+    # this sentinel must never be offered as an accepted launch configuration.
+    monkeypatch.setattr("lunar_evolution.rsi_producer_gateway.PythonRSISchedulerPlanFactory", lambda _inputs: None)
+    native = value.context.native_context
+
+    def supplier(_run):
+        raise AssertionError("configuration validation must not invoke a supplier")
+
+    object.__setattr__(native, "python_handoff_after_execution", None)
+    object.__setattr__(native, "python_handoff_after_native_execution", supplier)
+    object.__setattr__(native, "live_modules_sink", object())
+    config = PythonProducerRSIExecutionConfig("openevolve", value.ledger, value.context)
+    assert config.inputs.native_context.python_handoff_after_native_execution is supplier
+    object.__setattr__(native, "python_handoff_after_execution", _handoff)
+    with pytest.raises(RSILearningError, match="supplier_conflict"):
+        PythonProducerRSIExecutionConfig("openevolve", value.ledger, value.context)
+
+
 def test_hostile_nested_sidecar_refuses_before_property_or_provider_access(tmp_path, monkeypatch):
     value = _fixture(tmp_path, monkeypatch)
 

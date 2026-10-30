@@ -222,8 +222,9 @@ def _retained_reserved_brs_materials(
     whole-wire prefix; it never slices a multi-batch wire into a single batch.
     """
     from .rsi_brs_reserved_rejection import (
-        _transition_scope,
-        validate_reserved_brs_rejected_entry,
+        _prefix,
+        _transition_scope_from_prefix,
+        _validated_entry_from_prefix,
     )
 
     _shape(state)
@@ -237,9 +238,15 @@ def _retained_reserved_brs_materials(
             or provenance_reserve not in {0, MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES}):
         _fail("shape_invalid")
     retained_ready_capsule_bytes(state)
-    _before, active, old_index = _transition_scope(wire, wire, prefix, original_lineage_bytes)
-    rejected = validate_reserved_brs_rejected_entry(active, prefix=prefix,
-        native_plan_sha256=native_plan_sha256, with_provenance=with_provenance)
+    # Keep fresh parsing on each invocation and share detached facts only on
+    # this pure stack. Scope errors still precede the entry error wrapper.
+    parsed_prefix = _prefix(prefix)
+    _before, active, old_index = _transition_scope_from_prefix(
+        wire, wire, parsed_prefix, original_lineage_bytes,
+    )
+    rejected = _validated_entry_from_prefix(
+        active, parsed_prefix, native_plan_sha256, with_provenance,
+    )
     if wire["rejections"] != [*old_index, {"ordinal": rejected.ordinal,
             "journal_id": rejected.journal_id, "rejected_sha256": rejected.digest()}]:
         _fail("rejection_index_invalid")
@@ -346,6 +353,53 @@ def _retained_reserved_brs_c2_evidence_bytes(
     return _retained_reserved_brs_materials(captured_c1_state, c2_wire, retained_tables, published_tables,
         prefix=prefix, original_lineage_bytes=original_lineage_bytes, native_plan_sha256=native_plan_sha256,
         provenance_reserve=0, with_provenance=True)[0]
+
+
+def _retained_reserved_brs_c1_c2_evidence_bytes(
+    captured_c1_state, c1_wire, c2_wire, retained_tables, published_tables, *, prefix,
+    original_lineage_bytes, native_plan_sha256,
+):
+    """Check a historical pair with one complete pure material accumulation.
+
+    C2 may only add the selected P reference to C1. The original transition
+    reader still reparses its full bounded prefix and both active entries. Once
+    that comparison succeeds, every other path and inode is exactly the C1
+    material domain just accumulated here, including older P files. Add the
+    actual active P against that same domain, preserving alias, drift and cap
+    checks. No result or caller-owned table survives this invocation.
+
+    This private joint reader is for an already observed historical pair. The
+    standalone C1/C2 readers retain their independent complete observations.
+    Physical evidence and history reads remain the original owner's obligation.
+    """
+    from .rsi_brs_reserved_rejection import validate_reserved_brs_c2_transition
+
+    total, materials, identities = _retained_reserved_brs_materials(
+        captured_c1_state, c1_wire, retained_tables, published_tables, prefix=prefix,
+        original_lineage_bytes=original_lineage_bytes, native_plan_sha256=native_plan_sha256,
+        provenance_reserve=MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES,
+    )
+    # Keep the outer C2 state/transition boundary. Its original transition
+    # proves that no older material, association or active non-P field changed.
+    _shape(captured_c1_state)
+    if type(captured_c1_state) is not dict:
+        _fail("shape_invalid")
+    if captured_c1_state.get(_LINEAGE_FIELD) != c1_wire:
+        _fail("captured_c1_drift")
+    validate_reserved_brs_c2_transition(c1_wire, c2_wire, prefix=prefix,
+        original_lineage_bytes=original_lineage_bytes, native_plan_sha256=native_plan_sha256)
+    # Preserve C2's exact plain-input gate, in addition to its stricter bounded
+    # transition parser. The same state and tables were fully checked above;
+    # no callback, I/O or authority boundary separates these pure calculations.
+    _shape(c2_wire)
+    entry = c2_wire["batches"][-1]
+    pin = NativeRSIRejectionFilePin.from_dict(entry["rejection_provenance"]["file_pin"])
+    path = "evolution/producer-batches/" + entry["journal_id"] + "/" + pin.name
+    record = {"kind": "file", **{field: getattr(pin, field) for field in _OBSERVATION_FIELDS}}
+    c2_total = total + _add_material(materials, identities, path, record)
+    if c2_total > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+        _fail("aggregate_exhausted")
+    return total, c2_total
 
 
 __all__ = ["retained_brs_c1_evidence_bytes", "retained_brs_c2_evidence_bytes"]

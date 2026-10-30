@@ -13,6 +13,11 @@ returns only detached observations:
   image ceiling; and
 - runtime `not-run`, `succeeded`, or `failed` status with a fixed failure label.
 
+A runtime `succeeded` observation requires an attempted process, exit code zero,
+and no failure label. A `failed` observation requires an attempted process and a
+fixed failure label; exit code zero remains allowed because probe validation
+can fail after a process exits normally.
+
 The parser rejects duplicate keys, noncanonical bytes, unknown fields, mutable
 mapping subclasses, malformed pins, invalid ELF claims, inconsistent blocked or
 not-run states, and any true capability claim. It performs no filesystem read,

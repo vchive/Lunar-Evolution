@@ -706,3 +706,23 @@ def test_successful_c1_cannot_repeat_retain_or_checkpoint(tmp_path, monkeypatch)
             owner_fixture._unchanged(value, before)
             assert value.ledger.controller_checkpoint_history(value.binding.run_id) == history
         _quiet(value)
+
+
+def test_final_c1_readback_refuses_history_observer_shadow_before_invocation(tmp_path, monkeypatch):
+    from lunar_evolution.rsi_brs_rejection_owner import _rejection_final_readback
+
+    with _waiting(tmp_path, monkeypatch) as value:
+        before = owner_fixture._capture(value)
+        calls = []
+
+        def replacement(*_args, **_kwargs):
+            calls.append("unexpected-instance-reader")
+            raise AssertionError("final C1 readback invoked a shadow")
+
+        with monkeypatch.context() as changed:
+            changed.setattr(value.ledger, "_controller_checkpoint_history_observation_tx", replacement)
+            with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejected_final_reader_drift$"):
+                _rejection_final_readback(value.owner, "a" * 64, {}, b"{}")
+        assert calls == []
+        owner_fixture._unchanged(value, before)
+        _quiet(value)

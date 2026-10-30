@@ -1,5 +1,19 @@
 # Validation plan
 
+## 2026-10-26 standalone process accounting diagnostic
+
+The new development-only observer passed 162 synthetic cases, zero
+failures/errors/skips, plus focused Ruff, compileall, diff check and independent
+static review. All proc inputs and clocks were synthetic; no task or live process
+was launched or observed. The original mixed runners, 600-second budgets and
+failed outcomes remain unchanged. Exact source/test hashes, evidence location
+and accounting limitations are in the
+[diagnostic contract](linux-process-accounting-diagnostic.md).
+
+This result does not close Linux mixed, final CI, real static-runtime custody or
+actual solver/production CLI acceptance. Production admission and online
+publication remain false.
+
 ## 2026-10-14 actual plan-mutation refusal correction
 
 The complete owner regression exposed an unnormalized original plan parser

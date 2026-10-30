@@ -383,11 +383,14 @@ def test_binding_inode_races_are_refused_by_held_reads_and_final_revalidation(
         monkeypatch.setattr(inputs.os, "read", read)
     elif stage == "after-binding":
         original = inputs._read_bound_file
+        binding_reads = []
 
-        def read(current):
-            value = original(current)
-            if current == path and not changes:
-                replace_binding()
+        def read(current, **kwargs):
+            value = original(current, **kwargs)
+            if current == path:
+                binding_reads.append(value)
+                if not changes:
+                    replace_binding()
             return value
 
         monkeypatch.setattr(inputs, "_read_bound_file", read)
@@ -403,10 +406,16 @@ def test_binding_inode_races_are_refused_by_held_reads_and_final_revalidation(
             return value
 
         monkeypatch.setattr(inputs, "_read_inputs", read)
-    with pytest.raises(inputs.ProducerLaunchInputError):
+    _forbid_mutations(monkeypatch)
+    with pytest.raises(inputs.ProducerLaunchInputError) as refused:
         _validate(prepared)
     assert len(changes) == 1
     assert _inventory(prepared.workspace) == changes[0]
+    if stage == "after-binding":
+        assert refused.value.code == "producer_launch_inputs_binding_changed"
+        assert len(binding_reads) == 2
+        assert binding_reads[0][0] == binding_reads[1][0]
+        assert binding_reads[0][1]["inode"] != binding_reads[1][1]["inode"]
 
 
 def test_boolean_validation_option_and_config_declarations_never_grant_authority(tmp_path, native_artifact):

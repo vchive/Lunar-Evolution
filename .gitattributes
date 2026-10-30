@@ -1,0 +1,3 @@
+# Preserve the pinned upstream header's original extra newline at EOF.
+tests/fixtures/static_python_subprocess_source/Include/internal/pycore_modsupport.h.source whitespace=-blank-at-eof
+tests/fixtures/static_python_socket_source/Include/internal/pycore_modsupport.h.source whitespace=-blank-at-eof

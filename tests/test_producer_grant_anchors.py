@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import copy
 import errno
 import hashlib
 import json
 import os
+import pickle
 import stat
 from dataclasses import replace
 from pathlib import Path
@@ -935,3 +937,18 @@ def test_root_binding_observation_has_strict_pure_shape(changes):
     node = ProducerGrantBindingNode("/", ProducerGrantIdentity(1, 1, "directory"), None, "")
     with pytest.raises(ProducerGrantError, match="binding_node_invalid"):
         replace(node, **changes).validate()
+
+
+@pytest.mark.parametrize("operation", (copy.copy, copy.deepcopy, pickle.dumps))
+def test_live_original_owner_cannot_be_copied_or_serialized(tmp_path, operation):
+    working = _directory(tmp_path)
+    with _held((_request(working, "writable-directory"),)) as owner:
+        original = owner.manifest
+        descriptors = owner.pass_fds
+        with pytest.raises(ProducerGrantError, match="owner_not_transferable"):
+            operation(owner)
+        # Refused transfer neither closes nor replaces the original context.
+        owner.validate()
+        assert owner.manifest == original and owner.pass_fds == descriptors
+        assert all(not _fd_closed(fd) for fd in descriptors)
+    assert all(_fd_closed(fd) for fd in descriptors)

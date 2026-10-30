@@ -469,9 +469,14 @@ def _fault_bootstrap(tmp_path: Path, fault: int) -> Path:
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-''' + f'\n#include {json.dumps(str(native_bootstrap_source_path().with_name("native_producer_isolation.h")))}\n' + r'''
-/* Compile the real isolation helper before syscall fault macros. Its variadic
-   three-argument PR_SET_SECCOMP call is not part of this setup/drain seam. */
+''' + (
+    f'\n#include {json.dumps(str(native_bootstrap_source_path().with_name("native_whole_scope_successor_resources.h")))}\n'
+    f'#include {json.dumps(str(native_bootstrap_source_path().with_name("native_producer_isolation.h")))}\n'
+) + r'''
+/* Keep Linux UAPI types at file scope before the isolation helper's local
+ * includes set their header guards, matching the real bootstrap include order.
+ * Compile both real helpers before syscall fault macros. The isolation helper's
+ * variadic three-argument PR_SET_SECCOMP call is not part of this setup/drain seam. */
 static int fixture_prctl(int option, unsigned long a, unsigned long b,
                          unsigned long c, unsigned long d) {
     if ((FIXTURE_FAULT == 1 && option == PR_SET_CHILD_SUBREAPER) ||

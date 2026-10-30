@@ -83,6 +83,39 @@ def test_same_function_identity_cannot_hide_code_change(monkeypatch):
     _refuses()
 
 
+@pytest.mark.parametrize(("module_name", "owner_name", "name"), [
+    ("rsi_native_scheduler", "NativeRSISchedulerContext", "__post_init__"),
+    ("rsi_native_scheduler", "NativeRSISchedulerContext", "_assert_live_modules_sink"),
+    ("rsi_native_scheduler", "NativeRSISchedulerContext", "_live_modules_sink_projection"),
+    ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", "validate"),
+    ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", "compare"),
+    ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", "__init__"),
+    ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", "assert_current"),
+    ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", "to_dict"),
+    ("native_fixed_live_sink", None, "_pin_fixed_python_live_sink_request"),
+    ("static_python_fixed_profile", None, "_reparse"),
+    ("static_python_fixed_profile", None, "_parse_installation"),
+    ("static_python_fixed_profile", None, "verify_fixed_python_image"),
+    ("static_python_fixed_profile", "FixedPythonInstallation", "to_dict"),
+    ("static_python_fixed_live_modules", None, "_compose"),
+    ("static_python_fixed_live_modules", None, "compare_fixed_python_bound_live_modules"),
+    ("static_python_fixed_live_modules", None, "_compare_live_payload"),
+    ("static_python_fixed_runtime_observation", None, "_runtime_facts"),
+    ("static_python_fixed_runtime_observation", None, "map_fixed_python_runtime_observation"),
+    ("static_python_fixed_runtime_observation", None, "validate_fixed_python_runtime_observation_policy"),
+    ("native_trusted_scheduler", None, "_run_native_trusted_producer"),
+    ("native_trusted_scheduler", None, "_prepare_native_trusted_python_producer"),
+    ("native_trusted_scheduler", None, "run_native_trusted_producer"),
+    ("native_trusted_scheduler", None, "run_native_trusted_producer_outcome"),
+])
+def test_live_sink_scheduler_code_drift_is_rejected(module_name, owner_name, name, monkeypatch):
+    module = importlib.import_module("lunar_evolution." + module_name)
+    owner = module if owner_name is None else getattr(module, owner_name)
+    function = getattr(owner, name)
+    monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
+    _refuses()
+
+
 def test_function_mutable_attributes_are_observed(monkeypatch):
     monkeypatch.setitem(wave._integer.__dict__, "foreign", True)
     _refuses()
@@ -143,7 +176,7 @@ def test_same_cached_project_cannot_hide_code_change(monkeypatch):
     _refuses()
 
 
-@pytest.mark.parametrize("name", ["fail", "freeze"])
+@pytest.mark.parametrize("name", ["fail", "freeze", "matches_frozen"])
 def test_nested_guard_helpers_are_checked_before_execution(name, monkeypatch):
     function = _captures(policy._PROJECT)[name].cell_contents
     assert type(function) is FunctionType
@@ -206,4 +239,41 @@ def test_reserved_delegates_remain_executable_pins(module_name, name, monkeypatc
     else:
         function = vars(module)[name]
     monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
+    _refuses()
+
+
+@pytest.mark.parametrize("name", [
+    "_memory_item", "_decision_from_dict", "_deserialize_execution", "_serialize_execution",
+])
+def test_capacity_prediction_static_controller_helpers_reject_code_drift(monkeypatch, name):
+    from lunar_evolution.rsi_controller import RSILearningController
+
+    descriptor = vars(RSILearningController)[name]
+    assert isinstance(descriptor, staticmethod)
+    function = descriptor.__func__
+    monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
+    _refuses()
+
+
+@pytest.mark.parametrize("name", [
+    "_validate_brs_reserved_prefixes", "_validate_brs_reserved_prefix_walk", "_project_brs_reserved_prefix",
+])
+@pytest.mark.parametrize("drift", ["alias", "code", "defaults", "annotations"])
+def test_ordered_prefix_walk_helpers_are_full_executable_and_capture_pins(name, drift, monkeypatch):
+    module = importlib.import_module("lunar_evolution.rsi_brs_lineage_prefix")
+    function = vars(module)[name]
+    if drift == "alias":
+        monkeypatch.setattr(module, name, _forbidden)
+    elif drift == "code":
+        monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
+    elif drift == "defaults":
+        monkeypatch.setattr(function, "__kwdefaults__", {"foreign": True})
+    else:
+        monkeypatch.setitem(function.__annotations__, "foreign", True)
+    _refuses()
+
+
+def test_reserved_owner_ordered_prefix_alias_remains_pinned(monkeypatch):
+    module = importlib.import_module("lunar_evolution.rsi_brs_reserved_owner")
+    monkeypatch.setattr(module, "_validate_brs_reserved_prefixes", _forbidden)
     _refuses()

@@ -21,7 +21,7 @@ export PATH="$HOME/.local/bin:$PATH"
 uv --version
 python3.12 --version
 uv venv --no-config --no-python-downloads --python python3.12 .venv
-uv pip install --no-config --python .venv/bin/python -e '.[dev,lint]'
+uv sync --locked --no-config --no-python-downloads --extra dev --extra lint
 export PATH="$PWD/.venv/bin:$HOME/.local/bin:$PATH"
 export PYTHONPATH="$PWD/src"
 
@@ -30,6 +30,9 @@ lunar-evolution --help
 ```
 
 每个 worktree 都重新建立自己的 `.venv`；不要复用另一 checkout 的 editable install 或 console launcher。`PYTHONPATH` 指向本 worktree 的 `src`，`lunar-evolution` 和 `python` 都从本 worktree 的 `.venv/bin` 启动。不要把虚拟环境加入 Git。
+
+回归依赖必须来自 `uv.lock`。未锁定安装可能升级 pytest，改变参数化用例 ID，
+导致历史清单核验或 hostile-object 收集失败。不要为适配依赖漂移而改历史源或清单 SHA。
 
 修改后运行对应 focused tests，以及静态检查：
 
@@ -42,15 +45,15 @@ git diff --check
 
 用改动实际覆盖的测试替换示例 focused test。运行 native fixture 前确认 Linux、C 编译器和所需内核功能可用；查看 skip、failure 和 error 的具体原因。
 
-## 六个普通 current 分片与三个独立重用例
+## 六个普通 current 分片与七个独立重用例
 
-当前 CI 使用 `tools/run_tests.py`，六个普通分片统一 `--shard-count 6 --isolate-heavy`，另以 `current-heavy` 独立执行三个明确登记的 mixed 用例。九个角色必须使用同一 Git 提交；普通分片与重用例的清单互斥，并集必须等于完整 collection。focused 和 history 仍分别运行，完整角色及 Python 版本以 [workflow](../.github/workflows/test.yml) 为准。
+当前 CI 使用 `tools/run_tests.py`，六个普通分片统一 `--shard-count 6 --isolate-heavy`，另以 `current-heavy` 独立执行三个 DRS mixed 用例和四个 BRS serial 用例。十三个角色必须使用同一 Git 提交；普通分片与重用例的清单互斥，并集必须等于完整 collection。focused 和 history 仍分别运行，完整角色及 Python 版本以 [workflow](../.github/workflows/test.yml) 为准。
 
-旧 `current --shard-count 6` 不带 `--isolate-heavy` 时仍完整运行六个 whole-file 分片；同文件的三个重用例会串行，可能超过 CI job 时限。已有旧版运行不要中途更换算法或补写 summary，新方案应另建目录和源码快照。
+旧 `current --shard-count 6` 不带 `--isolate-heavy` 时仍完整运行六个 whole-file 分片；同文件的重用例会串行，可能超过 CI job 时限。已有旧版运行不要中途更换算法或补写 summary，新方案应另建目录和源码快照。
 
 `current` 内的 runner 回归也会读取固定历史提交，因此 current 和 history 都需要先检查完整历史。浅 clone 在联网时先执行 `git fetch --unshallow origin`；也可以显式 fetch 下列固定对象。不要更改 runner 中的 pins 来绕过缺失历史。
 
-先在仓库根目录检查固定对象，再创建一轮全新的目录和九个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
+先在仓库根目录检查固定对象，再创建一轮全新的目录和十三个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
 
 ```bash
 set -euo pipefail
@@ -66,7 +69,7 @@ run_parent="$(dirname "$PWD")/lunar-local-runs"
 mkdir -p "$run_parent"
 run_root="$(mktemp -d "$run_parent/$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:12}-XXXXXX")"
 printf '%s\n' "$revision" > "$run_root/revision.txt"
-for test_role in current-0 current-1 current-2 current-3 current-4 current-5 heavy-0 heavy-1 heavy-2; do
+for test_role in current-0 current-1 current-2 current-3 current-4 current-5 heavy-0 heavy-1 heavy-2 heavy-3 heavy-4 heavy-5 heavy-6; do
   shard_root="$run_root/$test_role"
   mkdir -p "$shard_root/home" "$shard_root/results"
   # binding 会重复记录绝对路径；使用短、独占的临时根，保持原字节上限。
@@ -74,21 +77,20 @@ for test_role in current-0 current-1 current-2 current-3 current-4 current-5 hea
   git worktree add --detach "$shard_root/checkout" "$revision"
   uv venv --no-config --no-python-downloads --python python3.12 \
     "$shard_root/checkout/.venv"
-  uv pip install --no-config \
-    --python "$shard_root/checkout/.venv/bin/python" \
-    -e "$shard_root/checkout[dev,lint]"
+  uv sync --locked --no-config --no-python-downloads \
+    --project "$shard_root/checkout" --extra dev --extra lint
 done
 printf 'run_root=%s\n' "$run_root"
 ```
 
-为九个角色分别运行下面一段，将 `run_root` 设为上一步打印的绝对路径，`test_role` 分别设为 `current-0` 到 `current-5`、`heavy-0` 到 `heavy-2`。每个角色独占 checkout、`.venv`、`TMPDIR`、Lunar home 和 results；不要让多个测试进程共享 SQLite/WAL 或同一临时目录。CPU 和内存资源由运行者按机器负载分配，先保守运行再增加并发。已有 `tmux` 时可在会话内运行测试，断线后重新 attach；不需要安装常驻服务。
+为十三个角色分别运行下面一段，将 `run_root` 设为上一步打印的绝对路径，`test_role` 分别设为 `current-0` 到 `current-5`、`heavy-0` 到 `heavy-6`。每个角色独占 checkout、`.venv`、`TMPDIR`、Lunar home 和 results；不要让多个测试进程共享 SQLite/WAL 或同一临时目录。CPU 和内存资源由运行者按机器负载分配，先保守运行再增加并发。已有 `tmux` 时可在会话内运行测试，断线后重新 attach；不需要安装常驻服务。
 
 ```bash
 run_root='/absolute/path/to/this-run'
 test_role=current-0
 case "$test_role" in
   current-[0-5]) suite_args=(--suite current --shard-index "${test_role#current-}" --shard-count 6 --isolate-heavy) ;;
-  heavy-[0-2]) suite_args=(--suite current-heavy --heavy-index "${test_role#heavy-}") ;;
+  heavy-[0-6]) suite_args=(--suite current-heavy --heavy-index "${test_role#heavy-}") ;;
   *) echo 'invalid test role' >&2; exit 1 ;;
 esac
 shard_root="$run_root/$test_role"
@@ -123,13 +125,18 @@ printf '%s\n' "${pipeline_status[1]}" > "$shard_root/results/log-exit-status.txt
 
 上面的历史对象检查也适用于单独运行 history。缺少对象时先补齐仓库，再创建新的结果目录运行；不能把缺少历史导致的 setup error 计为功能已通过。
 
-history 会用 uv 离线建立历史环境，因此预先用同一个 uv cache 安装当前 package/build 依赖，并缓存当前环境使用的同版 pytest。仅通过 pip 装过依赖不保证 uv cache 已预热，缺少缓存时 offline 安装会失败。以下在已建立的独立 history checkout 和 `.venv` 内运行；测试前不切换 `UV_CACHE_DIR`，也不要清理该 cache：
+history 会用 uv 离线建立历史环境，因此预先用同一个 uv cache 安装锁定的 package/build 依赖，并预热精确锁版本的 registry metadata。仅通过 pip 安装或 `uv sync --locked` 下载 wheel 不保证离线 resolver metadata 已缓存；缺少时，history 会在测试收集前拒绝建立环境。以下在已建立的独立 history checkout 和 `.venv` 内运行；测试前不切换 `UV_CACHE_DIR`，也不要清理该 cache：
 
 ```bash
-pytest_version="$(python -c 'import importlib.metadata; print(importlib.metadata.version("pytest"))')"
-uv pip install --no-config --reinstall-package pytest \
-  --python .venv/bin/python -e '.[dev,lint]' "pytest==$pytest_version"
+mkdir -p .lunar-evolution/test-results
+uv export --locked --no-hashes --no-emit-project --extra dev --extra lint \
+  --output-file .lunar-evolution/test-results/ci-locked-requirements.txt
+uv pip compile --no-config --no-python-downloads --python .venv/bin/python \
+  .lunar-evolution/test-results/ci-locked-requirements.txt \
+  --output-file .lunar-evolution/test-results/ci-registry-metadata.txt
 ```
+
+这一步只在线解析锁定版本并缓存 registry metadata，不重新安装或升级环境；历史执行本身仍使用原 `--offline` 安装流程。保留这两个清单及首次失败日志，再由完整 CI 验证实际缓存命中。
 
 需要 history 时使用另一独立 checkout、环境和结果目录，运行 `python tools/run_tests.py --suite history --junit-dir /absolute/path/to/results`，同样捕获日志和退出码。focused 角色需要逐项执行 workflow 的约束；仅运行一个 focused test 不等于完成该角色。
 

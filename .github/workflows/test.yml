@@ -9,6 +9,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUNBUFFERED: "1"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
-        role: ["focused", "current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "history"]
+        role: ["current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "heavy-3", "heavy-4", "heavy-5", "heavy-6", "history"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,10 +29,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install package and test dependencies
         # Historical identity checks require the local .venv and uv's console launcher.
+        # Collection IDs are part of the immutable historical inventory.
         run: |
           python -m pip install 'uv==0.11.8'
           python -m venv .venv
-          uv pip install --python .venv/bin/python -e '.[dev,lint]'
+          uv sync --locked --no-python-downloads --extra dev --extra lint
+          # Historical snapshots resolve offline by registry requirement. A
+          # lockfile sync alone caches wheels without all resolver metadata.
+          mkdir -p .lunar-evolution/ci-dependencies
+          uv export --locked --no-hashes --no-emit-project --extra dev --extra lint --output-file .lunar-evolution/ci-dependencies/ci-locked-requirements.txt
+          uv pip compile --no-config --no-python-downloads --python .venv/bin/python .lunar-evolution/ci-dependencies/ci-locked-requirements.txt --output-file .lunar-evolution/ci-dependencies/ci-registry-metadata.txt
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Record job source and import provenance
         env:
@@ -41,12 +50,14 @@ jobs:
           spec = importlib.util.spec_from_file_location("ci_runner", root / "tools/run_tests.py")
           runner = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(runner)
-          roles = {"focused", "current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "history"}
+          roles = {"current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "heavy-3", "heavy-4", "heavy-5", "heavy-6", "history"}
           role = os.environ["LUNAR_CI_TEST_ROLE"]
           if role not in roles:
               raise SystemExit("Invalid CI role")
           provenance = {
               "schema": "lunar-ci-job-provenance-v1", "role": role,
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
               "commit": runner._git(root, "rev-parse", "HEAD"),
               "tree": runner._git(root, "rev-parse", "HEAD^{tree}"),
               "parents": runner._git(root, "rev-list", "--parents", "-n", "1", "HEAD").split()[1:],
@@ -60,183 +71,6 @@ jobs:
               output.write(raw)
           print(raw, end="", flush=True)
           PYCODE
-      - name: Verify deterministic current shards and historical runner compatibility
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_regression_runner_shards.py --junitxml=.lunar-evolution/test-results/regression-shards.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/regression-shards.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '204' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Parallel regression runner requires 204 cases and zero failures, errors or skips')"
-      - name: Verify bounded checkpoint and source caches
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_checkpoint_digest_cache.py tests/test_rsi_source_cache.py tests/test_rsi_identity.py tests/test_rsi_identity_drift.py --junitxml=.lunar-evolution/test-results/rsi-bounded-caches.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-bounded-caches.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '89' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Bounded checkpoint/source caches require 89 cases and zero failures, errors or skips; every source observation, history row, parent chain and reference must still be freshly read and validated')"
-      - name: Verify complete toolchain copy setup
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_static_python_toolchain_private_copy.py tests/test_static_python_toolchain_private_copy_review.py --junitxml=.lunar-evolution/test-results/python-toolchain-private-copy.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-toolchain-private-copy.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '54' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Complete toolchain copy setup requires 54 cases and zero failures, errors or skips; an observed mutable copy is not immutable custody, compiler consumption or runtime acceptance')"
-      - name: Verify five fixed deferred-import source refusals
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_static_python_deferred_import_refusal.py tests/test_static_python_deferred_refusal_review.py -p no:cacheprovider --basetemp "$(mktemp -d /tmp/lunar-deferred-refusal-ci.XXXXXX)" --junitxml=.lunar-evolution/test-results/python-deferred-import-refusal.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-deferred-import-refusal.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '31' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Fixed deferred-import source refusals require 31 cases and zero failures, errors or skips; synthetic bodies and source observations are not full import closure, build consumption or runtime acceptance')"
-      - name: Verify candidate codec workload and source binding
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_static_python_candidate_codec_negative.py --junitxml=.lunar-evolution/test-results/python-candidate-codec-negative.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-candidate-codec-negative.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '22' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Candidate codec workload requires 22 cases and zero failures, errors or skips; synthetic codec and source observations do not establish static target execution or runtime acceptance')"
-      - name: Verify fresh RSI admission row parsing
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_python_admission_row.py --junitxml=.lunar-evolution/test-results/rsi-admission-row.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-admission-row.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '24' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Fresh admission row parsing requires 24 cases and zero failures, errors or skips; exact text, full canonical parsing and independent row bindings remain mandatory')"
-      - name: Verify single-history reference context reuse
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_history_reference_reuse.py --junitxml=.lunar-evolution/test-results/rsi-history-reference-reuse.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-history-reference-reuse.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '33' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Single-history reference reuse requires 33 cases and zero failures, errors or skips; fresh wire, chain, final row parsing and cross-call revalidation remain mandatory')"
-      - name: Verify exact admission types and distinct builtin namespaces
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_admission_exact_types.py tests/test_rsi_brs_builtin_domains.py tests/test_rsi_brs_freeze_boundaries.py --junitxml=.lunar-evolution/test-results/rsi-type-builtin-boundaries.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-type-builtin-boundaries.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '91' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Exact admission types, distinct builtin namespaces and freeze boundaries require 91 cases and zero failures, errors or skips; every namespace, function pin, source and history gate remains mandatory')"
-      - name: Verify detached RSI marker installation description contract
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_static_python_rsi_installation_contract.py --junitxml=.lunar-evolution/test-results/python-rsi-installation-contract.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-rsi-installation-contract.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '189' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Detached RSI installation contract requires 189 cases and zero failures, errors or skips; synthetic metadata comparison does not establish actual installation, build or runtime acceptance')"
-      - name: Verify native lifeline, producer inputs, trusted adapters and recovery
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          mkdir -p .lunar-evolution/test-results
-          python -m pytest -q tests/test_static_python_rsi_input_read_report.py --junitxml=.lunar-evolution/test-results/python-rsi-input-report.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-rsi-input-report.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '219' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Fixed two-input report prototype requires 219 cases and zero failures, errors or skips; supplied-byte comparison does not establish input authority, sealed runtime, solver acceptance or production admission')"
-          python -m pytest -q tests/test_static_python_rsi_installation_profile.py --junitxml=.lunar-evolution/test-results/python-rsi-installation-profile.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-rsi-installation-profile.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '113' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'RSI installation profile preparation requires 113 cases and zero failures, errors or skips; source substitutions do not establish build closure, installation acceptance or production admission')"
-          python -m pytest -q tests/test_static_python_rsi_launch.py tests/test_static_python_rsi_source_plan.py --junitxml=.lunar-evolution/test-results/python-rsi-launch-source.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-rsi-launch-source.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '82' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'RSI marker source preparation requires 82 cases and zero failures, errors or skips; fake APIs and source output do not establish sealed runtime, input consumption or production admission')"
-          python -m pytest -q tests/test_python_runtime_observation_policy.py --junitxml=.lunar-evolution/test-results/python-observation-policy.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-observation-policy.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '74' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Pinned Python runtime observation policy requires 74 cases and zero failures, errors or skips; inert encoder and detached consistency checks do not establish sealed runtime or production admission')"
-          python -m pytest -q tests/test_rsi_python_interruption_matrix.py --junitxml=.lunar-evolution/test-results/rsi-python-interruption.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-interruption.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '24' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Python local interruption recovery requires 24 cases and zero failures, errors or skips; retained inert journals do not establish live runtime or production admission')"
-          python -m pytest -q tests/test_rsi_python_scheduler_inputs.py --junitxml=.lunar-evolution/test-results/rsi-python-scheduler-inputs.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-scheduler-inputs.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '81' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Python scheduler input join requires 81 cases and zero failures, errors or skips; inert read-only plans do not establish runtime or production admission')"
-          python -m pytest -q tests/test_python_producer_binding_store.py tests/test_python_producer_checkpoint.py tests/test_python_producer_recovery.py tests/test_rsi_producer_checkpoint_binding.py tests/test_rsi_producer_reconcile_binding.py tests/test_python_producer_admission_handoff.py --junitxml=.lunar-evolution/test-results/python-producer-recovery.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-producer-recovery.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '117' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Python producer recovery and local handoff require 117 cases and zero failures, errors or skips; fixture recovery is not sealed CPython execution or production admission')"
-          python -m pytest -q tests/test_python_producer_admission_gate.py tests/test_python_producer_admission_handoff.py tests/test_python_producer_lifecycle.py --junitxml=.lunar-evolution/test-results/python-admission.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-admission.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '199' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Python admission composition requires 199 cases and zero failures, errors or skips; detached DTO consistency is not sealed CPython runtime or production admission')"
-          python -m pytest -q tests/test_producer_bundle_publication.py tests/test_python_handoff_publication_pin.py --junitxml=.lunar-evolution/test-results/python-handoff-pin.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-handoff-pin.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '52' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Original handoff pin publication requires 52 cases and zero failures, errors or skips; local retained identity is not runtime admission or external authentication')"
-          python -m pytest -q tests/test_python_producer_admission_anchor.py tests/test_python_producer_anchor_io.py tests/test_python_producer_transaction_anchor.py tests/test_python_producer_adapter.py --junitxml=.lunar-evolution/test-results/python-admission-export.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-admission-export.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '127' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Admission content anchor and detached adapter export require 127 cases and zero failures, errors or skips; local evidence consistency is not controller recovery or sealed runtime admission')"
-          python -m pytest -q tests/test_python_producer_recovery_anchor.py --junitxml=.lunar-evolution/test-results/python-admission-recovery.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-admission-recovery.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '128' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Read-only admission anchor recovery requires 128 cases and zero failures, errors or skips; fixture recovery is not live controller admission or sealed runtime execution')"
-          python -m pytest -q tests/test_rsi_python_admission.py --junitxml=.lunar-evolution/test-results/rsi-python-admission.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-admission.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '128' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Explicit late RSI evidence registration requires 128 cases and zero failures, errors or skips; ledger records do not establish live Python scheduling or runtime admission')"
-          python -m pytest -q tests/test_rsi_python_admission_flow.py --junitxml=.lunar-evolution/test-results/rsi-python-admission-flow.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-admission-flow.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '54' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Durable RSI admission references require 54 cases and zero failures, errors or skips; explicit evidence pinning does not establish automatic Python scheduling or runtime admission')"
-          python -m pytest -q tests/test_rsi_python_publication.py tests/test_producer_bundle_commit_interruption.py tests/test_producer_bundle_transaction_control.py --junitxml=.lunar-evolution/test-results/rsi-python-publication.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-publication.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '83' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Controller-bound publication and deadline/crash recovery require 83 cases and zero failures, errors or skips; inert receipt seams do not establish sealed runtime or production admission')"
-          python -m pytest -q tests/test_rsi_python_admission_owner.py tests/test_producer_bundle_prepared_observer.py --junitxml=.lunar-evolution/test-results/rsi-python-admission-owner.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-admission-owner.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '30' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'DRS owning-thread first pin and prepared observers require 30 cases and zero failures, errors or skips; inert provider composition is not BRS scheduling or sealed runtime admission')"
-          python -m pytest -q tests/test_rsi_python_brs_admission.py tests/test_rsi_python_brs_owner.py tests/test_rsi_python_brs_publication.py --junitxml=.lunar-evolution/test-results/rsi-python-brs-admission.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-brs-admission.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '116' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'BRS local ready/ack and worker publication refusal require 116 cases and zero failures, errors or skips; one Python child with inert transactions does not establish native gateway or sealed runtime admission')"
-          python -m pytest -q tests/test_rsi_python_scheduler_join_integration.py --junitxml=.lunar-evolution/test-results/rsi-python-scheduler-owner-boundary.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-scheduler-owner-boundary.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '14' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Scheduler owner publication boundary requires 14 cases and zero failures, errors or skips; inert integration does not establish native BRS or production admission')"
-          python -m pytest -q tests/test_rsi_python_brs_publication_mailbox.py --junitxml=.lunar-evolution/test-results/rsi-python-brs-publication-mailbox.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-brs-publication-mailbox.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '77' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'BRS owner mailbox requires 77 cases and zero failures, errors or skips; detached transport is not controller publication or production admission')"
-          python -m pytest -q tests/test_rsi_python_brs_publication_inputs.py --junitxml=.lunar-evolution/test-results/rsi-python-brs-publication-inputs.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-brs-publication-inputs.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '37' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'BRS preparation evidence projection requires 37 cases and zero failures, errors or skips; detached inputs are not owner recovery or publication authority')"
-          python -m pytest -q tests/test_rsi_python_brs_publication_recovery.py tests/test_rsi_python_brs_owner_prepared_pin.py tests/test_rsi_python_brs_owner_evidence_composition.py --junitxml=.lunar-evolution/test-results/brs-owner-evidence.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-owner-evidence.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '115' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Original BRS owner retained evidence and prepared reference require 115 cases and zero failures, errors or skips; this is not online publication or production admission')"
-          python -m pytest -q tests/test_rsi_brs_owner_before_evidence.py --junitxml=.lunar-evolution/test-results/brs-owner-before-evidence.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-owner-before-evidence.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '31' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Original BRS owner before evidence requires 31 cases and zero failures, errors or skips; retained snapshots do not grant online publication or production admission')"
-          python -m pytest -q tests/test_rsi_brs_success_evidence_facades.py --junitxml=.lunar-evolution/test-results/brs-success-evidence-facades.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-success-evidence-facades.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '38' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Original BRS owner success evidence facades require 38 cases and zero failures, errors or skips; retained evidence does not establish transaction dispatch or production admission')"
-          python -m pytest -q tests/test_rsi_brs_staged_terminal_checkpoint.py --junitxml=.lunar-evolution/test-results/brs-staged-terminal-checkpoint.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-staged-terminal-checkpoint.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '70' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Private BRS staged/terminal evidence checkpoints require 70 cases and zero failures, errors or skips; retained evidence is not online publication or production admission')"
-          python -m pytest -q tests/test_native_trusted_python_prepublication.py tests/test_python_producer_binding_fresh_tree.py tests/test_rsi_brs_publication_lineage_owner.py tests/test_rsi_publication_lineage_checkpoint_kernel.py tests/test_rsi_brs_prewave_policy.py --junitxml=.lunar-evolution/test-results/brs-checkpoint-preparation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-checkpoint-preparation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '189' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Private producer preparation, persisted BRS checkpoints and fresh tree parsing require 189 cases and zero failures, errors or skips; these primitives do not establish online publication or production admission')"
-          python -m pytest -q tests/test_producer_python_runtime_tree_parser_validation.py --junitxml=.lunar-evolution/test-results/runtime-tree-parser-validation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/runtime-tree-parser-validation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '27' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Detached tree parser equivalence requires 27 cases and zero failures, errors or skips; pure parsing grants no native admission')"
-          python -m pytest -q tests/test_rsi_python_brs_ack_detachment.py --junitxml=.lunar-evolution/test-results/rsi-python-brs-ack-detachment.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-brs-ack-detachment.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '13' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'BRS ACK detachment requires 13 cases and zero failures, errors or skips; detached channel behavior does not establish native gateway or sealed runtime admission')"
-          python -m pytest -q tests/test_rsi_python_brs_handoff.py --junitxml=.lunar-evolution/test-results/rsi-python-brs-handoff.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-brs-handoff.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '30' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'BRS handoff contract requires 30 cases and zero failures, errors or skips; pure detached handoff does not establish native gateway or sealed runtime admission')"
-          python -m pytest -q tests/test_rsi_python_brs_selected_service.py tests/test_rsi_python_brs_selected_wait.py --junitxml=.lunar-evolution/test-results/rsi-python-brs-selected-service.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-brs-selected-service.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '43' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Selected BRS owner service and settlement waiting require 43 cases and zero failures, errors or skips; private provider-free service does not establish native BRS or production admission')"
-          python -m pytest -q tests/test_rsi_python_brs_selected_settlement.py --junitxml=.lunar-evolution/test-results/rsi-python-brs-selected-settlement.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-python-brs-selected-settlement.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '92' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Selected BRS owner checkpoint settlement requires 92 cases and zero failures, errors or skips; private inert CAS/readback does not establish native BRS, publication or production admission')"
-          python -m pytest -q tests/test_static_python_source_staging.py --junitxml=.lunar-evolution/test-results/python-source-staging.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-source-staging.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '105' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Snapshot-bound source staging requires 105 cases and zero failures, errors or skips; local inert extraction is not release authentication, build or runtime admission')"
-          python -m pytest -q tests/test_static_python_source_tree_observation.py --junitxml=.lunar-evolution/test-results/python-source-tree-observation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-source-tree-observation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '26' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Original source-tree observation requires 26 cases and zero failures, errors or skips; inert byte observation is not release authentication, build or runtime admission')"
-          python -m pytest -q tests/test_static_python_source_projection.py --junitxml=.lunar-evolution/test-results/python-source-projection.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-source-projection.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '55' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Snapshot-bound Python source projection requires 55 cases and zero failures, errors or skips; this is not release, extraction, build or runtime acceptance')"
-          python -m pytest -q tests/test_static_python_archive_observation.py --junitxml=.lunar-evolution/test-results/python-archive-observation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-archive-observation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '66' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Local archive observation requires 66 cases and zero failures, errors or skips; inert fixtures do not establish release acquisition, signature, build or runtime acceptance')"
-          python -m pytest -q tests/test_static_python_toolchain_observation.py --junitxml=.lunar-evolution/test-results/python-toolchain-observation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-toolchain-observation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '52' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Complete toolchain archive observation requires 52 cases and zero failures, errors or skips; inert archive records do not establish extracted-tree custody, signature trust, compiler consumption or runtime admission')"
-          python -m pytest -q tests/test_static_python_toolchain_tree_observation.py tests/test_static_python_toolchain_tree_observation_review.py --junitxml=.lunar-evolution/test-results/python-toolchain-tree-observation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-toolchain-tree-observation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '72' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Complete toolchain tree observation requires 72 cases and zero failures, errors or skips; a sequential directory comparison does not establish immutable custody, compiler consumption, archive signatures or runtime admission')"
-          python -m pytest -q tests/test_static_python_build_inputs.py tests/test_static_python_build_recipe.py tests/test_static_python_source_plan.py tests/test_static_python_configure_plan.py --junitxml=.lunar-evolution/test-results/python-build-inputs.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-build-inputs.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '100' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Offline Python build inputs require 100 cases and zero failures, errors or skips; this is not configured closure, compilation or runtime acceptance')"
-          python -m pytest -q tests/test_static_python_verified_inputs.py --junitxml=.lunar-evolution/test-results/python-verified-inputs.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-verified-inputs.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '143' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Python verified-input metadata requires 143 cases and zero failures, errors or skips; this is not archive acquisition, signature or extraction acceptance')"
-          python -m pytest -q tests/test_static_python_source_patches.py tests/test_static_python_tables.py tests/test_static_python_source_plan.py --junitxml=.lunar-evolution/test-results/python-source-preparation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-source-preparation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '108' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Offline Python source preparation requires 108 cases and zero failures, errors or skips; this is not compilation, bytecode or runtime acceptance')"
-          python -m pytest -q tests/test_static_python_import_audit.py tests/test_static_python_source_import_profile.py tests/test_static_python_startup_scope_audit.py tests/test_static_python_startup_closure.py --junitxml=.lunar-evolution/test-results/python-source-import-audit.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-source-import-audit.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '107' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Bounded Python source import/startup audit requires 107 cases and zero failures, errors or skips; source observations and synthetic comparator checks are not configured closure or runtime acceptance')"
-          python -m pytest -q tests/test_static_python_build_recipe.py tests/test_static_python_installation.py tests/test_static_python_elf.py tests/test_python_producer_binding.py tests/test_python_producer_lifecycle.py --junitxml=.lunar-evolution/test-results/python-preparation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-preparation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '463' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Python preparation contract requires 463 cases and zero failures, errors or skips; this is not runtime startup acceptance')"
-          python -m pytest -q tests/test_python_fixture_observation.py --junitxml=.lunar-evolution/test-results/python-observation.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/python-observation.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '43' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Python observation contract requires 43 cases and zero failures, errors or skips; fake-runtime asset observations are not real runtime acceptance')"
-          python -m pytest -q tests/test_linux_executable_binding.py tests/test_linux_executable_owner.py tests/test_linux_executable_pair_owner.py tests/test_native_executable_owner.py tests/test_legacy_executable_owner.py --junitxml=.lunar-evolution/test-results/executable-owner.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/executable-owner.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '133' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'executable owner acceptance requires 133 cases and zero failures, errors or skips')"
-          python -m pytest -q tests/test_python_runtime_material_format.py tests/test_python_runtime_material_io.py tests/test_producer_python_runtime_material.py --junitxml=.lunar-evolution/test-results/runtime-material.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/runtime-material.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '274' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'runtime material acceptance requires the full focused inventory and zero failures, errors or skips')"
-          python -m pytest -q tests/test_native_keyring_control.py --junitxml=.lunar-evolution/test-results/keyring-control.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/keyring-control.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '52' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'keyring acceptance requires 52 cases and zero failures, errors or skips')"
-          python -m pytest -q tests/test_native_kernel_route_control.py --junitxml=.lunar-evolution/test-results/kernel-route-control.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/kernel-route-control.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '11' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'kernel route acceptance requires 11 cases and zero failures, errors or skips')"
-          python -m pytest -q tests/test_producer_broker_http_destination.py --junitxml=.lunar-evolution/test-results/broker-destination.xml
-          python -m pytest -q tests/test_native_named_ipc_control.py --junitxml=.lunar-evolution/test-results/posix-mq.xml
-          python -m pytest -q tests/test_native_python_pipe_fixture.py --junitxml=.lunar-evolution/test-results/python-pipe.xml
-          python -m pytest -q tests/test_native_ipc_control.py --junitxml=.lunar-evolution/test-results/ipc-control.xml
-          python -m pytest -q tests/test_native_grant_objects.py tests/test_native_grant_control.py tests/test_native_grant_inputs.py --junitxml=.lunar-evolution/test-results/grant-objects.xml
-          python -m pytest -q tests/test_producer_grant_anchors.py --junitxml=.lunar-evolution/test-results/grant-anchors.xml
-          python -m pytest -q tests/test_native_fd_control.py --junitxml=.lunar-evolution/test-results/fd-control.xml
-          python -m pytest -q tests/test_native_fd_handoff.py --junitxml=.lunar-evolution/test-results/fd-handoff.xml
-          python -m pytest -q tests/test_native_input_mutation_isolation.py --junitxml=.lunar-evolution/test-results/input-mutation.xml
-          python -m pytest -q tests/test_producer_python_runtime_tree.py --junitxml=.lunar-evolution/test-results/runtime-tree.xml
-          python -m pytest -q tests/test_native_trusted_failure.py tests/test_native_trusted_scheduler_outcome.py tests/test_rsi_native_failure_provenance.py tests/test_rsi_native_failure_gateway.py tests/test_rsi_native_failure_controller.py --junitxml=.lunar-evolution/test-results/known-failure.xml
-          python -m pytest -q tests/test_native_child_supervision_binding.py tests/test_native_descendants_drain.py --junitxml=.lunar-evolution/test-results/descendants-drain.xml
-          python -m pytest -q tests/test_native_guardian_host.py tests/test_native_independent_guardian.py tests/test_native_guardian_readiness.py --junitxml=.lunar-evolution/test-results/independent-guardian.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/independent-guardian.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '82' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Independent guardian readiness requires 82 Linux cases and zero failures, errors or skips')"
-          python -m pytest -q tests/test_native_deadline_binding.py tests/test_native_deadline_anchor.py tests/test_producer_bootstrap.py tests/test_trusted_bootstrap_claim.py tests/test_trusted_bootstrap_registration.py tests/test_trusted_worker_evidence.py --junitxml=.lunar-evolution/test-results/deadline-anchor.xml
-          python -m pytest -q tests/test_producer_python_runtime.py tests/test_native_target_control_isolation.py tests/test_native_isolation_architecture.py --junitxml=.lunar-evolution/test-results/runtime-preflight.xml
-          python -m pytest -q tests/test_producer_launch_inputs.py tests/test_native_producer_launch_inputs.py tests/test_seed_retained_admission.py tests/test_openevolve_native.py --junitxml=.lunar-evolution/test-results/trusted-adapters.xml
-          python -m pytest -q tests/test_process_ownership.py tests/test_producer_process.py tests/test_native_trusted_attempt.py tests/test_native_trusted_controller_death.py tests/test_native_trusted_deadline_guard.py tests/test_native_input_permission_isolation.py tests/test_native_trusted_scheduler_e2e.py tests/test_native_trusted_broker_cancellation_e2e.py tests/test_controller_broker_cancellation.py tests/test_controller_broker_crash_recovery.py tests/test_rsi_native_inputs.py tests/test_rsi_native_retained.py tests/test_rsi_durable_gateway.py tests/test_rsi_durable_gateway_controller.py tests/test_acceptance_campaign_audit.py --junitxml=.lunar-evolution/test-results/native-cleanup.xml
-      - name: Verify durable BRS recovery fences and terminal reconciliation
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_brs_reconcile_obligation.py tests/test_rsi_brs_reconcile_phase_cas.py tests/test_rsi_brs_selected_reconcile.py tests/test_rsi_brs_reconcile_controller.py tests/test_rsi_brs_reconcile_integrity.py tests/test_rsi_brs_obligation_recovery_gate.py tests/test_rsi_brs_inspect_cli.py --junitxml=.lunar-evolution/test-results/brs-recovery-correctness.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-recovery-correctness.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '85' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'BRS recovery requires 85 cases and zero failures, errors or skips; provider-free terminal binding does not establish sealed runtime or production admission')"
-      - name: Verify original owner mailbox recovery registration
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_brs_owner_reconcile_registration.py tests/test_rsi_python_brs_owner_bridge_reconcile.py tests/test_rsi_python_brs_owner_bridge.py --junitxml=.lunar-evolution/test-results/brs-owner-reconcile-registration.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-owner-reconcile-registration.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '23' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Original owner mailbox registration requires 23 cases and zero failures, errors or skips; this does not establish producer cleanup or automatic terminal consumption')"
-      - name: Verify exact owner mailbox result composition
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_python_brs_exact_result_composition.py tests/test_rsi_python_brs_result_delivery.py --junitxml=.lunar-evolution/test-results/brs-exact-result-composition.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-exact-result-composition.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '28' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Exact owner mailbox result composition requires 28 cases and zero failures, errors or skips; detached callback completion does not prove controller settlement or process cleanup')"
-      - name: Verify original owner durable recovery observations
-        if: ${{ matrix.role == 'focused' }}
-        run: |
-          python -m pytest -q tests/test_rsi_brs_native_process_evidence.py tests/test_rsi_brs_mailbox_evidence.py tests/test_rsi_brs_durable_recovery_evidence.py tests/test_rsi_brs_durable_policy_dependencies.py --junitxml=.lunar-evolution/test-results/brs-durable-recovery-evidence.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/brs-durable-recovery-evidence.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '91' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Durable original-owner observations require 91 cases and zero failures, errors or skips; transport receipt and prior producer cleanup are not episode terminal evidence')"
       - name: Run current regression shard
         if: ${{ startsWith(matrix.role, 'current-') }}
         shell: bash
@@ -244,7 +78,7 @@ jobs:
           LUNAR_CI_TEST_ROLE: ${{ matrix.role }}
         run: |
           set -o pipefail
-          python tools/run_tests.py --suite current --shard-index "${LUNAR_CI_TEST_ROLE#current-}" --shard-count 6 --isolate-heavy --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
+          python tools/run_tests.py --diagnostics --suite current --shard-index "${LUNAR_CI_TEST_ROLE#current-}" --shard-count 6 --isolate-heavy --junit-dir .lunar-evolution/test-results 2>&1 | python tools/ci_console.py --log .lunar-evolution/test-results/pytest.log
       - name: Run explicit heavy regression node
         if: ${{ startsWith(matrix.role, 'heavy-') }}
         shell: bash
@@ -252,16 +86,13 @@ jobs:
           LUNAR_CI_TEST_ROLE: ${{ matrix.role }}
         run: |
           set -o pipefail
-          python tools/run_tests.py --suite current-heavy --heavy-index "${LUNAR_CI_TEST_ROLE#heavy-}" --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
+          python tools/run_tests.py --diagnostics --suite current-heavy --heavy-index "${LUNAR_CI_TEST_ROLE#heavy-}" --junit-dir .lunar-evolution/test-results 2>&1 | python tools/ci_console.py --log .lunar-evolution/test-results/pytest.log
       - name: Run historical regressions
         if: ${{ matrix.role == 'history' }}
         shell: bash
         run: |
           set -o pipefail
-          python tools/run_tests.py --suite history --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
-      - name: Annotate focused test failures
-        if: ${{ always() && matrix.role == 'focused' }}
-        run: python tools/annotate_test_failures.py .lunar-evolution/test-results/python-deferred-import-refusal.xml .lunar-evolution/test-results/python-candidate-codec-negative.xml .lunar-evolution/test-results/python-toolchain-private-copy.xml .lunar-evolution/test-results/rsi-bounded-caches.xml .lunar-evolution/test-results/rsi-admission-row.xml .lunar-evolution/test-results/rsi-history-reference-reuse.xml .lunar-evolution/test-results/rsi-type-builtin-boundaries.xml .lunar-evolution/test-results/python-toolchain-observation.xml .lunar-evolution/test-results/python-toolchain-tree-observation.xml .lunar-evolution/test-results/brs-durable-recovery-evidence.xml .lunar-evolution/test-results/brs-exact-result-composition.xml .lunar-evolution/test-results/brs-owner-reconcile-registration.xml .lunar-evolution/test-results/brs-recovery-correctness.xml .lunar-evolution/test-results/regression-shards.xml .lunar-evolution/test-results/brs-success-evidence-facades.xml .lunar-evolution/test-results/brs-owner-before-evidence.xml .lunar-evolution/test-results/brs-owner-evidence.xml .lunar-evolution/test-results/brs-staged-terminal-checkpoint.xml .lunar-evolution/test-results/brs-checkpoint-preparation.xml .lunar-evolution/test-results/python-rsi-installation-contract.xml .lunar-evolution/test-results/python-rsi-input-report.xml .lunar-evolution/test-results/python-rsi-installation-profile.xml .lunar-evolution/test-results/python-rsi-launch-source.xml .lunar-evolution/test-results/python-observation-policy.xml .lunar-evolution/test-results/rsi-python-interruption.xml .lunar-evolution/test-results/rsi-python-scheduler-inputs.xml .lunar-evolution/test-results/rsi-python-brs-admission.xml .lunar-evolution/test-results/rsi-python-scheduler-owner-boundary.xml .lunar-evolution/test-results/rsi-python-brs-publication-mailbox.xml .lunar-evolution/test-results/rsi-python-brs-publication-inputs.xml .lunar-evolution/test-results/runtime-tree-parser-validation.xml .lunar-evolution/test-results/rsi-python-admission-owner.xml .lunar-evolution/test-results/rsi-python-publication.xml .lunar-evolution/test-results/rsi-python-admission-flow.xml .lunar-evolution/test-results/rsi-python-admission.xml .lunar-evolution/test-results/python-producer-recovery.xml .lunar-evolution/test-results/python-admission-export.xml .lunar-evolution/test-results/python-admission-recovery.xml .lunar-evolution/test-results/python-admission.xml .lunar-evolution/test-results/python-handoff-pin.xml .lunar-evolution/test-results/python-source-staging.xml .lunar-evolution/test-results/python-source-tree-observation.xml .lunar-evolution/test-results/python-source-projection.xml .lunar-evolution/test-results/python-archive-observation.xml .lunar-evolution/test-results/python-build-inputs.xml .lunar-evolution/test-results/python-verified-inputs.xml .lunar-evolution/test-results/python-source-preparation.xml .lunar-evolution/test-results/python-preparation.xml .lunar-evolution/test-results/python-observation.xml .lunar-evolution/test-results/executable-owner.xml .lunar-evolution/test-results/runtime-material.xml .lunar-evolution/test-results/keyring-control.xml .lunar-evolution/test-results/kernel-route-control.xml .lunar-evolution/test-results/broker-destination.xml .lunar-evolution/test-results/posix-mq.xml .lunar-evolution/test-results/python-pipe.xml .lunar-evolution/test-results/ipc-control.xml .lunar-evolution/test-results/grant-objects.xml .lunar-evolution/test-results/grant-anchors.xml .lunar-evolution/test-results/fd-control.xml .lunar-evolution/test-results/fd-handoff.xml .lunar-evolution/test-results/input-mutation.xml .lunar-evolution/test-results/runtime-tree.xml .lunar-evolution/test-results/known-failure.xml .lunar-evolution/test-results/descendants-drain.xml .lunar-evolution/test-results/independent-guardian.xml .lunar-evolution/test-results/deadline-anchor.xml .lunar-evolution/test-results/runtime-preflight.xml .lunar-evolution/test-results/trusted-adapters.xml .lunar-evolution/test-results/native-cleanup.xml .lunar-evolution/test-results/rsi-python-brs-ack-detachment.xml .lunar-evolution/test-results/rsi-python-brs-handoff.xml .lunar-evolution/test-results/rsi-python-brs-selected-service.xml .lunar-evolution/test-results/rsi-python-brs-selected-settlement.xml
+          python tools/run_tests.py --diagnostics --suite history --junit-dir .lunar-evolution/test-results 2>&1 | python tools/ci_console.py --log .lunar-evolution/test-results/pytest.log
       - name: Annotate current shard failures
         if: ${{ always() && startsWith(matrix.role, 'current-') }}
         env:
@@ -287,3 +118,54 @@ jobs:
       - name: Static checks
         if: ${{ always() }}
         run: ruff check src tests tools
+
+  focused:
+    name: Focused gates (Python ${{ matrix.python-version }})
+    needs: test
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install aggregate dependencies
+        run: |
+          python -m pip install 'uv==0.11.8'
+          python -m venv .venv
+          uv sync --locked --no-python-downloads --extra dev
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Download original current shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-python-${{ matrix.python-version }}-current-*
+          path: .lunar-evolution/focused-inputs
+      - name: Download original heavy node reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-python-${{ matrix.python-version }}-heavy-*
+          path: .lunar-evolution/focused-inputs
+      - name: Verify focused gates from original reports
+        if: ${{ always() }}
+        shell: bash
+        env:
+          LUNAR_CI_UPSTREAM_RESULT: ${{ needs.test.result }}
+        run: |
+          set -o pipefail
+          mkdir -p .lunar-evolution/test-results
+          python tools/aggregate_focused_ci.py --artifacts-dir .lunar-evolution/focused-inputs --python-version "${{ matrix.python-version }}" --upstream-result "$LUNAR_CI_UPSTREAM_RESULT" --output .lunar-evolution/test-results/focused-gate.summary.json 2>&1 | tee .lunar-evolution/test-results/focused-gate.log
+      - name: Preserve derived focused gate receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: focused-gate-python-${{ matrix.python-version }}
+          path: .lunar-evolution/test-results/
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: warn

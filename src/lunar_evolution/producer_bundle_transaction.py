@@ -420,6 +420,23 @@ def _native_lineage_call(owner: object, original_brs: object | None, method: str
     return _call_original_brs_owner(original_brs, method, *args, **kwargs)
 
 
+def _observe_native_producer_evidence(
+    evidence_revalidator: Callable[[str], None], original_brs: object | None, stage: str,
+) -> None:
+    """Own the full original BRS post-observation gate at every evidence call site.
+
+    A callback is never trusted to have checked the owner, regardless of its
+    type, attributes or return value. Generic transactions retain their original
+    callback behavior. The exact original-owner path always observes fresh
+    SQL, retained files and policy after the callback returns.
+    """
+    evidence_revalidator(stage)
+    if original_brs is not None:
+        from .rsi_python_brs_native_dispatch import _fixed_original_brs_owner
+
+        _fixed_original_brs_owner(original_brs)
+
+
 def _ensure_append_population_window(
     state: Mapping[str, Any], records: Sequence[Candidate], strategy: PopulationStrategy,
     *, prior_events: tuple[tuple[str, ...], ...],
@@ -751,7 +768,7 @@ def _run_native_producer_bundle_publication_transaction(
     checkpoint("producer_preparation")
     if evidence_revalidator is not None:
         checkpoint.observe_checkpoint_before_evidence("producer_preparation")
-        evidence_revalidator("producer_preparation")
+        _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner, "producer_preparation")
         if hasattr(checkpoint, "revalidate_after_observation"):
             checkpoint.revalidate_after_observation("producer_preparation")
             if _original_brs_owner is not None:
@@ -870,8 +887,9 @@ def _run_native_producer_bundle_publication_transaction(
             original_checkpoint(stage)
             original_checkpoint.observe_checkpoint_before_evidence(stage)
             if evidence_revalidator is not None:
-                evidence_revalidator(stage)
-            _fixed_original_brs_owner(_original_brs_owner)
+                _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner, stage)
+            else:
+                _fixed_original_brs_owner(_original_brs_owner)
             observe_original_handoff()
             result = retained_revalidate(stage)
             _original_brs_numeric_tail(_original_brs_owner)
@@ -894,7 +912,7 @@ def _run_native_producer_bundle_publication_transaction(
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
         if evidence_revalidator is not None:
-            evidence_revalidator(stage)
+            _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner, stage)
             if hasattr(original_checkpoint, "revalidate_after_observation"):
                 result = original_checkpoint.revalidate_after_observation(stage)
             elif strategy._cancelled():
@@ -935,11 +953,8 @@ def _run_native_producer_bundle_publication_transaction(
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
         if evidence_revalidator is not None:
-            evidence_revalidator(stage)
+            _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner, stage)
             if _original_brs_owner is not None:
-                from .rsi_python_brs_native_dispatch import _fixed_original_brs_owner
-
-                _fixed_original_brs_owner(_original_brs_owner)
                 observe_original_handoff()
             revalidate = getattr(original_checkpoint, "revalidate_after_observation", None)
             observed_at = execution_control._now() if execution_control is not None else time.monotonic()
@@ -1086,7 +1101,8 @@ def _run_native_producer_bundle_publication_transaction(
                 _native_lineage_call(lineage_owner, _original_brs_owner, "retain_terminal", terminal, None)
             if evidence_revalidator is not None:
                 checkpoint.observe_cancellation_before_evidence("producer_terminal_replay")
-                evidence_revalidator("producer_terminal_replay")
+                _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner,
+                                                 "producer_terminal_replay")
                 revalidate = getattr(checkpoint, "revalidate_after_observation", None)
                 if callable(revalidate):
                     revalidate("producer_terminal_replay")
@@ -1166,7 +1182,7 @@ def _run_native_producer_bundle_publication_transaction(
             _verify_python_admission_attempt_anchor(root, python_handoff)
         if evidence_revalidator is not None:
             checkpoint.observe_cancellation_before_evidence("producer_all_rejected")
-            evidence_revalidator("producer_all_rejected")
+            _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner, "producer_all_rejected")
             revalidate = getattr(checkpoint, "revalidate_after_observation", None)
             if callable(revalidate):
                 revalidate("producer_all_rejected")
@@ -1235,7 +1251,7 @@ def _run_native_producer_bundle_publication_transaction(
         if evidence_revalidator is not None:
             # Commit has already crossed its durable unknown marker. This read-only
             # refusal preserves committed evidence; do not interrupt or roll it back.
-            evidence_revalidator("producer_postcommit")
+            _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner, "producer_postcommit")
         archive = CandidateArchive(root, requested_strategy="population", read_only=True)
         records = tuple(archive.records())
         archive.validate_candidate_integrity(require_all=True, records=records)
@@ -1259,7 +1275,7 @@ def _run_native_producer_bundle_publication_transaction(
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
         if evidence_revalidator is not None:
-            evidence_revalidator("producer_return")
+            _observe_native_producer_evidence(evidence_revalidator, _original_brs_owner, "producer_return")
     except (NativeProducerBundleTransactionError, SolveExecutionCancelled, SolveExecutionBudgetExceeded):
         raise
     except Exception as exc:

@@ -447,12 +447,25 @@ def test_tool_command_registers_and_releases_owned_process(tmp_path, stop):
     _assert_released(events)
 
 
-def test_tool_command_default_uses_legacy_path(tmp_path, monkeypatch):
-    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes",
-                        lambda *a, **k: pytest.fail("tracked path without observer"))
-    registry = LocalToolRegistry(allow_exec=True)
+def test_tool_command_without_observer_uses_bounded_capture(tmp_path, monkeypatch):
+    from lunar_evolution import candidate_execution_runner
+
+    original = candidate_execution_runner._bounded_process_bytes
+    captures = []
+
+    def bounded(*args, **kwargs):
+        captures.append(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(candidate_execution_runner, "_bounded_process_bytes", bounded)
+    registry = LocalToolRegistry(allow_exec=True, command_timeout=3, max_output_bytes=512)
     result = registry.execute("run_command", {"command": [sys.executable, "-c", "print('done')"]}, tmp_path)
     assert result.success and result.output == "exit_code=0\nstdout:\ndone\n"
+    assert len(captures) == 1
+    assert captures[0]["process_observer"] is None
+    assert captures[0]["process_released"] is None
+    assert captures[0]["timeout"] == 3
+    assert captures[0]["output_limit"] == captures[0]["capture_limit"] == 512
 
 
 def test_tracked_tool_preserves_explicit_environment_and_shared_deadline(tmp_path, monkeypatch):

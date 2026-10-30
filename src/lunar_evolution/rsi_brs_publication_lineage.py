@@ -34,6 +34,7 @@ from typing import Any
 
 from . import _benchmark_files as _files
 from . import producer_bundle_recovery as recovery
+from . import producer_python_runtime_tree as runtime_tree
 from . import rsi_brs_rejection_owner as rejection
 from . import rsi_brs_rejection_provenance as provenance
 from . import rsi_brs_rejection_provenance_policy as _provenance_policy
@@ -43,6 +44,7 @@ from . import rsi_brs_rejection_ready_service as ready_service
 from . import rsi_brs_reserved_owner as reserved_owner
 from . import rsi_brs_reserved_policy as reserved_policy
 from . import rsi_publication_lineage as lineage
+from . import rsi_store as admission_store
 from .algorithm import ALGORITHM_FAMILY_REPERTOIRES as _ORIGINAL_FAMILY_REPERTOIRES
 from .candidate_evaluation_spec import canonical_json
 from .producer_bundle_admission import parse_producer_bundle_admission_plan
@@ -96,8 +98,28 @@ _ORIGINAL_PROVENANCE_CODES = tuple(
         (ready_policy, ("rejection_ready_capture_policy",)),
         (reserved_policy, ("_build_reserved_brs_policy", "_build_reserved_brs_policy_entry",
                            "reserved_brs_policy_projection")),
+        (runtime_tree, ("_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current")),
+        (admission_store, ("_staging_identity_helpers_current", "_admission_checkpoint_helpers_current",
+                           "_admission_checkpoint_projection", "_checkpoint_projection_helpers_current",
+                           "_checkpoint_projection_constant", "_checkpoint_projection_key",
+                           "_retain_checkpoint_projection", "_build_checkpoint_projection_pins")),
     ) for name in names
 )
+_ORIGINAL_RUNTIME_TREE_JSON_LIMITS = tuple((name, getattr(runtime_tree, name)) for name in (
+    "_JSON_FAST_MAX_DEPTH", "_JSON_FAST_MAX_NODES", "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES",
+))
+_ORIGINAL_STAGING_IDENTITY_HELPERS = admission_store._STAGING_IDENTITY_HELPERS
+_ORIGINAL_ADMISSION_CHECKPOINT_ALIASES = tuple(
+    (name, getattr(admission_store, name)) for name in (
+        "_ADMISSION_CHECKPOINT_METHOD_PINS", "_ADMISSION_CHECKPOINT_PROJECTION",
+        "_ADMISSION_CHECKPOINT_PROJECTION_CODE", "_ADMISSION_CHECKPOINT_FUNCTION_PINS",
+        "_ADMISSION_CHECKPOINT_SHA256", "_ADMISSION_CHECKPOINT_ENCODER_TYPE",
+        "_ADMISSION_CHECKPOINT_ENCODER_MODULE", "_ADMISSION_CHECKPOINT_ENCODER_PINS",
+        "_CheckpointHistoryRowProjection", "_HISTORY_PROJECTION_TYPE", "_HISTORY_PROJECTION_GUARD",
+        "_HISTORY_PROJECTION_GUARD_CODE",
+        "_HISTORY_PROJECTION_FUNCTION_PINS", "_HISTORY_PROJECTION_VALUE_PINS",
+        "_HISTORY_PROJECTION_ORIGINAL_FUNCTION_PINS", "_HISTORY_PROJECTION_ORIGINAL_VALUE_PINS",
+        "_HISTORY_PROJECTION_CACHE_MAX_ENTRIES", "_HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS"))
 _ORIGINAL_READY_POLICY_CLOSURE = (
     ready_policy.rejection_ready_capture_policy.__closure__,
     tuple(cell.cell_contents for cell in ready_policy.rejection_ready_capture_policy.__closure__),
@@ -452,6 +474,17 @@ def _policy() -> dict[str, Any]:
            for module, name, function, code, attributes, defaults, kwdefaults, kwitems, labels
            in _ORIGINAL_PROVENANCE_CODES):
         _fail("rejection_policy_drift")
+    # These checks precede the scoped pure-policy cache. A retained owner must
+    # not keep the old calculation limits after an in-process replacement.
+    if any(type(getattr(runtime_tree, name, None)) is not int
+           or getattr(runtime_tree, name) != original
+           for name, original in _ORIGINAL_RUNTIME_TREE_JSON_LIMITS):
+        _fail("runtime_tree_json_policy_drift")
+    if admission_store._STAGING_IDENTITY_HELPERS is not _ORIGINAL_STAGING_IDENTITY_HELPERS:
+        _fail("staging_identity_policy_drift")
+    if any(getattr(admission_store, name, None) is not original
+           for name, original in _ORIGINAL_ADMISSION_CHECKPOINT_ALIASES):
+        _fail("admission_history_policy_drift")
     ready_closure, ready_captures = _ORIGINAL_READY_POLICY_CLOSURE
     try:
         if (ready_policy.rejection_ready_capture_policy.__closure__ is not ready_closure
@@ -689,6 +722,8 @@ def _policy() -> dict[str, Any]:
             or closure[0].cell_contents is not control_implementation):
         _fail("native_dispatch_control_binding_drift")
     aliases = (
+        (runtime_tree, sys.modules["lunar_evolution.producer_python_runtime_tree"]),
+        (scheduler_inputs.runtime_tree, runtime_tree),
         (reserved_policy, rsi_brs_reserved_policy),
         (ready_owner, sys.modules["lunar_evolution.rsi_brs_rejection_ready_owner"]),
         (ready_policy, sys.modules["lunar_evolution.rsi_brs_rejection_ready_policy"]),
@@ -729,6 +764,7 @@ def _policy() -> dict[str, Any]:
         (rsi_store.os, os), (rsi_store.stat, stat), (rsi_store.threading, threading),
         (rsi_store.threading.get_ident, get_ident), (rsi_controller.get_ident, get_ident),
         (rsi_store.canonical_json, candidate_evaluation_spec.canonical_json),
+        (admission_store, rsi_store),
         (rsi_controller.canonical_json, candidate_evaluation_spec.canonical_json),
         (lineage.canonical_json, candidate_evaluation_spec.canonical_json),
         (rejection_owner.LineageSnapshotPin, producer_bundle_lineage.LineageSnapshotPin),
@@ -806,6 +842,7 @@ def _policy() -> dict[str, Any]:
         (native_trusted_scheduler.recover_native_trusted_execution_receipt,
          native_trusted_receipt.recover_native_trusted_execution_receipt),
         (native_trusted_scheduler.prepare_native_trusted_output, native_trusted_output.prepare_native_trusted_output),
+        (native_trusted_scheduler._native_output_envelope_pin, native_trusted_output._native_output_envelope_pin),
         (native_trusted_output.recover_native_trusted_execution_receipt,
          native_trusted_receipt.recover_native_trusted_execution_receipt),
         (native_trusted_output.recover_native_trusted_output_capture,
@@ -912,15 +949,39 @@ def _policy() -> dict[str, Any]:
         (producer_bundle_staging.verify_native_publication_intent, producer_bundle_staging),
         *((getattr(_ORIGINAL_CONTEXT_MANAGER, name), contextlib) for name in ("__init__", "__enter__", "__exit__")),
         (rsi_store._id, rsi_store),
+        (rsi_store._staging_identity_helpers_current, rsi_store),
+        (rsi_store._admission_checkpoint_helpers_current, rsi_store),
+        (rsi_store._admission_checkpoint_projection, rsi_store),
+        *((getattr(rsi_store, name), rsi_store) for name in (
+            "_checkpoint_projection_helpers_current", "_checkpoint_projection_constant",
+            "_checkpoint_projection_key", "_retain_checkpoint_projection", "_build_checkpoint_projection_pins")),
+        (rsi_store._CheckpointHistoryRowProjection.__init__, rsi_store),
         (rsi_store.RSILedger.read_only_observations, contextlib),
         (rsi_store.RSILedger.read_only_observations.__wrapped__, rsi_store),
+        (rsi_store.RSILedger._checkpoint_projection_scope, contextlib),
+        (rsi_store.RSILedger._checkpoint_projection_scope.__wrapped__, rsi_store),
+        (reserved_owner._reserved_history_projection_scope, contextlib),
+        (reserved_owner._reserved_history_projection_scope.__wrapped__, reserved_owner),
+        *((getattr(reserved_owner, name), reserved_owner) for name in (
+            "_build_reserved_history_projection_guard", "_reserved_history_projection_guard",
+            "_reserved_history_projection_cache",
+            "_reserved_history_projection_key", "_retain_reserved_history_projection",
+            "_reserved_history_wire_checks", "_reserved_history_shape_observations",
+            "_clear_reserved_history_projection", "_compare_reserved_history_wires", "_observe_reserved_history",
+            "_original_checkpoint", "_original_history", "_observe_reserved_brs_prefix_history",
+            "_retained_observation_head_from_history")),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "_connect", "_checkpoint_python_references", "_checkpoint_digest", "_checkpoint_reference_rows_tx",
-            "_python_admission_row", "controller_lock_held", "_assert_controller_lock")),
+            "_checkpoint_projection_cache", "_controller_checkpoint_history_rows_tx",
+            "_python_admission_row", "controller_lock_held", "_assert_controller_lock",
+            "_validate_python_producer_staging_history_tx")),
         (rsi_controller.RSILearningController._python_admission_brs_observations, contextlib),
         (rsi_controller.RSILearningController._python_admission_brs_observations.__wrapped__, rsi_controller),
+        (rsi_controller.RSILearningController._python_admission_brs_full_gate_scope, contextlib),
+        (rsi_controller.RSILearningController._python_admission_brs_full_gate_scope.__wrapped__, rsi_controller),
         (rsi_controller.RSILearningController._python_admission_flow_payload, rsi_controller),
         (rsi_controller.RSILearningController._python_admission_assert_brs_wave, rsi_controller),
+        (rsi_controller.RSILearningController._python_admission_match_brs_owner_checkpoint, rsi_controller),
         (rsi_controller._record_digest, rsi_controller),
         (rsi_controller.RSILearningController._run_fingerprint, rsi_controller),
         *((getattr(rsi_fingerprint, name), rsi_fingerprint) for name in (
@@ -943,12 +1004,13 @@ def _policy() -> dict[str, Any]:
             "build_brs_terminal_observation", "validate_brs_terminal_history",
             "inspect_brs_worker_terminal_evidence", "open_brs_terminal_lifecycle")),
         *((getattr(terminal._PrimitiveExchange, name), terminal)
-          for name in ("__init__", "submit", "fail")),
+          for name in ("__init__", "submit", "_submit_waiting", "fail")),
         *((getattr(terminal._BRSWorkerTerminalEndpoint, name), terminal)
           for name in ("__init__", "_identity", "_wait_check", "receive_and_settle")),
         (terminal._BRSWorkerTerminalEndpoint.status.fget, terminal),
         *((getattr(terminal.BRSOwnerTerminalLifecycle, name), terminal)
-          for name in ("_fixed", "_append", "_drain", "_service_rejection_admission", "serve")),
+          for name in ("_scope_identity", "_transport_identity", "_fixed", "_idle", "_join_worker",
+                       "_append", "_drain", "_service_rejection_admission", "serve")),
         (terminal.BRSOwnerTerminalLifecycle.worker_endpoint.fget, terminal),
         *((getattr(composer, name), composer) for name in (
             "_fail", "_plain", "_clean", "_digest", "_sha", "_text", "_pins",
@@ -999,7 +1061,8 @@ def _policy() -> dict[str, Any]:
             "register_brs_selected_obligation", "put_brs_reconcile_obligation", "validate_brs_reconcile_obligations")),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
-            "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
+            "controller_checkpoint_history", "_controller_checkpoint_history_tx",
+            "_controller_checkpoint_history_observation_tx", "_native_result_status",
             "_native_claim_row", "append_brs_mailbox_observation", "append_brs_terminal_observation",
             "read_brs_terminal_evidence_snapshot", "_brs_terminal_evidence_snapshot_tx",
             "_consume_brs_reconcile_obligation", "_settle_brs_terminal_execution_tx")),
@@ -1079,6 +1142,8 @@ def _policy() -> dict[str, Any]:
         (native_trusted_cleanup.recover_native_trusted_cleanup, native_trusted_cleanup),
         (native_trusted_capture.recover_native_trusted_output_capture, native_trusted_capture),
         (native_trusted_output.prepare_native_trusted_output, native_trusted_output),
+        (native_trusted_output._native_output_envelope_pin, native_trusted_output),
+        (native_trusted_output._unique_object, native_trusted_output),
         (producer_process._read_envelope, producer_process),
         (producer_handoff.parse_producer_envelope, producer_handoff),
         (producer_bundle_handoff.prepare_producer_bundle_manifest, producer_bundle_handoff),
@@ -1095,7 +1160,8 @@ def _policy() -> dict[str, Any]:
             "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
             "_call_original_brs_owner", "_run_original_brs_native_publication", "_rejection_committed")),
         *((getattr(transaction, name), transaction) for name in (
-            "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+            "_validate_native_lineage_scope", "_native_lineage_call", "_observe_native_producer_evidence",
+            "derive_population_state_after",
             "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
             "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
             "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")),
@@ -1123,7 +1189,15 @@ def _policy() -> dict[str, Any]:
             or journal_defaults["monotonic"] is not time.monotonic):
         _fail("native_reader_binding_drift")
     cached = getattr(_POLICY_OBSERVATION_LOCAL, "cache", None)
+    terminal_wait = terminal._PrimitiveExchange._submit_waiting
+    terminal_wait_code = terminal_wait.__code__
     if cached is not None and "policy" in cached:
+        wait_pin = cached.get("terminal_wait")
+        if (type(wait_pin) is not tuple or len(wait_pin) != 2
+                or wait_pin[0] is not terminal_wait or wait_pin[1] is not terminal_wait_code
+                or terminal_wait.__defaults__ is not None or terminal_wait.__kwdefaults__ is not None
+                or terminal_wait.__closure__ is not None):
+            _fail("terminal_wait_policy_drift")
         return cached["policy"]
 
     policy = {
@@ -1175,7 +1249,13 @@ def _policy() -> dict[str, Any]:
                                              ("rejection", producer_bundle_rejection),
                                              ("receipts", producer_bundle_receipts))},
                 "native_intent": component_fingerprint(producer_bundle_staging.verify_native_publication_intent),
-                "final_readers": {name: [component_fingerprint(function, config={} if module is contextlib else None)
+                # Frozen dataclass initialization captures builtins.object, not
+                # immutable JSON configuration. The finite reserved graph above
+                # independently pins its code, defaults and original closure.
+                "final_readers": {name: [component_fingerprint(function, config={} if (
+                                            module is contextlib
+                                            or function is rsi_store._CheckpointHistoryRowProjection.__init__
+                                        ) else None)
                                          for function, module in entries if module is canonical]
                                   for name, canonical in (("ledger", rsi_store), ("controller", rsi_controller),
                                                           ("contextmanager", contextlib))},
@@ -1276,6 +1356,8 @@ def _policy() -> dict[str, Any]:
                     native_trusted_scheduler.recover_native_trusted_execution_receipt),
                 "native_output_binding": component_fingerprint(native_trusted_scheduler.prepare_native_trusted_output),
                 "output": component_fingerprint(native_trusted_output.prepare_native_trusted_output),
+                "output_envelope_acquisition": component_fingerprint(native_trusted_output._native_output_envelope_pin),
+                "output_envelope_unique_object": component_fingerprint(native_trusted_output._unique_object),
                 "output_receipt_binding": component_fingerprint(
                     native_trusted_output.recover_native_trusted_execution_receipt),
                 "output_capture_binding": component_fingerprint(
@@ -1303,7 +1385,8 @@ def _policy() -> dict[str, Any]:
                     "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
                     "_call_original_brs_owner", "_run_original_brs_native_publication", "_rejection_committed")},
                 "transaction": {name: component_fingerprint(getattr(transaction, name)) for name in (
-                    "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+                    "_validate_native_lineage_scope", "_native_lineage_call", "_observe_native_producer_evidence",
+                    "derive_population_state_after",
                     "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
                     "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
                     "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")},
@@ -1440,7 +1523,8 @@ def _policy() -> dict[str, Any]:
                     "validate_brs_reconcile_obligations")},
                 "store": {name: component_fingerprint(getattr(rsi_store.RSILedger, name)) for name in (
                     "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
-                    "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
+                    "controller_checkpoint_history", "_controller_checkpoint_history_tx",
+                    "_controller_checkpoint_history_observation_tx", "_native_result_status",
                     "_native_claim_row")},
                 "bridge": {name: component_fingerprint(getattr(rsi_python_brs_owner_bridge, name)) for name in (
                     "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
@@ -1477,6 +1561,12 @@ def _policy() -> dict[str, Any]:
             "native_context_helpers": {name: component_fingerprint(getattr(scheduler_inputs, name)) for name in (
                 "_checkpoint", "_sidecar", "_native", "_projection", "_shape", "_broker", "_request_memory", "_path",
             )},
+            "runtime_tree_json": {
+                "helpers": {name: component_fingerprint(getattr(runtime_tree, name)) for name in (
+                    "_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current",
+                )},
+                "limits": {name: getattr(runtime_tree, name) for name, _original in _ORIGINAL_RUNTIME_TREE_JSON_LIMITS},
+            },
             "population_projection": {name: component_fingerprint(getattr(PopulationStrategy, name)) for name in (
                 "_reconstruct_population_projection", "_producer_admission_events", "_apply_producer_admissions",
                 "_trim", "_capacity", "_candidates", "_rank", "_family_elites", "_candidate_family",
@@ -1537,6 +1627,15 @@ def _policy() -> dict[str, Any]:
                  "private_native_dispatch", "reconcile_registration"):
         policy["dependencies"][name] = hashlib.sha256(canonical_json(policy["dependencies"][name])).hexdigest()
     if cached is not None:
+        # Establish this pin only with a completed cold policy, and retain it
+        # only for this operation. An in-place code change must not borrow the
+        # earlier pure graph through an unchanged function/global identity.
+        if (terminal._PrimitiveExchange._submit_waiting is not terminal_wait
+                or terminal_wait.__code__ is not terminal_wait_code
+                or terminal_wait.__defaults__ is not None or terminal_wait.__kwdefaults__ is not None
+                or terminal_wait.__closure__ is not None):
+            _fail("terminal_wait_policy_drift")
+        cached["terminal_wait"] = (terminal_wait, terminal_wait_code)
         cached["policy"] = policy
     return policy
 
@@ -2049,8 +2148,12 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             self._success_cap_unchanged(allowance)
         with self._ledger.read_only_observations():
             self._running()
-            self._controller._python_admission_active_brs_owner(self._wave)
-            self._history()
+            if self._reserved_prefix is None:
+                self._controller._python_admission_active_brs_owner(self._wave)
+                self._history()
+            else:
+                self._controller._python_admission_assert_brs_wave(self._wave, owner=True)
+                reserved_owner.reserved_history(self, match_active_owner=True)
         return self._state
 
     def _strategy_identity(self) -> None:
@@ -2948,8 +3051,12 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._success_allowance()
         with self._ledger.read_only_observations():
             self._running()
-            self._controller._python_admission_active_brs_owner(self._wave)
-            self._history()
+            if self._reserved_prefix is None:
+                self._controller._python_admission_active_brs_owner(self._wave)
+                self._history()
+            else:
+                self._controller._python_admission_assert_brs_wave(self._wave, owner=True)
+                reserved_owner.reserved_history(self, match_active_owner=True)
         self._before_channel()
         return self._state
 

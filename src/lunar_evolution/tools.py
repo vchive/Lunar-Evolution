@@ -13,7 +13,6 @@ import os
 import shlex
 import sqlite3
 import stat
-import subprocess
 import tempfile
 import time
 from collections.abc import Callable, Iterator
@@ -286,7 +285,8 @@ class LocalToolRegistry:
                                 "A string is split into arguments; "
                                 "pipes, redirects, wildcards and environment variables are not expanded. "
                                 f"Timeout: at most {self.command_timeout:g} seconds, further limited "
-                                "by a profiled invocation's remaining time; output is captured until exit."
+                                "by a profiled invocation's remaining time. Stops on timeout or "
+                                f"more than {self.max_output_bytes} bytes in either output stream."
                             ),
                         },
                     },
@@ -678,53 +678,25 @@ class LocalToolRegistry:
             if remaining <= 0:
                 raise ToolError("command deadline expired before launch")
             timeout = min(timeout, remaining)
-        if self._process_observer is not None:
-            from .candidate_execution_runner import _bounded_process_bytes
+        from .candidate_execution_runner import _bounded_process_bytes
 
-            stdout, stderr, status, returncode, error = _bounded_process_bytes(
-                command, cwd=str(workspace),
-                environment=(dict(os.environ) if self.command_environment is None else self.command_environment),
-                timeout=timeout, output_limit=self.max_output_bytes, capture_limit=self.max_output_bytes,
-                process_observer=self._process_observer, process_released=self._process_released,
-            )
-            if status == "timed_out":
-                return ToolResult(
-                    output=f"command timed out after {timeout:g}s\n{self._bounded_text(stdout + stderr)}",
-                    success=False,
-                )
-            output = f"exit_code={returncode}\nstdout:\n{self._bounded_text(stdout)}"
-            if stderr:
-                output += f"\nstderr:\n{self._bounded_text(stderr)}"
-            if error and status != "succeeded":
-                output += f"\nerror={error}"
-            return ToolResult(output=output, success=status == "succeeded")
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=workspace,
-                env=self.command_environment,
-                shell=False,
-                text=True,
-                capture_output=True,
-                timeout=timeout,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            streams = [
-                part.decode("utf-8", errors="replace") if isinstance(part, bytes) else part or ""
-                for part in (exc.stdout, exc.stderr)
-            ]
-            output = self._bounded_text("".join(streams))
+        stdout, stderr, status, returncode, error = _bounded_process_bytes(
+            command, cwd=str(workspace),
+            environment=(dict(os.environ) if self.command_environment is None else self.command_environment),
+            timeout=timeout, output_limit=self.max_output_bytes, capture_limit=self.max_output_bytes,
+            process_observer=self._process_observer, process_released=self._process_released,
+        )
+        if status == "timed_out":
             return ToolResult(
-                output=f"command timed out after {timeout:g}s\n{output}",
+                output=f"command timed out after {timeout:g}s\n{self._bounded_text(stdout + stderr)}",
                 success=False,
             )
-        stdout = self._bounded_text(completed.stdout)
-        stderr = self._bounded_text(completed.stderr)
-        output = f"exit_code={completed.returncode}\nstdout:\n{stdout}"
+        output = f"exit_code={returncode}\nstdout:\n{self._bounded_text(stdout)}"
         if stderr:
-            output += f"\nstderr:\n{stderr}"
-        return ToolResult(output=output, success=completed.returncode == 0)
+            output += f"\nstderr:\n{self._bounded_text(stderr)}"
+        if error and status != "succeeded":
+            output += f"\nerror={error}"
+        return ToolResult(output=output, success=status == "succeeded")
 
     def _bounded_text(self, value: str | bytes) -> str:
         if isinstance(value, bytes):

@@ -12,13 +12,14 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import stat
 import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +36,7 @@ from .rsi_learning import (
 from .rsi_python_admission import (
     RSIPythonAdmissionError,
     RSIPythonAdmissionRecord,
+    _parse_rsi_python_admission_reference_context,
     _parse_rsi_python_admission_references_with_context,
     _ParsedRSIPythonAdmissionReference,
     parse_rsi_python_admission_record,
@@ -60,6 +62,186 @@ WORKER_STATES = frozenset({"running", "idle", "completed", "failed", "timed_out"
 # plus entry/key/value/container overhead and the revision integer's shallow size.
 _CHECKPOINT_DIGEST_CACHE_MAX_ENTRIES = 128
 _CHECKPOINT_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
+_RECORD_DIGEST_CACHE_MAX_ENTRIES = 128
+_RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
+_HISTORY_PROJECTION_CACHE_MAX_ENTRIES = 128
+_HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS = 32 * 1024 * 1024
+_HISTORY_PROJECTION_SQLITE_ROW = sqlite3.Row
+
+# Only these direct pure parser/digest methods can supply a reusable staging
+# identity result. A replaced method keeps the original per-checkpoint path.
+_STAGING_IDENTITY_HELPERS = tuple(
+    (owner, name, vars(owner)[name], function.__code__, function.__defaults__, function.__kwdefaults__)
+    for owner in (SolverRequest, MemorySnapshot)
+    for name in ("from_dict", "digest")
+    for function in (vars(owner)[name].__func__ if name == "from_dict" else vars(owner)[name],)
+)
+
+
+def _staging_identity_helpers_current() -> bool:
+    for owner, name, descriptor, code, defaults, kwdefaults in _STAGING_IDENTITY_HELPERS:
+        if vars(owner).get(name) is not descriptor:
+            return False
+        function = descriptor.__func__ if name == "from_dict" else descriptor
+        if (function.__code__ is not code or function.__defaults__ is not defaults
+                or function.__kwdefaults__ is not kwdefaults):
+            return False
+    return True
+
+
+def _admission_checkpoint_projection(value: Any) -> Any:
+    """Detach only the small historical fields consumed by admission checks."""
+    if type(value) is dict:
+        return {key: _admission_checkpoint_projection(item) for key, item in value.items()}
+    if type(value) is list:
+        return [_admission_checkpoint_projection(item) for item in value]
+    if value is None or type(value) in (str, int, float, bool):
+        return value
+    raise ValueError("admission checkpoint projection is not plain JSON")
+
+
+def _admission_checkpoint_helpers_current(ledger: object) -> bool:
+    """A replaced decoder/digest/history seam keeps the original parse path."""
+    if (type(ledger) is not RSILedger or json.loads is not _RECORD_JSON_LOADS
+            or json.loads.__code__ is not _RECORD_JSON_LOADS_CODE
+            or canonical_json is not _RECORD_CANONICAL_JSON
+            or hashlib.sha256 is not _ADMISSION_CHECKPOINT_SHA256
+            or json.JSONEncoder is not _ADMISSION_CHECKPOINT_ENCODER_TYPE
+            or json.encoder is not _ADMISSION_CHECKPOINT_ENCODER_MODULE):
+        return False
+    for name, original, code, defaults, kwdefaults, kwitems in _ADMISSION_CHECKPOINT_METHOD_PINS:
+        method = getattr(ledger, name)
+        function = getattr(method, "__func__", method)
+        if (function is not original or function.__code__ is not code
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or (kwdefaults is not None and (
+                    len(kwdefaults) != len(kwitems)
+                    or any(key not in kwdefaults or kwdefaults[key] is not value for key, value in kwitems)))):
+            return False
+    if (_admission_checkpoint_projection is not _ADMISSION_CHECKPOINT_PROJECTION
+            or _admission_checkpoint_projection.__code__ is not _ADMISSION_CHECKPOINT_PROJECTION_CODE):
+        return False
+    decoder = json._default_decoder
+    if decoder is not _RECORD_JSON_DECODER or type(decoder) is not _RECORD_JSON_DECODER_TYPE:
+        return False
+    namespace = object.__getattribute__(decoder, "__dict__")
+    if ("decode" in namespace or "raw_decode" in namespace
+            or namespace.get("scan_once") is not _RECORD_JSON_SCAN_ONCE):
+        return False
+    functions = (json.loads, canonical_json, canonical_json.__globals__.get("_json_bytes"), json.dumps,
+                 type(decoder).decode, type(decoder).raw_decode, json.JSONEncoder.__init__,
+                 json.JSONEncoder.encode, json.JSONEncoder.iterencode, json.encoder._make_iterencode)
+    for function, (original, code, defaults, kwdefaults, kwitems) in zip(
+            functions, _ADMISSION_CHECKPOINT_FUNCTION_PINS, strict=True):
+        if (function is not original or function.__code__ is not code
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or (kwdefaults is not None and (
+                    len(kwdefaults) != len(kwitems)
+                    or any(key not in kwdefaults or kwdefaults[key] is not value for key, value in kwitems)))):
+            return False
+    return all(getattr(json.encoder, name, None) is original
+               for name, original in _ADMISSION_CHECKPOINT_ENCODER_PINS)
+
+
+@dataclass(frozen=True, slots=True)
+class _CheckpointHistoryRowProjection:
+    """Pure immutable row calculations, with no payload, DTO or live authority."""
+
+    digest: str
+    references: tuple[tuple[str, bytes], ...]
+    # Only a completed final-reference comparison supplies these exact retained
+    # SQL scalars. The enclosing projection key already binds the complete
+    # checkpoint text, so a hit can compare both original wires without keeping
+    # any parsed plan, journal, record, or caller-owned dictionary.
+    admissions: tuple[tuple[str, tuple[str, ...]], ...] | None = None
+
+
+def _checkpoint_projection_constant(value: Any, *, depth: int = 0) -> Any:
+    """Small exact constant snapshots for the skipped pure parser graph."""
+    kind = type(value)
+    if value is None or kind in (str, int, float, bool, bytes):
+        return kind, value
+    if depth > 8 or kind not in (dict, list, tuple, set, frozenset) or len(value) > 4096:
+        raise ValueError("not a bounded pure constant")
+    if kind is dict:
+        return kind, frozenset((_checkpoint_projection_constant(key, depth=depth + 1),
+                                _checkpoint_projection_constant(item, depth=depth + 1))
+                               for key, item in value.items())
+    items = (_checkpoint_projection_constant(item, depth=depth + 1) for item in value)
+    return kind, frozenset(items) if kind in (set, frozenset) else tuple(items)
+
+
+def _checkpoint_projection_helpers_current(ledger: object) -> bool:
+    """An unknown or replaced pure seam keeps the complete original history path."""
+    if (_CheckpointHistoryRowProjection is not _HISTORY_PROJECTION_TYPE
+            or sqlite3.Row is not _HISTORY_PROJECTION_SQLITE_ROW
+            or not _admission_checkpoint_helpers_current(ledger)
+            or _HISTORY_PROJECTION_FUNCTION_PINS is not _HISTORY_PROJECTION_ORIGINAL_FUNCTION_PINS
+            or _HISTORY_PROJECTION_VALUE_PINS is not _HISTORY_PROJECTION_ORIGINAL_VALUE_PINS):
+        return False
+    for owner, name, descriptor, function, code, defaults, kwdefaults, kwitems, closure, captures in (
+            _HISTORY_PROJECTION_FUNCTION_PINS):
+        if (vars(owner).get(name) is not descriptor or function.__code__ is not code
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or function.__closure__ is not closure
+                or any(cell.cell_contents is not original for cell, original in zip(closure or (), captures, strict=True))
+                or (kwdefaults is not None and (
+                    len(kwdefaults) != len(kwitems)
+                    or any(key not in kwdefaults or kwdefaults[key] is not item for key, item in kwitems)))):
+            return False
+    for owner, name, original, snapshot in _HISTORY_PROJECTION_VALUE_PINS:
+        value = vars(owner).get(name)
+        if value is not original:
+            return False
+        if snapshot is None:  # Immutable regex and DTO aliases are identity pins.
+            continue
+        try:
+            if _checkpoint_projection_constant(value) != snapshot:
+                return False
+        except (TypeError, ValueError, RecursionError):
+            return False
+    return True
+
+
+def _checkpoint_projection_key(run_id: str, row: object) -> tuple[Any, ...] | None:
+    if type(run_id) is not str or type(row) not in (sqlite3.Row, dict):
+        return None
+    try:
+        values = tuple(row[name] for name in (  # type: ignore[index]
+            "revision", "parent_sha256", "payload", "checkpoint_sha256"))
+    except (KeyError, IndexError, TypeError):
+        return None
+    revision, parent, raw, digest = values
+    if (type(revision) is not int or (parent is not None and type(parent) is not str)
+            or type(raw) is not str or type(digest) is not str):
+        return None
+    return run_id, *values
+
+
+def _retain_checkpoint_projection(cache: dict[str, Any], key: tuple[Any, ...],
+                                  projection: _CheckpointHistoryRowProjection) -> None:
+    # Full raw text is retained in the key. Four bytes per character plus
+    # conservative entry/tuple overhead also cover strings and scalar values.
+    units = (4096 + sum(4 * len(item) for item in key if type(item) is str)
+             + sum(256 + 4 * len(name) + len(raw) for name, raw in projection.references)
+             + sum(512 + 4 * len(name) + sum(128 + 4 * len(item) for item in row)
+                   for name, row in (projection.admissions or ())))
+    if (units > _HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS
+            or _HISTORY_PROJECTION_CACHE_MAX_ENTRIES <= 0):
+        return
+    entries = cache["entries"]
+    if key in entries:
+        # The final SQL comparison may now enrich an existing history-only
+        # projection. Replacing it must account for all retained row text.
+        _old_projection, old_units = entries.pop(key)
+        cache["retained_units"] -= old_units
+    while entries and (len(entries) >= _HISTORY_PROJECTION_CACHE_MAX_ENTRIES
+                       or cache["retained_units"] + units > _HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS):
+        _old_key, (_old_projection, old_units) = entries.popitem(last=False)
+        cache["retained_units"] -= old_units
+    entries[key] = projection, units
+    cache["retained_units"] += units
+
 
 _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
     "created": frozenset({"created", "running", "cancelled", "failed", "unknown", "budget_exhausted"}),
@@ -180,8 +362,11 @@ _TRANSFER_STATES = frozenset({"passed", "failed", "unknown"})
 class RSILedger:
     """Durable append-only run/episode state with compare-and-swap transitions."""
 
-    def __init__(self, database: str | Path) -> None:
+    def __init__(self, database: str | Path, *, create: bool = True) -> None:
+        if type(create) is not bool:
+            raise RSILearningError("rsi_ledger_create_option_invalid")
         self.database = Path(database).expanduser().resolve()
+        self._create_database = create
         self._controller_guards: dict[str, tuple[int, int, Path, str, int]] = {}
         self._controller_guards_lock = threading.RLock()
         # History readers repeatedly verify the same immutable journal rows while
@@ -194,8 +379,40 @@ class RSILedger:
         ] = OrderedDict()
         self._checkpoint_digest_cache_retained_units = 0
         self._checkpoint_digest_cache_lock = threading.Lock()
+        self._record_digest_cache: OrderedDict[
+            tuple[str, int, str, str, str, str | None, str], tuple[str, int]
+        ] = OrderedDict()
+        self._record_digest_cache_retained_units = 0
+        self._record_digest_cache_lock = threading.Lock()
         self._observation_scope = threading.local()
+        self._checkpoint_projection_local = threading.local()
         self.initialize()
+
+    @contextmanager
+    def _checkpoint_projection_scope(self):
+        """Share only pure row work within one owner operation and calling thread."""
+        local = self._checkpoint_projection_local
+        previous = getattr(local, "cache", None)
+        if previous is not None:
+            yield
+            return
+        cache = {"entries": OrderedDict(), "retained_units": 0}
+        local.cache = cache
+        try:
+            yield
+        finally:
+            cache["entries"].clear()
+            cache["retained_units"] = 0
+            local.cache = None
+
+    def _checkpoint_projection_cache(self) -> dict[str, Any] | None:
+        local = getattr(self, "_checkpoint_projection_local", None)
+        cache = getattr(local, "cache", None)
+        if (cache is None or _checkpoint_projection_helpers_current is not _HISTORY_PROJECTION_GUARD
+                or _checkpoint_projection_helpers_current.__code__ is not _HISTORY_PROJECTION_GUARD_CODE
+                or not _checkpoint_projection_helpers_current(self)):
+            return None
+        return cache
 
     @contextmanager
     def read_only_observations(self):
@@ -216,24 +433,39 @@ class RSILedger:
             # mode=ro closes the lstat/open race: a removed database cannot be recreated.
             # Do not change journal mode or create parent directories during observations.
             connection = sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=30)
-            connection.row_factory = sqlite3.Row
-            connection.execute("PRAGMA query_only = ON")
+            try:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA query_only = ON")
+            except BaseException:
+                with suppress(BaseException):
+                    connection.close()
+                raise
             return connection
-        self.database.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database, timeout=30)
-        connection.row_factory = sqlite3.Row
-        # Switching to WAL is an initialization concern.  Re-issuing the mode-changing
-        # pragma on every read connection can dirty the database header on some SQLite/Python
-        # combinations, which makes read-only replay appear to have appended ledger state.
-        # Inspect the current mode first and only change it for a new/non-WAL database.
-        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
-        if journal_mode.lower() != "wal":
-            connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = FULL")
+        if self._create_database:
+            self.database.parent.mkdir(parents=True, exist_ok=True)
+            connection = sqlite3.connect(self.database, timeout=30)
+        else:
+            # Explicit recovery commands may reopen only an existing database.
+            # mode=rw applies on every connection, including after a path removal.
+            connection = sqlite3.connect(self.database.as_uri() + "?mode=rw", uri=True, timeout=30)
+        try:
+            connection.row_factory = sqlite3.Row
+            # Switching to WAL is an initialization concern. Re-issuing the mode-changing
+            # pragma on every read connection can dirty the database header on some SQLite/Python
+            # combinations, which makes read-only replay appear to have appended ledger state.
+            # Inspect the current mode first and only change it for a new/non-WAL database.
+            journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+            if journal_mode.lower() != "wal":
+                connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = FULL")
+        except BaseException:
+            with suppress(BaseException):
+                connection.close()
+            raise
         return connection
 
     def initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS rsi_records (
                     logical_id TEXT NOT NULL,
@@ -492,7 +724,11 @@ class RSILedger:
         references: dict[str, dict[str, Any]],
         *,
         parsed_contexts: dict[str, _ParsedRSIPythonAdmissionReference] | None = None,
-    ) -> None:
+        validated_rows: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
+    ) -> tuple[tuple[str, tuple[str, ...]], ...] | None:
+        observed_rows: list[tuple[str, tuple[str, ...]]] = []
+        reusable = dict(validated_rows or ())
+        exact_rows = True
         for episode_id, reference in references.items():
             row = connection.execute(
                 "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
@@ -502,10 +738,37 @@ class RSILedger:
                 raise RSILearningError("rsi_python_admission_record_missing")
             try:
                 # Keep this SELECT and exact-text row parse fresh on every history
-                # read. Only the reference/plan/journal parse is reused from the
-                # just-validated history walk in this same transaction.
+                # read, even when both complete persisted wires match a previous
+                # pure comparison in this owner operation.
                 record = self._python_admission_row(row)
+                raw_row = None
+                # SQLite rows are immutable snapshots. A mapping/backend seam
+                # can change its fields while parsing; keep its original full
+                # reference comparison instead of projecting that mutable input.
+                if type(row) is _HISTORY_PROJECTION_SQLITE_ROW:
+                    values = tuple(row[name] for name in (
+                        "run_id", "episode_id", "journal_id", "attempt_id",
+                        "payload", "record_sha256", "created_at"))
+                    if all(type(item) is str for item in values):
+                        raw_row = values
+                cache = self._checkpoint_projection_cache()
+                if raw_row is None:
+                    exact_rows = False
+                else:
+                    observed_rows.append((episode_id, raw_row))
+                    if cache is not None and reusable.get(episode_id) == raw_row:
+                        # The caller supplies these scalars only after the complete
+                        # fresh checkpoint text matched its immutable projection.
+                        # The record above is still fully parsed on every visit.
+                        continue
                 context = parsed_contexts.get(episode_id) if parsed_contexts is not None else None
+                if context is None and cache is not None:
+                    # A history projection retains no DTO context. Reparse this
+                    # fresh reference once, then bind it to the full row parsed
+                    # above. No context survives this final-reference call.
+                    fresh = _parse_rsi_python_admission_reference_context(reference)
+                    if self._checkpoint_projection_cache() is cache:
+                        context, reference = fresh, fresh.reference
                 if context is None:
                     validate_rsi_python_admission_reference_record(
                         reference, record, run_id=run_id, episode_id=episode_id,
@@ -516,18 +779,43 @@ class RSILedger:
                     )
             except (TypeError, ValueError) as exc:
                 raise RSILearningError("rsi_python_admission_reference_record_drift") from exc
+        return tuple(observed_rows) if exact_rows else None
 
     def _controller_checkpoint_history_tx(
         self, connection: sqlite3.Connection, run_id: str,
     ) -> list[tuple[str, dict[str, Any]]]:
+        return self._controller_checkpoint_history_observation_tx(connection, run_id)[1]
+
+    def _controller_checkpoint_history_observation_tx(
+        self, connection: sqlite3.Connection, run_id: str,
+    ) -> tuple[tuple[tuple[Any, ...], ...], list[tuple[str, dict[str, Any]]]]:
+        """Validate one fresh history and retain its exact four-column input."""
         rows = connection.execute(
             "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
             "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (run_id,),
         ).fetchall()
+        cache = self._checkpoint_projection_cache()
+        result = self._controller_checkpoint_history_rows_tx(connection, run_id, rows, cache=cache)
+        if cache is not None and (
+                _checkpoint_projection_helpers_current is not _HISTORY_PROJECTION_GUARD
+                or _checkpoint_projection_helpers_current.__code__ is not _HISTORY_PROJECTION_GUARD_CODE
+                or not _checkpoint_projection_helpers_current(self)):
+            # A changed executable seam cannot grant authority to earlier pure
+            # projections. Reobserve the same fresh SQL inputs on the old path.
+            result = self._controller_checkpoint_history_rows_tx(connection, run_id, rows, cache=None)
+        return result
+
+    def _controller_checkpoint_history_rows_tx(
+        self, connection: sqlite3.Connection, run_id: str, rows: list[Any],
+        *, cache: dict[str, Any] | None,
+    ) -> tuple[tuple[tuple[Any, ...], ...], list[tuple[str, dict[str, Any]]]]:
         parent: str | None = None
         references: dict[str, dict[str, Any]] = {}
+        reference_bytes: dict[str, bytes] = {}
         parsed_contexts: dict[str, _ParsedRSIPythonAdmissionReference] = {}
         history: list[tuple[str, dict[str, Any]]] = []
+        final_key = None
+        final_projection = None
         for ordinal, row in enumerate(rows):
             try:
                 payload = json.loads(row["payload"])
@@ -535,27 +823,56 @@ class RSILedger:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt") from exc
             if type(payload) is not dict:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
-            current_refs, current_contexts = self._checkpoint_python_references_with_context(
-                payload, retain_context=True, reuse_contexts=parsed_contexts,
-            )
-            # Both contexts carry complete bytes from fresh shape/size-checked
-            # admission canonicalization in this walk; do not encode them again.
-            if any(key not in current_refs or current_contexts[key].canonical_bytes
-                   != parsed_contexts[key].canonical_bytes for key in references):
+            key = _checkpoint_projection_key(run_id, row) if cache is not None else None
+            retained = cache["entries"].get(key) if cache is not None and key is not None else None
+            if retained is None:
+                current_refs, current_contexts = self._checkpoint_python_references_with_context(
+                    payload, retain_context=True, reuse_contexts=parsed_contexts,
+                )
+                current_bytes = {name: context.canonical_bytes for name, context in current_contexts.items()}
+            else:
+                projection, _units = retained
+                # Always return a new C-decoded body and take its references.
+                # The private projection contains only immutable scalar bytes;
+                # neither payload dictionaries nor parsed DTOs are shared.
+                current_refs = payload.get("python_admission_refs", {})
+                current_contexts = {}
+                current_bytes = dict(projection.references)
+                digest = projection.digest
+                cache["entries"].move_to_end(key)
+            # These are still fresh per-walk chain/monotonicity observations.
+            if any(name not in current_bytes or current_bytes[name] != raw
+                   for name, raw in reference_bytes.items()):
                 raise RSILearningError("rsi_python_admission_reference_history_drift")
-            digest = self._checkpoint_digest_cached(
-                run_id, ordinal, parent, payload, persisted_payload=row["payload"],
-            )
+            if retained is None:
+                digest = self._checkpoint_digest_cached(
+                    run_id, ordinal, parent, payload, persisted_payload=row["payload"],
+                )
             if row["revision"] != ordinal or row["parent_sha256"] != parent or row["checkpoint_sha256"] != digest:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
+            if cache is not None and key is not None and retained is None:
+                projection = _CheckpointHistoryRowProjection(digest, tuple(current_bytes.items()))
+                _retain_checkpoint_projection(
+                    cache, key, projection,
+                )
+            final_key = key
+            final_projection = (projection if cache is not None and key is not None else None)
             references = current_refs
+            reference_bytes = current_bytes
             parsed_contexts = current_contexts
             parent = digest
             history.append((digest, payload))
-        self._checkpoint_reference_rows_tx(
-            connection, run_id, references, parsed_contexts=parsed_contexts,
+        observed_rows = self._checkpoint_reference_rows_tx(
+            connection, run_id, references, parsed_contexts=parsed_contexts or None,
+            validated_rows=final_projection.admissions if final_projection is not None else None,
         )
-        return history
+        if (cache is not None and final_key is not None and final_projection is not None
+                and observed_rows is not None and self._checkpoint_projection_cache() is cache):
+            _retain_checkpoint_projection(cache, final_key, _CheckpointHistoryRowProjection(
+                final_projection.digest, final_projection.references, observed_rows,
+            ))
+        return tuple(tuple(row[name] for name in (
+            "revision", "parent_sha256", "payload", "checkpoint_sha256")) for row in rows), history
 
     @staticmethod
     def _checkpoint_binding(value: object, *, code: str):
@@ -768,6 +1085,7 @@ class RSILedger:
         if expected_policy is not None and policy != expected_policy:
             raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         previous_entries: dict[str, dict[str, Any]] = {}
+        previous_validated_entries: dict[str, bytes] = {}
         previous_digest: str | None = None
         capsule_mode = history[0][1].get("producer_multi_episode_publication")
         if capsule_mode is not None and type(capsule_mode) is not bool:
@@ -792,6 +1110,7 @@ class RSILedger:
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             retained_publication_evidence_bytes(state)
             entries = state["producer_episode_staging"]
+            validated_entries: dict[str, bytes] = {}
             if not set(previous_entries).issubset(entries):
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             for episode_id, entry in entries.items():
@@ -811,18 +1130,43 @@ class RSILedger:
                 if identity.get("policy") != policy:
                     raise RSILearningError("rsi_python_admission_child_proof_history_drift")
                 try:
-                    request = SolverRequest.from_dict(identity["intent"]["request"])
-                    memory = MemorySnapshot.from_dict(identity["memory"])
-                    token = hashlib.sha256(canonical_json({
-                        "run_id": run_id, "episode_id": episode_id, "request": request.digest(),
-                    })).hexdigest()[:32]
-                    if (request.episode_id != episode_id
-                            or request.digest() != identity["request_sha256"]
-                            or memory.digest() != identity["memory_snapshot_sha256"]
-                            or request.memory_snapshot_sha256 != memory.digest()
-                            or identity["journal_id"] != "rsi-stage-" + token
-                            or identity["launch_id"] != "rsi-launch-" + token):
-                        raise ValueError("staging identity changed")
+                    entry_bytes = None
+                    if _staging_identity_helpers_current():
+                        # Exact plain shapes precede comparison/serialization. Keep
+                        # only immutable bytes, never the mutable entry or a DTO.
+                        validate_rsi_python_admission_shapes(entry)
+                        try:
+                            entry_bytes = canonical_json(entry, maximum=128 * 1024)
+                        except ValueError:
+                            # A projection bound is not an additional admission
+                            # rejection. Preserve the original validation path.
+                            pass
+                    reused = entry_bytes is not None and previous_validated_entries.get(episode_id) == entry_bytes
+                    if not reused:
+                        request = SolverRequest.from_dict(identity["intent"]["request"])
+                        memory = MemorySnapshot.from_dict(identity["memory"])
+                        token = hashlib.sha256(canonical_json({
+                            "run_id": run_id, "episode_id": episode_id, "request": request.digest(),
+                        })).hexdigest()[:32]
+                        if (request.episode_id != episode_id
+                                or request.digest() != identity["request_sha256"]
+                                or memory.digest() != identity["memory_snapshot_sha256"]
+                                or request.memory_snapshot_sha256 != memory.digest()
+                                or identity["journal_id"] != "rsi-stage-" + token
+                                or identity["launch_id"] != "rsi-launch-" + token):
+                            raise ValueError("staging identity changed")
+                    if entry_bytes is not None and _staging_identity_helpers_current():
+                        if reused:
+                            validated_entries[episode_id] = entry_bytes
+                        else:
+                            try:
+                                validate_rsi_python_admission_shapes(entry)
+                                if canonical_json(entry, maximum=128 * 1024) == entry_bytes:
+                                    validated_entries[episode_id] = entry_bytes
+                            except ValueError:
+                                # A helper may have changed its input. Do not
+                                # retain that projection or add a new refusal.
+                                pass
                 except (KeyError, TypeError, ValueError, RSILearningError) as exc:
                     raise RSILearningError("rsi_python_admission_child_proof_history_drift") from exc
                 prior = previous_entries.get(episode_id)
@@ -853,6 +1197,7 @@ class RSILedger:
                 if entry["state"] == "ready" and entry["failure_code"] is not None:
                     raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             previous_entries = entries
+            previous_validated_entries = validated_entries
             previous_digest = digest
 
     def resolve_python_producer_checkpoint(
@@ -872,14 +1217,14 @@ class RSILedger:
         _id(episode_id, name="episode_id")
         if expected_checkpoint_sha256 is not None:
             _digest(expected_checkpoint_sha256, name="python_admission_expected_head")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (run_id,),
             ).fetchall()
             if not rows:
                 raise RSILearningError("rsi_python_admission_run_missing")
-            records = tuple(self._row_to_record(row) for row in rows)
+            records = tuple(self._row_to_record_cached(row) for row in rows)
             if any(record.kind != "run" or record.revision != ordinal for ordinal, record in enumerate(records)):
                 raise RSILearningError("rsi_python_admission_run_drift")
             root = self._checkpoint_binding(
@@ -923,7 +1268,7 @@ class RSILedger:
     def controller_checkpoint_history(self, run_id: str) -> list[tuple[str, dict[str, Any]]]:
         """Read the verified hash chain and its monotonic independently retained obligations."""
         _id(run_id, name="run_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             return self._controller_checkpoint_history_tx(connection, run_id)
 
@@ -953,6 +1298,40 @@ class RSILedger:
     def controller_checkpoint(self, run_id: str) -> tuple[str, dict[str, Any]] | None:
         history = self.controller_checkpoint_history(run_id)
         return history[-1] if history else None
+
+    def _controller_checkpoint_idle_head(self, run_id: str) -> tuple[str, dict[str, Any]] | None:
+        """Observe a fresh tail for owner idle polling; never validate history.
+
+        This private projection grants no event ACK or admission. Every pending
+        event and the final worker join still use controller_checkpoint's full
+        chain, reference-row and physical evidence gates. A changed middle row
+        may remain undetected until that next full gate; no authority is granted
+        while the owner waits. Only immutable digest computation may be reused.
+        """
+        self._assert_controller_lock(run_id)
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
+                "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        self._assert_controller_lock(run_id)
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["payload"])
+            if type(payload) is not dict:
+                raise ValueError
+            digest = self._checkpoint_digest_cached(
+                run_id, row["revision"], row["parent_sha256"], payload,
+                persisted_payload=row["payload"],
+            )
+            if row["checkpoint_sha256"] != digest:
+                raise ValueError
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RSILearningError("rsi_controller_checkpoint_corrupt") from exc
+        self._assert_controller_lock(run_id)
+        return digest, payload
 
     def controller_brs_reconcile_obligations(self, run_id: str) -> dict[str, Any]:
         """Read the exact BRS owner obligations from the latest checkpoint.
@@ -1019,7 +1398,7 @@ class RSILedger:
         )
         if expected_episode_record_sha256 is not None:
             _digest(expected_episode_record_sha256, name="brs_reconcile_episode")
-            with self._connect() as connection:
+            with closing(self._connect()) as connection, connection:
                 connection.execute("BEGIN IMMEDIATE")
                 run = self._head(connection, run_id)
                 episode = self._head(connection, obligation.episode_id)
@@ -1086,7 +1465,7 @@ class RSILedger:
             raise RSILearningError("rsi_brs_mailbox_evidence_owner_required")
         if expected_sha256 is not None:
             _digest(expected_sha256, name="brs_mailbox_evidence_checkpoint")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             roots = self._controller_checkpoint_history_tx(connection, run_id)
             if not roots or roots[-1][0] != record["root_checkpoint_sha256"]:
@@ -1151,7 +1530,7 @@ class RSILedger:
             raise RSILearningError("rsi_brs_terminal_owner_required")
         if expected_sha256 is not None:
             _digest(expected_sha256, name="brs_terminal_checkpoint")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             snapshot = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
             roots = snapshot["roots"]
@@ -1213,7 +1592,7 @@ class RSILedger:
         rows = connection.execute(
             "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
         ).fetchall()
-        episodes = tuple(self._row_to_record(row) for row in rows)
+        episodes = tuple(self._row_to_record_cached(row) for row in rows)
         run = self._head(connection, run_id)
         status = self._native_result_status(connection, episode_id, obligation.request_sha256)
         claim_row = connection.execute(
@@ -1248,7 +1627,7 @@ class RSILedger:
         """Observe existing evidence without initializing or writing any ledger files."""
         _id(run_id, name="run_id")
         _id(episode_id, name="episode_id")
-        with self.read_only_observations(), self._connect() as connection:
+        with self.read_only_observations(), closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             return self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
 
@@ -1269,7 +1648,7 @@ class RSILedger:
         self._assert_controller_lock(run_id)
         if settled_execution is not None and expected_pins is None:
             raise RSILearningError("rsi_brs_terminal_settlement_pins_required")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             if expected_pins is not None:
                 actual = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)["pins"]
@@ -1290,7 +1669,7 @@ class RSILedger:
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
             ).fetchall()
-            episode_history = tuple(self._row_to_record(row) for row in rows)
+            episode_history = tuple(self._row_to_record_cached(row) for row in rows)
             episode = _validate_brs_episode_history(obligation, episode_history)
             decision = reconcile_brs_selected(obligation, evidence)
             if decision.outcome == "already_terminal":
@@ -1527,7 +1906,7 @@ class RSILedger:
             raise RSILearningError("rsi_controller_checkpoint_invalid") from exc
         if not isinstance(clean, dict):
             raise RSILearningError("rsi_controller_checkpoint_invalid")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             return self._append_controller_checkpoint_tx(connection, run_id, clean, expected_sha256=expected_sha256)
 
@@ -1546,9 +1925,18 @@ class RSILedger:
         self._assert_controller_lock(run_id)
         revision = row["revision"] + 1 if row else 0
         digest = self._checkpoint_digest(run_id, revision, parent, clean)
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+        from .rsi_checkpoint_storage import (
+            canonical_checkpoint_text,
+            validate_reserved_checkpoint_row,
+        )
+
+        stored_payload = canonical_checkpoint_text(clean)
+        if reserved_brs_staging_mode(clean):
+            validate_reserved_checkpoint_row(run_id, revision, parent, stored_payload, digest)
         connection.execute(
             "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
-            (run_id, revision, parent, json.dumps(clean, sort_keys=True), digest),
+            (run_id, revision, parent, stored_payload, digest),
         )
         return digest
 
@@ -1596,11 +1984,153 @@ class RSILedger:
             raise RSILearningError("rsi_record_digest_mismatch")
         return record
 
+    def _row_to_record_cached(
+        self, row: sqlite3.Row | dict, *, class_static: bool = False,
+    ) -> RSIRecord:
+        """Decode each fresh row; memoize only its exact pure expected digest.
+
+        The reserved snapshot reader previously called the class static converter
+        directly on newly materialized plain dictionaries. Its explicit mode
+        preserves that class dispatch, including fallback and exception behavior;
+        ordinary callers retain the original instance/SQLite-only semantics.
+        """
+        converter = RSILedger._row_to_record if class_static is True else self._row_to_record
+        primitive_dict = False
+        if class_static is True and type(row) is dict:
+            columns = {
+                "logical_id", "revision", "kind", "state", "request_sha256",
+                "parent_record_sha256", "payload", "record_sha256", "created_at",
+            }
+            primitive_dict = (
+                len(row) == len(columns) and all(type(key) is str for key in row)
+                and row.keys() == columns and type(row["revision"]) is int
+                and all(type(row[name]) is str for name in (
+                    "logical_id", "kind", "state", "request_sha256", "payload",
+                    "record_sha256", "created_at",
+                ))
+                and (row["parent_record_sha256"] is None
+                     or type(row["parent_record_sha256"]) is str)
+            )
+        eligible_row = ((class_static is False and type(row) is sqlite3.Row) or primitive_dict)
+        if (type(self) is not RSILedger or not eligible_row
+                or converter is not _RECORD_ROW_CONVERTER
+                or converter.__code__ is not _RECORD_ROW_CONVERTER_CODE
+                or json.loads is not _RECORD_JSON_LOADS
+                or json.loads.__code__ is not _RECORD_JSON_LOADS_CODE
+                or RSIRecord is not _RECORD_TYPE
+                or RSIRecord.__init__ is not _RECORD_CONSTRUCTOR
+                or RSIRecord.__init__.__code__ is not _RECORD_CONSTRUCTOR_CODE):
+            return converter(row)
+
+        def helpers_current() -> bool:
+            # json.loads' fast path dispatches through this mutable decoder.
+            # A replacement may return a different graph for the same SQLite
+            # text; it must never use a memo established by the normal decoder.
+            decoder = json._default_decoder
+            if (canonical_json is not _RECORD_CANONICAL_JSON
+                    or decoder is not _RECORD_JSON_DECODER
+                    or type(decoder) is not _RECORD_JSON_DECODER_TYPE
+                    or (RSILedger._record_digest if class_static is True else self._record_digest)
+                    is not _RECORD_DIGEST):
+                return False
+            namespace = object.__getattribute__(decoder, "__dict__")
+            if ("decode" in namespace or "raw_decode" in namespace
+                    or namespace.get("scan_once") is not _RECORD_JSON_SCAN_ONCE):
+                return False
+            functions = (
+                RSILedger._record_digest, json.loads, canonical_json,
+                canonical_json.__globals__.get("_json_bytes"), json.dumps,
+                type(decoder).decode, type(decoder).raw_decode,
+            )
+            for function, (original, code, defaults, keyword_defaults) in zip(
+                functions, _RECORD_DIGEST_FUNCTION_PINS, strict=True,
+            ):
+                if (function is not original or function.__code__ is not code
+                        or function.__defaults__ is not defaults):
+                    return False
+                current = function.__kwdefaults__
+                if keyword_defaults is None:
+                    if current is not None:
+                        return False
+                elif (type(current) is not dict or len(current) != len(keyword_defaults)
+                      or any(type(key) is not str for key in current)
+                      or any(key not in current or current[key] is not value
+                             for key, value in keyword_defaults)):
+                    return False
+            return True
+
+        if not helpers_current():
+            return converter(row)
+        # Keep the static converter's field reads and decoder order.  The memo
+        # never contains this newly allocated record or its mutable payload.
+        record = RSIRecord(
+            logical_id=row["logical_id"],
+            revision=row["revision"],
+            kind=row["kind"],
+            state=row["state"],
+            request_sha256=row["request_sha256"],
+            parent_record_sha256=row["parent_record_sha256"],
+            payload=json.loads(persisted_payload := row["payload"]),
+            record_sha256=row["record_sha256"],
+            created_at=row["created_at"],
+        )
+        key = None
+        if (helpers_current()
+                and type(record.payload) is dict and type(record.revision) is int
+                and all(type(value) is str for value in (
+                    record.logical_id, record.kind, record.state, record.request_sha256, persisted_payload,
+                ))
+                and (record.parent_record_sha256 is None or type(record.parent_record_sha256) is str)
+                and (not primitive_dict or all(type(value) is str for value in (
+                    record.record_sha256, record.created_at,
+                )))):
+            key = (
+                record.logical_id, record.revision, record.kind, record.state,
+                record.request_sha256, record.parent_record_sha256, persisted_payload,
+            )
+        expected = None
+        if key is not None:
+            with self._record_digest_cache_lock:
+                cached = self._record_digest_cache.get(key)
+                if cached is not None:
+                    self._record_digest_cache.move_to_end(key)
+                    expected = cached[0]
+        if expected is None:
+            expected = RSILedger._record_digest(
+                logical_id=record.logical_id, revision=record.revision, kind=record.kind,
+                state=record.state, request_sha256=record.request_sha256,
+                parent_record_sha256=record.parent_record_sha256, payload=record.payload,
+            )
+            if key is not None:
+                retained_units = (
+                    4 * sum(len(value) for value in key if type(value) is str)
+                    + 1024 + sys.getsizeof(record.revision)
+                )
+                if (0 < _RECORD_DIGEST_CACHE_MAX_ENTRIES
+                        and retained_units <= _RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS):
+                    with self._record_digest_cache_lock:
+                        if key in self._record_digest_cache:
+                            self._record_digest_cache.move_to_end(key)
+                        else:
+                            while self._record_digest_cache and (
+                                len(self._record_digest_cache) >= _RECORD_DIGEST_CACHE_MAX_ENTRIES
+                                or self._record_digest_cache_retained_units + retained_units
+                                > _RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS
+                            ):
+                                _, (_, evicted_units) = self._record_digest_cache.popitem(last=False)
+                                self._record_digest_cache_retained_units -= evicted_units
+                            self._record_digest_cache[key] = (expected, retained_units)
+                            self._record_digest_cache_retained_units += retained_units
+        # A stored digest is a claim to check, never a cache key or authority.
+        if expected != record.record_sha256:
+            raise RSILearningError("rsi_record_digest_mismatch")
+        return record
+
     def _head(self, connection: sqlite3.Connection, logical_id: str) -> RSIRecord | None:
         row = connection.execute(
             "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision DESC LIMIT 1", (logical_id,)
         ).fetchone()
-        return self._row_to_record(row) if row is not None else None
+        return self._row_to_record_cached(row) if row is not None else None
 
     def _create(
         self, *, logical_id: str, kind: Literal["run", "episode", "memory", "transfer"], state: str,
@@ -1617,7 +2147,7 @@ class RSILedger:
         if state not in states:
             raise RSILearningError("rsi_state_invalid")
         clean_payload = _payload(payload)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             if self._head(connection, logical_id) is not None:
                 raise RSILearningError("rsi_record_exists")
@@ -1626,9 +2156,21 @@ class RSILedger:
                 logical_id=logical_id, revision=0, kind=kind, state=state,
                 request_sha256=request_sha256, parent_record_sha256=None, payload=clean_payload,
             )
+            stored_payload = json.dumps(clean_payload, sort_keys=True)
+            if kind == "run":
+                from .rsi_brs_serial_driver import reserved_brs_staging_mode
+                from .rsi_checkpoint_storage import (
+                    canonical_checkpoint_text,
+                    validate_reserved_record_row,
+                )
+
+                if reserved_brs_staging_mode(clean_payload):
+                    stored_payload = canonical_checkpoint_text(clean_payload)
+                    validate_reserved_record_row(logical_id, 0, kind, state, request_sha256, None,
+                                                 stored_payload, record_sha256, created_at)
             connection.execute(
                 "INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (logical_id, 0, kind, state, request_sha256, None, json.dumps(clean_payload, sort_keys=True), record_sha256, created_at),
+                (logical_id, 0, kind, state, request_sha256, None, stored_payload, record_sha256, created_at),
             )
             return RSIRecord(logical_id, 0, kind, state, request_sha256, None, clean_payload, record_sha256, created_at)
 
@@ -1669,7 +2211,7 @@ class RSILedger:
         if not rows:
             raise RSILearningError("rsi_python_admission_run_missing")
         try:
-            runs = tuple(self._row_to_record(row) for row in rows)
+            runs = tuple(self._row_to_record_cached(row) for row in rows)
             if any(type(run.payload) is not dict for run in runs):
                 raise ValueError("run payload is not an object")
         except (TypeError, ValueError, RSILearningError) as exc:
@@ -1712,7 +2254,29 @@ class RSILedger:
             raise RSILearningError("rsi_python_admission_original_proof_drift")
         if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
             raise RSILearningError("rsi_python_admission_run_conflict")
-        staging_history = self._controller_checkpoint_history_tx(connection, admission.run_id)
+        history_input = None
+        history_projection = None
+        if _admission_checkpoint_helpers_current(self):
+            history_input, staging_history = self._controller_checkpoint_history_observation_tx(
+                connection, admission.run_id,
+            )
+            # Do not duplicate the large lineage, admission plans or staging trees
+            # in every historical state. Only these fields enter the later loop.
+            # The complete latest state is freshly decoded below for attribution.
+            keys = ("budget_state", "producer_checkpoint_binding", "run_id",
+                    "root_snapshot", "memory_snapshot", "generations")
+            try:
+                history_projection = tuple((digest, _admission_checkpoint_projection(
+                    {key: body[key] for key in keys if key in body},
+                )) for digest, body in staging_history)
+            except (TypeError, ValueError, RecursionError):
+                # A projection is optional pure work, not an earlier refusal
+                # boundary for a deeply nested or otherwise unusual JSON graph.
+                # Preserve this fresh validated history and the old second pass.
+                history_input = None
+                history_projection = None
+        else:
+            staging_history = self._controller_checkpoint_history_tx(connection, admission.run_id)
         from .rsi_brs_serial_driver import reserved_brs_staging_mode
 
         original_serial = reserved_brs_staging_mode(original.payload)
@@ -1739,17 +2303,33 @@ class RSILedger:
         ).fetchall()
         if not checkpoint_rows:
             raise RSILearningError("rsi_python_admission_checkpoint_missing")
+        # This is still the original second fresh SQL read. Reuse only pure
+        # decoded projections and calculated digests tied to its complete input;
+        # changed rows or executable helpers take the unchanged full parse path.
+        try:
+            reuse_history = (history_input is not None and history_projection is not None
+                and _admission_checkpoint_helpers_current(self)
+                and tuple(tuple(row[name] for name in (
+                    "revision", "parent_sha256", "payload", "checkpoint_sha256"))
+                    for row in checkpoint_rows) == history_input)
+        except (KeyError, IndexError, TypeError):
+            # A malformed second row must retain the original per-row refusal
+            # and error wrapping below; raw observation is only an optimization.
+            reuse_history = False
         parent = None
         state: dict[str, Any] = {}
         snapshots = [run.payload.get("memory_snapshot") for run in runs]
         for ordinal, row in enumerate(checkpoint_rows):
             try:
-                state = json.loads(row["payload"])
-                if type(state) is not dict:
-                    raise ValueError("checkpoint is not an object")
-                digest = self._checkpoint_digest_cached(
-                    admission.run_id, ordinal, parent, state, persisted_payload=row["payload"],
-                )
+                if reuse_history:
+                    digest, state = history_projection[ordinal]
+                else:
+                    state = json.loads(row["payload"])
+                    if type(state) is not dict:
+                        raise ValueError("checkpoint is not an object")
+                    digest = self._checkpoint_digest_cached(
+                        admission.run_id, ordinal, parent, state, persisted_payload=row["payload"],
+                    )
                 budget = RSIRunBudget.load(state["budget_state"])
                 budget.assert_matches(original.payload["budget"])
                 if canonical_json(budget.to_dict()["planned"]) != canonical_json(planned_budget):
@@ -1770,6 +2350,17 @@ class RSILedger:
                 if type(generation) is not dict:
                     raise RSILearningError("rsi_python_admission_checkpoint_drift")
                 snapshots.extend((generation.get("parent_memory"), generation.get("candidate_memory")))
+        if reuse_history:
+            # Keep the returned/full attribution state independent of both the
+            # staging validator's mutable history and the private projections.
+            try:
+                if not _admission_checkpoint_helpers_current(self):
+                    raise ValueError("admission checkpoint decoder changed")
+                state = json.loads(checkpoint_rows[-1]["payload"])
+                if type(state) is not dict or not _admission_checkpoint_helpers_current(self):
+                    raise ValueError("admission checkpoint decoder changed")
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise RSILearningError("rsi_python_admission_checkpoint_drift") from exc
         if expected_checkpoint_sha256 is not None and parent != expected_checkpoint_sha256:
             raise RSILearningError("rsi_python_admission_checkpoint_conflict")
         selected_proof = self._select_python_producer_checkpoint_tx(
@@ -1859,7 +2450,7 @@ class RSILedger:
         for value in (expected_run_record_sha256, expected_checkpoint_sha256, expected_episode_record_sha256):
             if value is not None:
                 _digest(value, name="python_admission_expected_head")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             row = connection.execute(
                 "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
@@ -1892,7 +2483,7 @@ class RSILedger:
             _digest(value, name="python_admission_expected_head")
         self._assert_controller_lock(retained.run_id)
         wire = retained.to_json().decode("utf-8")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             current, state, episode_status, claim_status = self._python_admission_state_tx(
                 connection, retained, expected_run_record_sha256=expected_run_record_sha256,
@@ -1940,7 +2531,7 @@ class RSILedger:
         for value in (expected_run_record_sha256, expected_checkpoint_sha256, expected_episode_record_sha256):
             _digest(value, name="python_admission_expected_head")
         self._assert_controller_lock(retained.run_id)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             current, state, episode_status, claim_status = self._python_admission_state_tx(
                 connection, retained, expected_run_record_sha256=expected_run_record_sha256,
@@ -1994,7 +2585,7 @@ class RSILedger:
         logical_id = f"memory:{snapshot.snapshot_id}"
         request_sha256 = snapshot.digest()
         payload = snapshot.to_dict()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = self._head(connection, logical_id)
             if existing is not None:
@@ -2028,7 +2619,7 @@ class RSILedger:
             raise RSILearningError("rsi_transfer_receipt_invalid")
         logical_id = f"transfer:{receipt.run_id}:{receipt.target_id}"
         payload = receipt.to_dict()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = self._head(connection, logical_id)
             if existing is not None:
@@ -2071,9 +2662,18 @@ class RSILedger:
             raise RSILearningError("rsi_controller_checkpoint_conflict")
         revision = row["revision"] + 1
         digest = self._checkpoint_digest(run_id, revision, expected_sha256, clean)
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+        from .rsi_checkpoint_storage import (
+            canonical_checkpoint_text,
+            validate_reserved_checkpoint_row,
+        )
+
+        stored_payload = canonical_checkpoint_text(clean)
+        if reserved_brs_staging_mode(clean):
+            validate_reserved_checkpoint_row(run_id, revision, expected_sha256, stored_payload, digest)
         connection.execute(
             "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
-            (run_id, revision, expected_sha256, json.dumps(clean, sort_keys=True), digest),
+            (run_id, revision, expected_sha256, stored_payload, digest),
         )
         return digest
 
@@ -2083,7 +2683,7 @@ class RSILedger:
     ) -> str:
         """Atomically bind a callback reconciliation to both current checkpoint and episode."""
         self._assert_controller_lock(run_id)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             episode = self._head(connection, episode_id)
             if episode is None or episode.record_sha256 != expected_episode_sha256:
@@ -2167,7 +2767,7 @@ class RSILedger:
         if episode.payload["run_id"] != internal_run_id or state.get("receipt") != payload:
             raise RSILearningError("rsi_transfer_reconciliation_corrupt")
         logical_id = f"transfer:{receipt.run_id}:{receipt.target_id}"
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             head = self._head(connection, logical_id)
             if head is None or head.record_sha256 != expected_record_sha256:
@@ -2268,7 +2868,7 @@ class RSILedger:
             raise RSILearningError("rsi_native_episode_request_invalid")
         plan_sha256 = self._native_claim_plan(plan_sha256)
         request_sha256 = request.digest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
                 (request.episode_id,),
@@ -2314,7 +2914,7 @@ class RSILedger:
         request_sha256 = request.digest()
         claim_sha256 = self._native_claim_digest(request.episode_id, request_sha256, plan_sha256)
         created_at = utc_now()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             if guarded:
                 self._assert_controller_lock(controller_run_id)
@@ -2362,7 +2962,7 @@ class RSILedger:
             raise RSILearningError("rsi_native_episode_claim_identity_invalid")
         plan_sha256 = self._native_claim_plan(plan_sha256)
         request_sha256 = request.digest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
@@ -2435,7 +3035,7 @@ class RSILedger:
         request_wire = canonical_json(request.to_dict(), maximum=128 * 1024).decode("utf-8")
         result_wire = canonical_json(result.to_dict(), maximum=128 * 1024).decode("utf-8")
         result_digest = hashlib.sha256(result_wire.encode("utf-8")).hexdigest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             self._assert_controller_lock(controller_run_id)
             history = self._controller_checkpoint_history_tx(connection, controller_run_id)
@@ -2519,7 +3119,7 @@ class RSILedger:
         request_wire = canonical_json(request_payload, maximum=128 * 1024)
         result_wire = canonical_json(result_payload, maximum=128 * 1024)
         result_sha256 = hashlib.sha256(result_wire).hexdigest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT request_sha256, request_payload, result_payload, result_sha256 "
@@ -2548,7 +3148,7 @@ class RSILedger:
 
     def episode_result(self, episode_id: str) -> tuple[SolverRequest, SolverResult] | None:
         _id(episode_id, name="episode_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT episode_id, request_sha256, request_payload, result_payload, result_sha256 FROM rsi_episode_results "
                 "WHERE episode_id = ?", (episode_id,)
@@ -2680,14 +3280,14 @@ class RSILedger:
         expected_record_sha256: str | None = None,
     ) -> RSIRecord:
         """Append a canonical episode revision with identity and lineage checks."""
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             return self._append_episode_record_tx(
                 connection, episode, expected_record_sha256=expected_record_sha256,
             )
 
     def get(self, logical_id: str) -> RSIRecord | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             return self._head(connection, logical_id)
 
     def get_run(self, run_id: str) -> RSIRecord | None:
@@ -2717,11 +3317,11 @@ class RSILedger:
         return record
 
     def history(self, logical_id: str) -> tuple[RSIRecord, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (logical_id,)
             ).fetchall()
-        records = tuple(self._row_to_record(row) for row in rows)
+        records = tuple(self._row_to_record_cached(row) for row in rows)
         parent: str | None = None
         for ordinal, record in enumerate(records):
             if record.revision != ordinal or record.parent_record_sha256 != parent:
@@ -2731,7 +3331,7 @@ class RSILedger:
 
     def episode_ids_for_run(self, run_id: str) -> tuple[str, ...]:
         _id(run_id, name="run_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT DISTINCT logical_id FROM rsi_records "
                 "WHERE kind = 'episode' ORDER BY logical_id"
@@ -2746,7 +3346,7 @@ class RSILedger:
     def episode_reconciliation(self, episode_id: str) -> tuple[dict[str, Any], ...]:
         """Read and verify the complete append-only reconciliation journal."""
         _id(episode_id, name="episode_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT revision, parent_record_sha256, worker_state, evidence, "
                 "result_sha256, journal_sha256 FROM rsi_episode_reconciliations "
@@ -2797,7 +3397,7 @@ class RSILedger:
         payload_patch: Mapping[str, Any] | None = None,
     ) -> RSIRecord:
         _digest(expected_record_sha256, name="expected_record_sha256")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             head = self._head(connection, logical_id)
             if head is None:
@@ -2819,10 +3419,22 @@ class RSILedger:
                 logical_id=logical_id, revision=revision, kind=head.kind, state=state,
                 request_sha256=head.request_sha256, parent_record_sha256=head.record_sha256, payload=merged,
             )
+            stored_payload = json.dumps(merged, sort_keys=True)
+            if head.kind == "run":
+                from .rsi_brs_serial_driver import reserved_brs_staging_mode
+                from .rsi_checkpoint_storage import (
+                    canonical_checkpoint_text,
+                    validate_reserved_record_row,
+                )
+
+                if reserved_brs_staging_mode(merged):
+                    stored_payload = canonical_checkpoint_text(merged)
+                    validate_reserved_record_row(logical_id, revision, head.kind, state, head.request_sha256,
+                                                 head.record_sha256, stored_payload, record_sha256, created_at)
             connection.execute(
                 "INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (logical_id, revision, head.kind, state, head.request_sha256, head.record_sha256,
-                 json.dumps(merged, sort_keys=True), record_sha256, created_at),
+                 stored_payload, record_sha256, created_at),
             )
             return RSIRecord(logical_id, revision, head.kind, state, head.request_sha256, head.record_sha256, merged, record_sha256, created_at)
 
@@ -2873,7 +3485,7 @@ class RSILedger:
             })
         if not has_reconciliation:
             raise RSILearningError("rsi_unknown_reconcile_evidence_required")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             self._assert_controller_lock(run_id)
             head = self._head(connection, run_id)
@@ -3024,7 +3636,7 @@ class RSILedger:
                 if worker_state not in {"failed", "timed_out", "abandoned", "cancelled"}:
                     raise RSILearningError("rsi_unknown_reconcile_state_invalid")
                 settled = episode.transition(state, terminal_reason=f"reconciled_worker_{worker_state}")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             head = self._head(connection, episode_id)
             if head is None:
@@ -3060,6 +3672,122 @@ class RSILedger:
                 connection, settled, expected_record_sha256=expected_record_sha256,
                 allow_unknown_settlement=True,
             )
+
+
+# Keep replaced compatibility helpers and decoders on their original execution
+# path.  Code identities also detect an in-place function implementation change.
+_RECORD_ROW_CONVERTER = RSILedger._row_to_record
+_RECORD_ROW_CONVERTER_CODE = _RECORD_ROW_CONVERTER.__code__
+_RECORD_DIGEST = RSILedger._record_digest
+_RECORD_JSON_LOADS = json.loads
+_RECORD_JSON_LOADS_CODE = _RECORD_JSON_LOADS.__code__
+_RECORD_CANONICAL_JSON = canonical_json
+_RECORD_TYPE = RSIRecord
+_RECORD_CONSTRUCTOR = RSIRecord.__init__
+_RECORD_CONSTRUCTOR_CODE = _RECORD_CONSTRUCTOR.__code__
+_RECORD_JSON_DECODER = json._default_decoder
+_RECORD_JSON_DECODER_TYPE = type(_RECORD_JSON_DECODER)
+_RECORD_JSON_SCAN_ONCE = _RECORD_JSON_DECODER.scan_once
+_RECORD_DIGEST_FUNCTION_PINS = tuple(
+    (function, function.__code__, function.__defaults__,
+     None if function.__kwdefaults__ is None else tuple(function.__kwdefaults__.items()))
+    for function in (
+        _RECORD_DIGEST, _RECORD_JSON_LOADS, _RECORD_CANONICAL_JSON,
+        _RECORD_CANONICAL_JSON.__globals__["_json_bytes"], json.dumps,
+        _RECORD_JSON_DECODER_TYPE.decode, _RECORD_JSON_DECODER_TYPE.raw_decode,
+    )
+)
+
+
+# Admission reuse exists only within one _python_admission_state_tx call. These
+# pins preserve callback/monkeypatch behavior by selecting the old parse path.
+_ADMISSION_CHECKPOINT_METHOD_PINS = tuple(
+    (name, function, function.__code__, function.__defaults__, function.__kwdefaults__,
+     tuple((function.__kwdefaults__ or {}).items()))
+    for name in ("_controller_checkpoint_history_tx", "_controller_checkpoint_history_observation_tx",
+                 "_controller_checkpoint_history_rows_tx", "_checkpoint_projection_cache",
+                 "_checkpoint_digest_cached", "_checkpoint_digest")
+    for descriptor in (vars(RSILedger)[name],)
+    for function in (descriptor.__func__ if type(descriptor) is staticmethod else descriptor,)
+)
+_ADMISSION_CHECKPOINT_PROJECTION = _admission_checkpoint_projection
+_ADMISSION_CHECKPOINT_PROJECTION_CODE = _ADMISSION_CHECKPOINT_PROJECTION.__code__
+_ADMISSION_CHECKPOINT_SHA256 = hashlib.sha256
+_ADMISSION_CHECKPOINT_ENCODER_TYPE = json.JSONEncoder
+_ADMISSION_CHECKPOINT_ENCODER_MODULE = json.encoder
+_ADMISSION_CHECKPOINT_FUNCTION_PINS = tuple(
+    (function, function.__code__, function.__defaults__, function.__kwdefaults__,
+     tuple((function.__kwdefaults__ or {}).items()))
+    for function in (json.loads, canonical_json, canonical_json.__globals__["_json_bytes"], json.dumps,
+                     _RECORD_JSON_DECODER_TYPE.decode, _RECORD_JSON_DECODER_TYPE.raw_decode,
+                     json.JSONEncoder.__init__, json.JSONEncoder.encode, json.JSONEncoder.iterencode,
+                     json.encoder._make_iterencode)
+)
+_ADMISSION_CHECKPOINT_ENCODER_PINS = tuple(
+    (name, getattr(json.encoder, name)) for name in (
+        "c_make_encoder", "encode_basestring", "encode_basestring_ascii"))
+
+
+def _build_checkpoint_projection_pins():
+    """Capture original pure parser functions and small schema constants once."""
+    from . import (
+        candidate_evaluation_spec,
+        producer_bundle_handoff,
+        producer_bundle_publication,
+        python_producer_admission_anchor,
+        python_producer_admission_handoff,
+        rsi_gateway,
+        rsi_native_plan,
+        rsi_python_admission,
+    )
+
+    modules = (sys.modules[__name__], rsi_python_admission, rsi_native_plan,
+               rsi_gateway, producer_bundle_publication, python_producer_admission_anchor,
+               python_producer_admission_handoff, candidate_evaluation_spec, producer_bundle_handoff)
+    functions = []
+    constants = []
+    seen = set()
+
+    def capture(owner, name, descriptor):
+        function = descriptor.__func__ if type(descriptor) in (staticmethod, classmethod) else descriptor
+        if not hasattr(function, "__code__") or (id(owner), name) in seen:
+            return
+        seen.add((id(owner), name))
+        functions.append((owner, name, descriptor, function, function.__code__,
+                          function.__defaults__, function.__kwdefaults__,
+                          tuple((function.__kwdefaults__ or {}).items()), function.__closure__,
+                          tuple(cell.cell_contents for cell in (function.__closure__ or ()))))
+        wrapped = getattr(function, "__wrapped__", None)
+        if wrapped is not None:
+            capture(function, "__wrapped__", wrapped)
+
+    for module in modules:
+        for name, value in tuple(vars(module).items()):
+            capture(module, name, value)
+            if type(value) is type and value.__module__ == module.__name__:
+                for member, descriptor in tuple(vars(value).items()):
+                    capture(value, member, descriptor)
+            if type(value) in (type, re.Pattern):
+                constants.append((module, name, value, None))
+                continue
+            if (name.startswith("__") or name in {
+                    "_HISTORY_PROJECTION_CACHE_MAX_ENTRIES", "_HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS"}
+                    or not name.startswith(("_", "MAX_"))):
+                continue
+            try:
+                snapshot = _checkpoint_projection_constant(value)
+            except (TypeError, ValueError, RecursionError):
+                continue
+            constants.append((module, name, value, snapshot))
+    return tuple(functions), tuple(constants)
+
+
+_HISTORY_PROJECTION_TYPE = _CheckpointHistoryRowProjection
+_HISTORY_PROJECTION_GUARD = _checkpoint_projection_helpers_current
+_HISTORY_PROJECTION_GUARD_CODE = _HISTORY_PROJECTION_GUARD.__code__
+_HISTORY_PROJECTION_FUNCTION_PINS, _HISTORY_PROJECTION_VALUE_PINS = _build_checkpoint_projection_pins()
+_HISTORY_PROJECTION_ORIGINAL_FUNCTION_PINS = _HISTORY_PROJECTION_FUNCTION_PINS
+_HISTORY_PROJECTION_ORIGINAL_VALUE_PINS = _HISTORY_PROJECTION_VALUE_PINS
 
 
 __all__ = [

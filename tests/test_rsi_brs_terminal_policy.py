@@ -7,6 +7,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 import pytest
 
+from lunar_evolution import producer_python_runtime_tree as runtime_tree
+from lunar_evolution import rsi_brs_publication_lineage as publication
 from lunar_evolution import rsi_brs_terminal_evidence as composer
 from lunar_evolution import rsi_python_brs_admission as admission
 from lunar_evolution import rsi_python_brs_terminal_lifecycle as terminal
@@ -46,10 +48,51 @@ def _replacement(*_args, **_kwargs):
     (threading.Condition, "__exit__"),
     (threading, "get_ident"),
     (RSILearningController, "_reconcile_brs_terminal_locked"),
+    (terminal.BRSOwnerTerminalLifecycle, "_scope_identity"),
+    (terminal.BRSOwnerTerminalLifecycle, "_transport_identity"),
+    (terminal.BRSOwnerTerminalLifecycle, "_idle"),
+    (terminal.BRSOwnerTerminalLifecycle, "_join_worker"),
+    (terminal._PrimitiveExchange, "_submit_waiting"),
 ])
 def test_terminal_runtime_method_replacement_invalidates_policy(monkeypatch, original_policy, target, name):
     monkeypatch.setattr(target, name, _replacement)
     _assert_drift(original_policy)
+
+
+@pytest.mark.parametrize("change", ["alias", "code"])
+def test_ack_wait_helper_drift_refuses_with_warm_scoped_policy(monkeypatch, original_policy, change):
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        with monkeypatch.context() as patch:
+            if change == "alias":
+                patch.setattr(terminal._PrimitiveExchange, "_submit_waiting", _replacement)
+            else:
+                patch.setattr(terminal._PrimitiveExchange._submit_waiting, "__code__", _replacement.__code__)
+            with pytest.raises(RSILearningError, match="drift"):
+                _policy()
+        assert _policy() == original_policy
+
+
+@pytest.mark.parametrize("attribute,value", [("__defaults__", (None,)), ("__kwdefaults__", {"check": None})])
+def test_ack_wait_function_defaults_cannot_borrow_a_warm_policy(monkeypatch, original_policy, attribute, value):
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        monkeypatch.setattr(terminal._PrimitiveExchange._submit_waiting, attribute, value)
+        with pytest.raises(RSILearningError, match="terminal_wait_policy_drift"):
+            _policy()
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_warm_policy_requires_its_completed_cold_wait_pin(original_policy, missing):
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        cached = publication._POLICY_OBSERVATION_LOCAL.cache
+        if missing:
+            del cached["terminal_wait"]
+        else:
+            cached["terminal_wait"] = object()
+        with pytest.raises(RSILearningError, match="terminal_wait_policy_drift"):
+            _policy()
 
 
 @pytest.mark.parametrize("name", ["BRSAdmissionAck", "BRSAdmissionChannel", "build_brs_admission_ready"])
@@ -77,3 +120,51 @@ def test_regex_flag_change_with_identical_pattern_invalidates_policy(monkeypatch
     assert changed.pattern == original.pattern and changed.flags != original.flags
     monkeypatch.setattr(module, "_SHA", changed)
     _assert_drift(original_policy)
+
+
+def test_runtime_tree_json_helpers_and_limits_are_retained_in_original_policy(original_policy):
+    dependency = original_policy["dependencies"]["runtime_tree_json"]
+    assert set(dependency["helpers"]) == {
+        "_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current",
+    }
+    assert dependency["limits"] == {
+        "_JSON_FAST_MAX_DEPTH": runtime_tree._JSON_FAST_MAX_DEPTH,
+        "_JSON_FAST_MAX_NODES": runtime_tree._JSON_FAST_MAX_NODES,
+        "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES": runtime_tree.MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES,
+    }
+
+
+@pytest.mark.parametrize("name", ["_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current"])
+@pytest.mark.parametrize("change", ["alias", "code"])
+def test_runtime_tree_json_helper_drift_refuses_with_warm_scoped_policy(monkeypatch, original_policy, name, change):
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        with monkeypatch.context() as patch:
+            if change == "alias":
+                patch.setattr(runtime_tree, name, _replacement)
+            else:
+                patch.setattr(getattr(runtime_tree, name), "__code__", _replacement.__code__)
+            with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejection_policy_drift$"):
+                _policy()
+        assert _policy() == original_policy
+
+
+@pytest.mark.parametrize("name", [
+    "_JSON_FAST_MAX_DEPTH", "_JSON_FAST_MAX_NODES", "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES",
+])
+@pytest.mark.parametrize("change", ["integer", "foreign"])
+def test_runtime_tree_json_limit_drift_refuses_before_warm_policy_or_foreign_equality(
+    monkeypatch, original_policy, name, change,
+):
+    class Foreign:
+        def __eq__(self, _other):
+            pytest.fail("policy invoked foreign JSON-limit equality")
+
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        with monkeypatch.context() as patch:
+            value = getattr(runtime_tree, name) + 1 if change == "integer" else Foreign()
+            patch.setattr(runtime_tree, name, value)
+            with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_runtime_tree_json_policy_drift$"):
+                _policy()
+        assert _policy() == original_policy

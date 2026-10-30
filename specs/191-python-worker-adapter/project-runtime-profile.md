@@ -1,7 +1,11 @@
 # Project runtime profile continuation
 
-Status: design only. No project version, dependency closure, image or runtime is
-accepted by this document. `production_admission=false`.
+Status: executable-profile design only. No dependency closure, image or runtime
+is accepted by this document. The source/declaration portion of step1 now has
+independently reviewed OpenEvolve v0.4.0 and Shinka v0.0.7 baselines in
+`openevolve-source-profile-review-20261025.md` and
+`shinka-source-profile-review-20261025.md`; the complete step remains open.
+`production_admission=false`.
 
 ## Current executable boundary
 
@@ -40,9 +44,10 @@ Each project profile must independently retain:
 - The project configuration, request/memory mapping, output contract and local
   export selection. These are bound to each episode's original launch evidence.
 
-Names and version strings alone are insufficient. No current project version or
-dependency identity is selected here, and current host packages cannot fill a
-missing entry. Do not widen the nine-module fixture and claim SDK support.
+Names and version strings alone are insufficient. The separately reviewed
+OpenEvolve source baseline is not a selected executable or dependency identity;
+current host packages cannot fill a missing entry. Do not widen the nine-module
+fixture and claim SDK support.
 
 ## Entrypoint and lifecycle
 

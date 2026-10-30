@@ -1,11 +1,27 @@
 # Feature 193 tasks
 
 Stage 1 and the listed detached continuations are implemented and merged. Their
-verified final-source CI is recorded separately below; independent raw/source/tree
-audit obligations remain open where the retained evidence has not been checked.
+verified final-source CI is recorded separately below. The seven-source historical
+raw/source/tree closeout is retained in
+`historical-evidence-audit-20261025.md`; actual build/runtime gates stay open.
 See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
+
+## Source-data execution view v4 continuation — 2026-10-29
+
+- [x] Specify explicit v4 schema/backend, source-data permission projection and
+  original deadline/runner/consumer reuse in `source-data-execution-view-v4.md`.
+- [x] Preserve original source pins/xbit and legacy behavior; bind complete final
+  inputs/capture plans, real OCI mount view and original workspace identities.
+- [x] Complete independent static review and source-bound affected software
+  regression: 649 current applicable unique passing cases, 120 new; initial four
+  test-fixture/assertion failures and the affected 147/147 pass remain separate.
+- [ ] Accept actual rootless source-data view: the sole actual smoke failed at
+  image import rc125 due `/var/tmp` temporary archive quota, before container
+  creation. vfs root metadata support is also unproven; no fallback was used.
+- [ ] Complete full configured CPython/freezer/link/implicit inputs and accepted
+  installation/runtime/producer CLI. The source-data mechanism does not close it.
 
 ## Stage 1 — reviewed source preparation
 
@@ -33,7 +49,7 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] T11a Add the bounded 82-case CI gate with retained XML and annotations.
 - [x] T11b (CI) Verify PR50 final source `861e068` against run `38198840702`,
   completed/success on the original three-version 3-job matrix; merged at `3d0df9f`.
-- [ ] T11b (audit) Verify and retain the independent raw/source/tree audit for
+- [x] T11b (audit) Verify and retain the independent raw/source/tree audit for
   that final source. Merge status alone does not complete this obligation.
 - [x] T12 Update validation and handoff with implemented stage 1 scope, exact
   evidence and remaining stage boundaries only after the corresponding checks.
@@ -52,7 +68,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   296 unique cases total; add the bounded 113-case retained CI gate.
 - [x] F01f (CI) Verify PR51 final source `517593c` against run `38198846690`,
   completed/success on the original three-version 3-job matrix; merged at `d46624e`.
-- [ ] F01f (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F01f (audit) Verify and retain the independent raw/source/tree audit for
   the final preparation source and its dependency links.
 
 ## F04 bounded two-input report continuation
@@ -68,7 +84,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   compatibility cases,414 unique passes; retain the219-case CI gate.
 - [x] F04e (CI) Verify PR52 final source `ac763f0` against run `38199122019`,
   completed/success on all 15 checks; merged at `e0bd7b8`.
-- [ ] F04e (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F04e (audit) Verify and retain the independent raw/source/tree audit for
   that source. Live F04 below remains incomplete.
 
 ## F01 bounded installation contract continuation
@@ -83,7 +99,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   the final source and add a retained focused CI gate.
 - [x] F01k (CI) Verify PR53 final source `4f4d880` against run `38199235337`,
   completed/success on all 15 checks; merged at `5adbdb8`.
-- [ ] F01k (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F01k (audit) Verify and retain the independent raw/source/tree audit for
   the final installation-contract source. No DTO comparison establishes installation.
 
 ## Later stages — installation and runtime remain unaccepted
@@ -163,7 +179,7 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
   exception tests; retain local focused evidence separately from live acceptance.
 - [x] Verify integrated PR66 final source `3551b9e` against run `38270514933`,
   completed/success on all 15 checks; merged at `147dbc1`.
-- [ ] Verify and retain the independent raw/source/tree audit for that final
+- [x] Verify and retain the independent raw/source/tree audit for that final
   controlled mock build-driver source. This is separate from real F02c acceptance.
 
 ## Pinned process-execution mechanism continuation
@@ -179,5 +195,166 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
 - [x] Complete final combined regression: 195 distinct cases, including 26 new
   execution cases and 139 unchanged compatibility cases shared with the 30-case
   producer continuation; no failures/errors/skips and unchanged product/source pins.
-- [ ] Complete this final source's full CI and independent
+- [x] Complete this final source's full CI and independent
   raw/source/tree audit before merge. Actual F02c/G1/G2 acceptance remains open.
+  PR88 final source `5bb90c9` is bound to original run `38358940938`; see the
+  retained historical audit for original archive failure/retry and the present
+  extraction's extra cache-file qualification.
+
+## Command-output recipe v2 continuation
+
+- [x] Specify the explicit command-output wire and its acceptance boundary in
+  `command-output-build-execution.md`; retain the v1 schema, semantics and limits.
+- [x] Add complete preflight for command-output dependencies, earlier executable
+  declarations, undefined/forward references, output path overlap and v2 limits.
+- [x] Reuse the existing executor, input snapshots, deadline, logs and reap path;
+  grant generated executable outputs only after the complete output group and
+  all original/prior evidence pass observation and drift checks.
+- [x] Add an independent inert-helper test source that generates an executable
+  and nine tiny fixture headers within one stage, with failure, drift, control,
+  freshness and v1 compatibility cases. These are not actual frozen headers.
+- [x] Complete centralized focused tests, unchanged v1 compatibility, Ruff,
+  compileall and diff checks; record actual source-bound evidence and review
+  before merge. The twelve-file batch covers 366 distinct cases with all latest
+  outcomes passing after an affected-only correction to two synthetic inventory
+  test inputs; see Feature197 `validation.md`. AST alone is not the acceptance.
+- [ ] Complete final-source CI and independent review before merge. Real
+  configured CPython/freezer/toolchain/static-image and F02c/G1/G2 acceptance
+  remain separate open tasks; this continuation cannot close them.
+
+## Concrete recipe and fixed-solver source closure continuation
+
+- [x] Specify actual compiler/freezer/archive/link commands and a separately
+  versioned full-toolchain executor; preserve v1/v2 limits and mock behavior.
+- [x] Require an independent complete source inventory and reviewed target
+  configuration; emit a compiled configuration probe without claiming Autoconf.
+- [x] Generate a same-source native freezer, finite frozen jobs, builtin/native
+  table and real selected-solver dispatch entrypoint rather than baseline output.
+- [x] Author direct capacity, dependency, strict pin, finite import/native unit,
+  budget, original API and false-admission regression cases.
+- [x] Complete centralized focused/static regression and record real-source
+  closure refusals separately from synthetic fixture success.
+- [ ] Accept real configured static build, ELF, expanded installation/startup,
+  actual solver/lifecycle and native production CLI. Existing environment and
+  unresolved dependency gates remain binding.
+
+## Actual build dependency consumption continuation (2026-10-28)
+
+- [x] Add opt-in linker-depfile successor recipe and bind captures to original command/output manifests.
+- [x] Execute through the original v3 runner, read back its persisted report and pinned inputs/outputs, and consume actual C/link depfiles.
+- [x] Complete the concentrated local/Linux batch and static checks; retain initial fixture/preparation failures.
+- [ ] Independently prove complete driver inputs and immutable build-input custody; accept real isolated build/runtime and production CLI.
+
+See `actual-build-dependency-consumer.md` and the batch report. Byte readback does not close F02c.
+
+## Original fixed-producer lifecycle continuation (opt-in software slice)
+
+See `original-producer-lifecycle.md`. Existing expanded observations cover
+startup only. The explicitly selected `fixed-producer-lifecycle-v1` source and
+native v4 channel are implemented below; consolidated source-bound regression is recorded below; original
+native execution acceptance remains separate. They do not accept build
+custody/runtime roots or enable production admission/native CLI.
+
+- [x] L01 Fix a separately versioned, explicitly selected default-off completion
+  wire/profile with finite ordered records, bounds and refusal states. Preserve
+  startup FD 198 and its pre-solver close/EOF semantics without reuse.
+- [x] L02 Add an original-attempt private completion channel, concurrent bounded
+  host reading alongside broker/native progress, owned cancellation/cleanup and
+  the original absolute deadline; prohibit renewed budgets or implicit retries.
+- [x] L03 Implement target-side capture of actual fixed-producer request/memory, unique broker exchange
+  and computed/committed artifact facts at their original execution points.
+  Emit completion only after final wrapper/SQLite commit and required fsyncs;
+  preserve candidate generation versus candidate evaluation semantics. This is
+  pinned source implementation with local file/pipe fixtures; it is not yet an
+  accepted execution of either solver through the complete native chain.
+- [ ] L04 Retain the original channel acquisition and join it to the same native
+  run, PID/image/manifest, input grants, original broker transcript and privately
+  acquired captured envelope. Refuse copied/reconstructed evidence, drift,
+  missing/partial records and terminal/cleanup disagreement; keep unknown states.
+  Software is implemented with default-off broker original exchange retention,
+  a private native-attempt acquisition and original captured-envelope material
+  comparison. Source/sealed-image identities remain separate. Consolidated
+  tests passed in the 355-case affected successor after retaining the original
+  failures. Actual fixed-producer generic-envelope delivery and complete native
+  execution acceptance remain pending.
+- [ ] L05 If diagnostic pycache snapshots are added, label their coverage and
+  retain `original_pycache_observation` as missing. Do not promote flags,
+  `__cached__`, scans or API audit hooks into full-lifecycle absence.
+- [ ] L06 Specify and implement a complete strict write view with all original
+  writable roots/handles accounted for, finite precreated watched directories,
+  monitoring before target start and drain after original terminal/quiescence.
+  Fail closed on new/relocated directories, watch/root drift, unmonitored write
+  capabilities, overflow or incomplete events; bind the declared cache policy.
+  A finite Linux inotify diagnostic monitor is implemented. Original grant
+  authentication, native writer enclosure and original quiescence are not yet
+  connected; the monitor has no accepted completion path and keeps the missing
+  boundary. Do not mark this full-lifecycle task complete from diagnostic tests.
+- [ ] L07 Add focused original-chain, partial commit, provenance replacement,
+  protocol/deadline/concurrency, legacy compatibility and kernel coverage tests.
+  Run affected tests together with Ruff, compileall and diff checks; distinguish
+  mock evidence, supported-kernel acquisition and actual runtime acceptance.
+  Source file/pipe, pure wire, profile-binding, Linux inotify and native v4
+  tests executed in the concentrated 1809-case first run; 20 failures retained,
+  affected successor 355/355 passed, Darwin platform node separately passed.
+  Ruff, compileall and diff checks pass. Full native lifecycle acceptance remains
+  pending; fixture tests cannot close it.
+- [ ] L08 Independently establish accepted build-input custody and runtime
+  authority before any admission/CLI change. Preserve all-false authority
+  claims and prohibit host-interpreter or detached-evidence fallbacks meanwhile.
+
+## Original generic-envelope delivery successor (2026-10-28)
+
+See `envelope-delivery.md`. This explicitly selected v2 fixes the v1 target's
+missing generic output file; it does not silently upgrade v1 images or acceptance.
+
+- [x] E01 Specify strict original intent argv, independent source/launcher pins,
+  canonical generic envelope and separately versioned completion records.
+- [x] E02 Implement actual target create-only artifact/envelope fsync/readback
+  and committed ordering; preserve one request, original deadline and old assets.
+- [x] E03 Connect explicit build/runtime selection, native original envelope
+  acquisition and captured bytes/stat/path join with implementation drift gates.
+- [x] E03a Forward explicit v1/v2 profile selection through all four dependency,
+  standalone-linker and explicit-support recipe APIs to the original concrete
+  gate; preserve default/None bytes and existing manifest schemas and authority.
+- [x] E03b Concentrated regression of default/None identity, full real generator
+  graphs for both profiles/solvers, original source refusal gates and explicitly
+  tiny inert v2 source-to-original-consumer process/readback composition. This
+  fixture projection is not full CPython or solver build/runtime acceptance.
+  All 34 selection nodes passed in the 30-file Linux batch at tree `e93c99f5`;
+  its sole CI-count failure is retained and repaired separately without changing
+  recipe/product source. See the latest validation entry.
+- [x] E04 Add source/file/pipe, inert C API compilation, cross-version, build
+  selection and original host join tests without per-agent pytest campaigns.
+- [x] E05a Run consolidated affected regression, retain the original 1153/2 failures
+  and repair only the two faulty test adapters; affected successor 10/10 passes.
+  Latest exact union is 1155 passes across the two source trees, including 224 v2 cases.
+- [ ] E05b Validate subsequent CI metadata prewarming in all history roles.
+- [ ] E06 Acquire actual isolated CPython build/runtime and complete native
+  solver execution evidence. Source/inert fixtures alone do not complete L04/L07.
+
+P0's adjacent duplicate provenance gates are removed in the same software batch;
+new 600-second/zero-retry mixed remains required. P1 L06/L08 and P2 deployment
+obligations above are still open; no production admission/publication is enabled.
+
+
+## Independent eight-output configuration review (2026-10-28)
+
+See `configuration-review.md`. This is an explicit software binding gate,
+not an approval of the previously retained real configure observation.
+
+- [x] Preserve all eight original configure output byte strings with compatible
+  legacy header-only construction and omitted/None recipe behavior.
+- [x] Require all-or-none original outputs, canonical external review manifest
+  and independently supplied expected manifest SHA256 through every recipe API.
+- [x] Bind bounded header/Make/Setup/config.c semantics, actual compile/link
+  roles, archive reachability and a non-circular original concrete-stage pin.
+- [x] Reject missing/re-signed unsupported semantics and stage/source/toolchain
+  drift; retain original outputs and external manifest as actual recipe inputs.
+- [x] Execute all 101 review and 15 configuration-generation nodes in the
+  concentrated Linux union; all pass. Other files' initial failures remain
+  recorded in validation and are corrected only through affected supplements.
+- [ ] Obtain independently reviewed real eight-output configuration/profile
+  approval. Fixture manifests and their synthetic expected pins do not supply it.
+- [ ] Establish accepted immutable build-input custody, actual complete static
+  CPython build/runtime and real solver/production CLI acceptance. F02c/L08
+  remain binding; admission and online publication remain false.

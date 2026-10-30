@@ -39,6 +39,11 @@ _FIELDS = {
     "schema_version", "kind", "mode", "request_sha256", "run_index", "round_index",
     "stage", "code", "model_turns", "tool_steps", "http_status",
 }
+_ADDITIONAL_FIELDS = {
+    "1": set(), "2": {"budget"}, "3": {"model_failure"},
+    "4": {"model_failure", "request_observation"},
+    "5": {"model_failure", "request_observation", "transport_observation"},
+}
 _BUDGET_FIELDS = {
     "limit", "state", "maximum", "accepted_usage", "observed_usage",
     "trigger_recorded", "usage_completeness",
@@ -185,11 +190,11 @@ def normalize_diagnostic(value: object) -> dict[str, object]:
     if not isinstance(value, dict) or "schema_version" not in value:
         raise ValueError("invalid diagnostic fields")
     version = value.get("schema_version")
+    if type(version) is str and version == "6":
+        return _normalize_accepted_usage_diagnostic(value)
     if type(version) is not str or version not in {"1", "2", "3", "4", "5"}:
         raise ValueError("invalid diagnostic version")
-    additional = {"2": {"budget"}, "3": {"model_failure"},
-                  "4": {"model_failure", "request_observation"},
-                  "5": {"model_failure", "request_observation", "transport_observation"}}.get(version, set())
+    additional = _ADDITIONAL_FIELDS[version]
     if set(value) != _FIELDS | additional:
         raise ValueError("invalid diagnostic fields")
     if value["kind"] != "subject_failure":
@@ -235,6 +240,32 @@ def normalize_diagnostic(value: object) -> dict[str, object]:
             return normalized
         return {**value, "model_failure": failure}
     return dict(value)
+
+
+def _normalize_accepted_usage_diagnostic(value: dict[str, object]) -> dict[str, object]:
+    """Validate an accepted-response subtotal without completing a failed request's usage."""
+    extra = {"accepted_usage", "usage_completeness"}
+    if not extra <= value.keys() or value["usage_completeness"] != "partial":
+        raise ValueError("invalid accepted usage diagnostic fields")
+    legacy_keys = set(value) - extra
+    # A budget failure already has its own accepted/observed accounting. Never mix it here.
+    for version in ("1", "3", "4", "5"):
+        if legacy_keys == _FIELDS | _ADDITIONAL_FIELDS[version]:
+            legacy = normalize_diagnostic({
+                **{key: value[key] for key in legacy_keys}, "schema_version": version,
+            })
+            break
+    else:
+        raise ValueError("invalid accepted usage diagnostic fields")
+    if legacy["stage"] != "model" or legacy["code"] not in {
+        "model_failed", "model_http_failed", "timeout",
+    }:
+        raise ValueError("invalid accepted usage failure classification")
+    usage = _normalize_usage(value["accepted_usage"])
+    if usage["rounds"] < 1 or usage["rounds"] != legacy["model_turns"]:
+        raise ValueError("inconsistent accepted usage response count")
+    return {**legacy, "schema_version": "6", "accepted_usage": usage,
+            "usage_completeness": "partial"}
 
 
 def _relative_parts(relative: str) -> list[str]:
@@ -411,9 +442,21 @@ class SubjectDiagnosticObserver:
 
     def emit_failure(
         self, context: SubjectDiagnosticContext, error: Exception, *, code: str | None = None,
+        accepted_usage: UsageSnapshot | None = None,
     ) -> None:
         try:
-            context.emit(self.failure(context, error, code=code))
+            payload = self.failure(context, error, code=code)
+            if payload["stage"] == "model" and type(accepted_usage) is UsageSnapshot:
+                try:
+                    usage = _project_usage(accepted_usage)
+                    payload = normalize_diagnostic({
+                        **payload, "schema_version": "6", "accepted_usage": usage,
+                        "usage_completeness": "partial",
+                    })
+                except (TypeError, ValueError):
+                    # Bad optional subtotals cannot suppress the original legacy diagnostic.
+                    pass
+            context.emit(payload)
         except Exception:  # noqa: BLE001 - classification must not mask the original exception
             return
 

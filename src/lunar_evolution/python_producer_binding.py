@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import Any, NoReturn
 
+from . import producer_python_runtime as declared_runtime
 from . import producer_python_runtime_tree as closed_runtime
 from .producer_launcher import (
     PRODUCER_LAUNCH_PROTOCOL,
@@ -84,7 +85,7 @@ def _canonical(value: object) -> bytes:
 
 
 def _strict_json(value: bytes | str) -> object:
-    if type(value) not in {bytes, str}:
+    if type(value) is not bytes and type(value) is not str:
         _fail("json_invalid")
     try:
         raw = value if type(value) is bytes else value.encode("utf-8")
@@ -128,7 +129,7 @@ def _positive_int(value: object, code: str) -> int:
 
 
 def _deadline(value: object) -> float:
-    if type(value) not in {int, float} or isinstance(value, bool):
+    if type(value) is not int and type(value) is not float:
         _fail("deadline_invalid")
     try:
         result = float(value)
@@ -170,25 +171,31 @@ def _safe_validation_token(value: object) -> tuple[object, ...] | None:
     their exact refusal order and callback protection.
     """
 
-    runtime_types = {
+    dto_types = (
         PythonRuntimeTarget, PythonRuntimeFileDeclaration, PythonRuntimeImportRoot,
         PythonRuntimeDirectory, PythonRuntimeRoot, PythonRuntimeFile, PythonRuntimeManifest,
-    }
-    tree_types = {PythonRuntimeTreeDirectory, PythonRuntimeTreeManifest}
+        PythonRuntimeTreeDirectory, PythonRuntimeTreeManifest,
+    )
+    remaining = 100_000
 
-    def walk(item: object) -> tuple[object, ...] | None:
+    def walk(item: object, depth: int = 0) -> tuple[object, ...] | None:
+        nonlocal remaining
+        remaining -= 1
+        if depth > 48 or remaining < 0:
+            return None
         item_type = type(item)
-        if item is None or item_type in {str, int, float, bool, bytes}:
+        if (item is None or item_type is str or item_type is int or item_type is float
+                or item_type is bool or item_type is bytes):
             return (item_type, item)
         if item_type is tuple:
             parts: list[tuple[object, ...]] = []
             for child in item:
-                token = walk(child)
+                token = walk(child, depth + 1)
                 if token is None:
                     return None
                 parts.append(token)
             return (tuple, tuple(parts))
-        if item_type not in runtime_types and item_type not in tree_types:
+        if not any(item_type is approved for approved in dto_types):
             return None
         parts = []
         try:
@@ -196,7 +203,7 @@ def _safe_validation_token(value: object) -> tuple[object, ...] | None:
                 # All tokenizable classes are exact frozen DTOs.  Bypass an
                 # instance-level ``__getattribute__`` replacement so the fast
                 # path itself never invokes caller code.
-                token = walk(object.__getattribute__(item, field.name))
+                token = walk(object.__getattribute__(item, field.name), depth + 1)
                 if token is None:
                     return None
                 parts.append((field.name, token))
@@ -257,6 +264,49 @@ def _reparse_runtime(manifest: PythonRuntimeManifest) -> PythonRuntimeManifest:
     _sha(parsed.manifest_sha256, "runtime_manifest_digest_invalid")
     _remember_validation(_RUNTIME_VALIDATION_CACHE, manifest, token, parsed)
     return parsed
+
+
+def _fresh_runtime_helpers_current() -> bool:
+    """Reuse only this call's unescaped parse under the original pure machinery.
+
+    These finite pins are compatibility guards, not filesystem or launch
+    authority. A replaced helper, DTO implementation, codec or module alias
+    selects the existing caller-DTO reparse path instead of trusting a digest.
+    """
+    if (_FRESH_RUNTIME_FUNCTION_PINS is not _FRESH_RUNTIME_ORIGINAL_FUNCTION_PINS
+            or _FRESH_RUNTIME_VALUE_PINS is not _FRESH_RUNTIME_ORIGINAL_VALUE_PINS
+            or _FRESH_RUNTIME_CLASS_PINS is not _FRESH_RUNTIME_ORIGINAL_CLASS_PINS
+            or _FRESH_RUNTIME_ROLE_SLOTS is not _FRESH_RUNTIME_ORIGINAL_ROLE_SLOTS
+            or _fresh_runtime_helpers_current.__code__ is not _FRESH_RUNTIME_GUARD_CODE
+            or _fresh_runtime_helpers_current.__defaults__ is not _FRESH_RUNTIME_GUARD_DEFAULTS
+            or _fresh_runtime_helpers_current.__kwdefaults__ is not _FRESH_RUNTIME_GUARD_KWDEFAULTS):
+        return False
+    for namespace, name, original in _FRESH_RUNTIME_VALUE_PINS:
+        if namespace.get(name) is not original:
+            return False
+    for namespace, name, descriptor, function, code, defaults, kwdefaults, kwitems, closure, captures in (
+            _FRESH_RUNTIME_FUNCTION_PINS):
+        if (namespace.get(name) is not descriptor or function.__code__ is not code
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or function.__closure__ is not closure
+                or any(cell.cell_contents is not original
+                       for cell, original in zip(closure or (), captures, strict=True))
+                or (kwdefaults is not None and (
+                    len(kwdefaults) != len(kwitems)
+                    or any(key not in kwdefaults or kwdefaults[key] is not item for key, item in kwitems)))):
+            return False
+    for namespace, original in _FRESH_RUNTIME_CLASS_PINS:
+        if len(namespace) != len(original) or any(namespace.get(name) is not item for name, item in original):
+            return False
+    if (len(declared_runtime._ROLE_SLOTS) != len(_FRESH_RUNTIME_ROLE_SLOTS)
+            or any(declared_runtime._ROLE_SLOTS.get(name) is not item for name, item in _FRESH_RUNTIME_ROLE_SLOTS)):
+        return False
+    decoder = json._default_decoder
+    if decoder is not _FRESH_RUNTIME_DECODER:
+        return False
+    namespace = object.__getattribute__(decoder, "__dict__")
+    return ("decode" not in namespace and "raw_decode" not in namespace
+            and namespace.get("scan_once") is _FRESH_RUNTIME_SCAN_ONCE)
 
 
 def _reparse_tree(tree: PythonRuntimeTreeManifest) -> PythonRuntimeTreeManifest:
@@ -398,7 +448,8 @@ def _budget_shape(value: object, *, depth: int = 0) -> None:
             _fail("budget_shape_invalid")
         if type(item) is dict:
             _budget_shape(item, depth=depth + 1)
-        elif item is not None and type(item) not in {int, float} or type(item) is int and item.bit_length() > 4096:
+        elif (item is not None and type(item) is not int and type(item) is not float
+                or type(item) is int and item.bit_length() > 4096):
             _fail("budget_shape_invalid")
 
 
@@ -658,7 +709,16 @@ def parse_python_producer_binding(value: bytes | str) -> PythonProducerBinding:
     payload = _strict_json(value)
     raw = _object(payload, _FIELDS)
     try:
+        # Do not turn a fresh parse into a reusable caller-DTO assertion. Its
+        # exact structural token lives only in this operation, and any unknown
+        # or replaced pure seam keeps the original reparse behavior.
+        fresh_runtime = (
+            _fresh_runtime_helpers_current is _FRESH_RUNTIME_GUARD
+            and _fresh_runtime_helpers_current.__code__ is _FRESH_RUNTIME_GUARD_CODE
+            and _fresh_runtime_helpers_current()
+        )
         runtime_manifest = parse_python_runtime_manifest(_canonical(raw["runtime_manifest"]))
+        runtime_token = _safe_validation_token(runtime_manifest) if fresh_runtime else None
         runtime_tree = parse_python_runtime_tree_manifest(_canonical(raw["runtime_tree"]))
         intent = parse_producer_launch_intent(_canonical(raw["intent"]))
         attestation = parse_producer_launch_attestation(_canonical(raw["attestation"]))
@@ -673,8 +733,8 @@ def parse_python_producer_binding(value: bytes | str) -> PythonProducerBinding:
         _sha(raw["binding_sha256"], "binding_digest_invalid")
         # The tree was parsed and fully validated above from strict JSON. It
         # has never escaped this operation. Keep the public constructor's full
-        # caller-DTO reparse gate; only this parser-local assembly reuses the
-        # fresh tree while retaining runtime/launch checks in their old order.
+        # caller-DTO reparse gate; only this parser-local assembly reuses fresh
+        # material while retaining runtime/launch checks in their old order.
         result = object.__new__(PythonProducerBinding)
         values = {
             "runtime_manifest": runtime_manifest, "runtime_tree": runtime_tree,
@@ -689,7 +749,24 @@ def parse_python_producer_binding(value: bytes | str) -> PythonProducerBinding:
         for name, item in values.items():
             object.__setattr__(result, name, item)
         result._validate_header()
-        manifest = _reparse_runtime(runtime_manifest)
+        if (runtime_token is not None
+                and _fresh_runtime_helpers_current is _FRESH_RUNTIME_GUARD
+                and _fresh_runtime_helpers_current.__code__ is _FRESH_RUNTIME_GUARD_CODE
+                and _fresh_runtime_helpers_current()
+                and _safe_validation_token(runtime_manifest) == runtime_token):
+            # This exact DTO was already fully validated by the runtime parser.
+            # Keep the stricter closed-tree shape gate in its previous position;
+            # only the second runtime validation/serialization/parse is omitted.
+            try:
+                closed_runtime._declared_shape(runtime_manifest)
+            except Exception as exc:
+                if isinstance(exc, PythonProducerBindingError):
+                    raise
+                _fail("runtime_manifest_invalid")
+            _sha(runtime_manifest.manifest_sha256, "runtime_manifest_digest_invalid")
+            manifest = runtime_manifest
+        else:
+            manifest = _reparse_runtime(runtime_manifest)
         _sha(runtime_tree.tree_sha256, "runtime_tree_digest_invalid")
         checked_intent = _reparse_intent(intent)
         checked_attestation = _reparse_attestation(attestation)
@@ -705,6 +782,76 @@ def parse_python_producer_binding(value: bytes | str) -> PythonProducerBinding:
         raise
     except (ProducerLaunchError, TypeError, ValueError, AttributeError, UnicodeError, OverflowError, RecursionError) as exc:
         raise PythonProducerBindingError("schema_invalid") from exc
+
+
+def _pin_fresh_runtime_helpers():
+    """Capture the small pure runtime parse/validation graph once at import."""
+    functions, values, classes = [], [], []
+
+    def capture(namespace, names):
+        for name in names:
+            descriptor = namespace[name]
+            function = descriptor.__func__ if type(descriptor) in (staticmethod, classmethod) else descriptor
+            if hasattr(function, "__code__"):
+                functions.append((namespace, name, descriptor, function, function.__code__,
+                                  function.__defaults__, function.__kwdefaults__,
+                                  tuple((function.__kwdefaults__ or {}).items()), function.__closure__,
+                                  tuple(cell.cell_contents for cell in (function.__closure__ or ()))))
+            else:
+                values.append((namespace, name, descriptor))
+
+    capture(globals(), (
+        "declared_runtime", "closed_runtime", "json", "hashlib", "fields", "_canonical", "_sha",
+        "_safe_validation_token", "_reparse_runtime", "parse_python_runtime_manifest",
+        "PythonRuntimeDirectory", "PythonRuntimeFile", "PythonRuntimeFileDeclaration",
+        "PythonRuntimeImportRoot", "PythonRuntimeManifest", "PythonRuntimeRoot", "PythonRuntimeTarget",
+    ))
+    runtime_names = (
+        "_fail", "_canonical", "_digest", "_integer", "_mode", "_label", "_sha", "_path", "_policy",
+        "_slot_digests", "_file_key", "_import_key", "_sequence", "_root_paths", "_declarations",
+        "_directory_paths", "_validate_manifest", "_object", "_list", "_target", "_declaration",
+        "_pairs", "parse_python_runtime_manifest", "json", "hashlib", "Path", "Mapping", "Sequence",
+        "PythonRuntimeError", "PythonRuntimeDirectory", "PythonRuntimeFile", "PythonRuntimeFileDeclaration",
+        "PythonRuntimeImportRoot", "PythonRuntimeManifest", "PythonRuntimeRoot", "PythonRuntimeTarget",
+        "_DTO", "_LABEL", "_SHA", "_PROTOCOL", "_SCOPE", "_SLOTS", "_ROLE_SLOTS", "_MANIFEST_FIELDS",
+        "_MAX_IMPORT_ROOTS", "_MAX_PATH_BYTES", "_MAX_PATH_PARTS", "_MAX_DIRECTORY_PINS",
+        "MAX_PYTHON_RUNTIME_ROOTS", "MAX_PYTHON_RUNTIME_FILES", "MAX_PYTHON_RUNTIME_FILE_BYTES",
+        "MAX_PYTHON_RUNTIME_TOTAL_BYTES", "MAX_PYTHON_RUNTIME_MANIFEST_BYTES",
+    )
+    capture(vars(declared_runtime), runtime_names)
+    for kind in (declared_runtime._DTO, PythonRuntimeTarget, PythonRuntimeFileDeclaration,
+                 PythonRuntimeImportRoot, PythonRuntimeDirectory, PythonRuntimeRoot,
+                 PythonRuntimeFile, PythonRuntimeManifest):
+        namespace = vars(kind)
+        classes.append((namespace, tuple(namespace.items())))
+        capture(namespace, tuple(name for name, value in namespace.items() if hasattr(value, "__code__")))
+    capture(vars(closed_runtime), (
+        "declared", "_declared_shape", "_collection", "_text", "_target_text", "_declaration_text",
+        "_relative", "_sha", "_fail", "MAX_PYTHON_RUNTIME_TREE_ENTRIES", "MAX_PYTHON_RUNTIME_TREE_DEPTH",
+        "_MAX_ROLE_TEXT", "_TARGET_TEXT_LIMITS",
+    ))
+    capture(vars(json), ("loads", "dumps", "JSONDecoder", "JSONEncoder", "decoder", "encoder"))
+    for kind, names in ((json.JSONDecoder, ("__init__", "decode", "raw_decode")),
+                        (json.JSONEncoder, ("__init__", "encode", "iterencode"))):
+        capture(vars(kind), names)
+    capture(vars(json.encoder), ("_make_iterencode", "c_make_encoder", "encode_basestring", "encode_basestring_ascii"))
+    capture(vars(json.decoder), ("scanstring", "WHITESPACE", "WHITESPACE_STR"))
+    capture(vars(hashlib), ("sha256",))
+    return tuple(functions), tuple(values), tuple(classes)
+
+
+_FRESH_RUNTIME_GUARD = _fresh_runtime_helpers_current
+_FRESH_RUNTIME_GUARD_CODE = _FRESH_RUNTIME_GUARD.__code__
+_FRESH_RUNTIME_GUARD_DEFAULTS = _FRESH_RUNTIME_GUARD.__defaults__
+_FRESH_RUNTIME_GUARD_KWDEFAULTS = _FRESH_RUNTIME_GUARD.__kwdefaults__
+_FRESH_RUNTIME_FUNCTION_PINS, _FRESH_RUNTIME_VALUE_PINS, _FRESH_RUNTIME_CLASS_PINS = _pin_fresh_runtime_helpers()
+_FRESH_RUNTIME_ROLE_SLOTS = tuple(declared_runtime._ROLE_SLOTS.items())
+_FRESH_RUNTIME_ORIGINAL_FUNCTION_PINS = _FRESH_RUNTIME_FUNCTION_PINS
+_FRESH_RUNTIME_ORIGINAL_VALUE_PINS = _FRESH_RUNTIME_VALUE_PINS
+_FRESH_RUNTIME_ORIGINAL_CLASS_PINS = _FRESH_RUNTIME_CLASS_PINS
+_FRESH_RUNTIME_ORIGINAL_ROLE_SLOTS = _FRESH_RUNTIME_ROLE_SLOTS
+_FRESH_RUNTIME_DECODER = json._default_decoder
+_FRESH_RUNTIME_SCAN_ONCE = _FRESH_RUNTIME_DECODER.scan_once
 
 
 __all__ = [

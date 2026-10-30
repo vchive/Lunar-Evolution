@@ -1,5 +1,71 @@
 # Tasks
 
+## Fixed OpenEvolve source preparation (2026-10-27)
+
+- [x] Specify the seven-module source profile, original two grants, fixed
+  request/settings/result mapping and existing host broker boundary in
+  [openevolve-fixed-source-profile.md](openevolve-fixed-source-profile.md).
+- [x] Implement exact retained-archive validation and create-only source output;
+  generate the target broker subset from the pinned current Lunar source rather
+  than maintaining a separate unchecked client copy.
+- [x] Validate source preparation and adapter orchestration with one focused
+  fixture selection plus Ruff/compileall/diff checks and independent review.
+  Keep actual upstream imports/diff execution and runtime acceptance separate.
+- [ ] Accept the complete stdlib/native/build closure, controlled source custody
+  and immutable image in a supported isolation environment.
+- [ ] Accept sealed input consumption, actual project behavior, native execution
+  observation/export and the interruption/recovery matrix, then compose the
+  runtime-gated production CLI. The source-preparation report cannot grant any
+  of these permissions.
+
+## Bounded Linux process accounting diagnostic (2026-10-26)
+
+- [x] Specify and implement the standalone single-PID numeric observer without
+  changing product execution, original acceptance runners or budgets. Preserve
+  baseline-only identity and leader/thread-group accounting limits; see
+  [diagnostic contract](linux-process-accounting-diagnostic.md).
+- [x] Pass 162 synthetic cases, focused Ruff/compileall/diff checks and independent
+  static review, including short reads, PID-path replacement and CLI privacy.
+- [x] Check the same helper bytes on 5090gpu by observing only the helper's own
+  known PID/UID/starttime for three samples; independently audit the retained
+  output. This is host compatibility evidence, not product-case observation.
+- [ ] Bind a future explicitly separate diagnostic launcher to its own known PID
+  and starttime and observe the remaining mixed cost. Do not retry failed-source
+  acceptance merely to seek a pass or infer causality from the host load snapshot.
+- [ ] Fix the actual mixed bottleneck with preserved fresh observation gates and
+  complete the resulting source's own Linux/CI merge acceptance.
+
+## Ready-capsule scalar validation continuation
+
+- [x] Specify the exact ordered scalar walk and preserve node/depth/type bounds,
+  live iteration/finiteness, refusal order and all independent observation gates.
+- [x] Pass all 77 new semantic cases against the original implementation, then
+  pass the candidate's 162-case capsule/consumer/staging selection; local timing
+  and occurrence counts do not establish mixed acceptance. See
+  [scalar validation](ready-capsule-scalar-validation.md).
+- [ ] Complete the integrated source's own Linux mixed and final CI acceptance.
+
+## Real project source baselines (2026-10-25)
+
+- [x] Retain and independently review OpenEvolve v0.4.0 source/tree, dependency
+  declarations, resources and entrypoint/request/lifecycle routes; see
+  [source review](openevolve-source-profile-review-20261025.md).
+- [x] Retain and independently review Shinka v0.0.7 source/tree, dependency
+  declarations, resources, entrypoint/request/lifecycle routes and the existing
+  exporter's required schema; distinguish raw tar modes from Git executable-bit
+  projection. See [source review](shinka-source-profile-review-20261025.md).
+- [x] Retain and independently review the two upstream equality-pinned Shinka
+  dependencies' complete published sdist/universal-wheel artifacts, metadata,
+  licenses and RECORD consistency. This is only an artifact-identity subitem;
+  see [dependency artifacts](shinka-equality-dependency-artifact-review-20261025.md).
+- [x] Retain and independently review candidate OmegaConf 2.3.0 and ANTLR runtime
+  4.9.3 artifact identities and actual dependency/build declarations. Preserve
+  the original helper rc1 and unresolved ANTLR standalone license material;
+  this does not close dependency/profile/runtime acceptance. See
+  [Hydra dependency candidates](shinka-hydra-dependency-artifact-review-20261026.md).
+- [ ] Freeze full dependency/build bytes and accept a finite executable project
+  profile. These source-only reviews do not close runtime or production CLI gates.
+
 ## Sequential DRS append lineage continuation
 
 - [x] Specify `ready-capsule.md` after actual checkpoint capacity refusal; keep
@@ -8,22 +74,28 @@
   original ready CAS acknowledgement and callback-free read-only materialization.
 - [x] Bind immutable original mode/history and shared capsule/lineage 64 MiB
   accounting before evidence I/O; preserve preparing/unknown orphan semantics.
-- [ ] Accept the full three-child flow and default/staging/recovery compatibility
-  on the corrected 772-file frozen source; pure/core and compatibility development
-  success alone cannot close this acceptance.
+- Historical: the corrected 772-file source did not finish its original acceptance;
+  its failures and source pins remain retained. The separately accepted successor
+  source below supersedes that unfinished slice without relabeling its result.
 - [x] Specify the same-workspace opt-in in `multi-episode-publication.md`; keep
   default initial-only publication and legacy terminal recovery unchanged.
 - [x] Add exact fresh dispatch leases, original owner/CAS scopes, bounded
   before/staged/terminal pins and a separate read-only historical inspection.
 - [x] Join explicit lineage to original transaction/precommit gates and retained
   native replay; recheck original cancellation/deadlines after chain observation.
-- [ ] Accept the integrated three-child DRS flow and read-only historical replay
-  from one frozen product/test source, with original receipt-threshold judging,
-  distinct child identities and M0 → practice commit M1 → target M1.
-- [ ] Complete the interruption/drift matrix and this slice's own full
-  CI/raw-source/tree audit and merge; preserve earlier failed/interrupted evidence.
-- [ ] Support the independently verified `all_rejected` opt-in outcome without
-  advancing lineage or repeating evaluation; currently explicitly refused.
+- [x] Accept the current provider-free three-child DRS flow and read-only historical
+  replay, with original receipt-threshold judging, distinct child identities and
+  M0 → practice commit M1 → target M1. PR187 exact source `8ca8e1f5`,
+  run `40104751661`, passed on Python3.11/3.12/3.13; native process/evaluator
+  boundaries remain inert and do not accept a real project runtime.
+- [x] Complete the successor provider-free interruption/drift matrix and its own
+  final-source CI/raw-source/tree audit and merge in PR187. Original 772-file,
+  earlier failed and interrupted evidence retain their original outcomes.
+- [x] Support independently verified `all_rejected` under fresh explicit
+  known-rejection v2 DRS. Record the original rejected attempt and C1/P/C2 evidence;
+  keep its published head/archive/state unchanged and do not repeat evaluation on
+  replay/reconcile. Attempted lineage advances; legacy/v1 still refuses. PR187's
+  three-version RPP/PRP/RRR cases passed, including null published head for RRR.
 - [ ] Accept BRS and actual runtime/production CLI separately; neither is covered
   by this sequential inert DRS slice.
 
@@ -46,8 +118,9 @@
   whole-source Ruff/compileall/diff checks and ten README CLI commands pass.
 - [x] Complete this slice's own full CI/raw-source audit and merge: PR99 head
   `80d3f3af`, run `38517739592`, merge `0cb49abb`; tested/merged trees agree.
-- [ ] Accept multiple DRS episodes with distinct child IDs, practice learning and
-  changed approved memory; accept BRS separately before any production CLI claim.
+- [x] Accept provider-free multiple DRS episodes with distinct child IDs, practice
+  learning and changed approved memory on PR187's final source and three-version CI.
+- [ ] Accept actual project BRS/runtime and the production CLI separately.
 
 ## Atomic child claim and fresh preclaim continuation
 
@@ -87,9 +160,11 @@
 - [x] Complete the integrated staging baseline's regression/static checks and
   full CI/raw-source audit at `main 82191cf`, run `38428650836`. The new child
   claim continuation has its separate final-source obligation above.
-- [ ] Implement the remaining episode-scoped DRS gateway/admission/store/scheduler
-  authority and exercise target failure → practice success → target retry with
-  distinct child IDs and changed approved memory. Staging ready is not execution.
+- [x] Complete the current provider-free episode-scoped DRS gateway/admission/store/
+  scheduler composition and target failure → practice success → target retry with
+  distinct child IDs and changed approved memory. PR187's three-child publication
+  and RPP cases exercise the original controller/CAS/claim/receipt/publication;
+  native execution/evaluation remain inert. Staging ready alone is not execution.
 - [ ] Freeze and accept the separate real project runtime profile described in
   `project-runtime-profile.md`; the current candidate startup/codec module set
   does not establish an OpenEvolve/Shinka runtime closure.
@@ -108,8 +183,10 @@
   checks pass. Repeated focused runs are not additional unique cases.
 - [x] Complete the integrated single-episode baseline's full CI and independent
   raw/source/tree audit at `main 82191cf`, run `38428650836`.
-- [ ] Specify and implement per-episode staging/launch and durable original proof
-  association before claiming a complete multi-episode DRS/BRS production CLI.
+- [x] Specify and implement per-episode staging/launch and durable original-proof
+  association for the accepted provider-free DRS composition. PR187's capsule,
+  gateway, child-flow and consumer cases passed on all three Python versions.
+- [ ] Accept the complete real multi-episode DRS/BRS project runtime and production CLI.
 
 ## P0 — contract and failure semantics
 
@@ -296,6 +373,19 @@
 - [ ] Independently audit runtime inventory, source/resource/native-library
   closure, interpreter identity, ELF/static profile, broker journal and final
   descriptor. Preserve first failure evidence.
+- [x] Observe the explicitly selected packaging25.0 wheel/sdist candidate under
+  [its bounded artifact review](shinka-packaging-dependency-artifact-review-20261026.md).
+  Retain complete member/mode/RECORD/metadata/license/source evidence and the
+  original pre-final-stdout index mismatch plus a separate terminal index.
+  This does not close the parent full-closure task: dynamic loader/ctypes paths
+  are unexecuted and the runtime remains unaccepted. The originally unselected
+  build edge has a separate candidate observation below.
+- [x] Observe the explicitly selected flit_core3.12.0 wheel/sdist build candidate
+  under [its artifact review](shinka-flit-core-build-dependency-artifact-review-20261027.md).
+  Independently verify all members/modes/RECORD/metadata/licenses/build declarations
+  and 50 terminal evidence files; retain the original reader rc1 separately from
+  the local successor rc0. Self-hosted requires=[] and vendored tomli material
+  do not establish reproducible build, full dependency closure or runtime acceptance.
 
 ## Explicitly P2 / out of scope
 
@@ -346,7 +436,42 @@
   parsing; six cases verify the fixed refusal across helper/gate/build/verify.
 - [x] Verify PR49 final source `87e579a` against completed/success run
   `38198657810` on the original three-version 3-job matrix; merged at `e2537f1`.
-- [ ] Verify and retain the independent raw/source/tree audit for that final
+- [x] Verify and retain the independent raw/source/tree audit for that final
   observation-policy source. CI/merge alone do not establish runtime acceptance.
+  PR49 original source/run/artifacts are independently audited in
+  `../193-static-python-rsi-launch/historical-evidence-audit-20261025.md`.
 - [ ] Separately define and accept an RSI-capable static installation asset/profile;
   the current argc-one/fixed-main fixture cannot consume native RSI marker inputs.
+
+## Flow payload validation performance
+
+- [x] Preserve the existing exact scalar, depth, live container iteration and
+  canonical JSON boundary while removing recursive calls for scalar children;
+  see [narrow contract](flow-payload-scalar-validation.md).
+- [x] Run original-product boundary cases, candidate focused cases and an
+  independent actual-function differential review; retain local timing limits.
+- [ ] Accept the final integrated source's own Linux mixed and complete CI before
+  merging; the earlier 717 Linux timeout remains a failure.
+- [x] Defer [file-pin constructor reuse](file-pin-parser-local-reuse.md): the
+  incomplete guard prototype is slower than the original parser, so retain
+  both existing validations without adding a new guard architecture.
+
+## Cleanup deadline EOF observation
+
+- [x] Retain the c27 integrated union failure (2,149/2,150 passed); its original
+  error and exit code were not captured, so the actual cause remains unknown.
+- [x] Demonstrate the separate EOF observation gap with fake process/clock/selector
+  tests against the old product (14 failed, two positive controls passed).
+- [x] Permit only one zero-wait EOF observation batch at an expired cleanup
+  deadline; preserve nonempty-pipe refusal, prior overflow, failed-kill and
+  tracked-group proof, release rules and existing cleanup/reap budgets.
+- [x] Pass final 17 fake cases, independent review and 110 disjoint focused
+  runner/evaluator/ownership cases. The added 17th case checks confirmed tracked
+  release; it was not part of the 16-case old-product baseline.
+- [x] Include the original 5 ms result tuple in diagnostics and add the 17-case
+  CI gate; do not alter its budget or expected status.
+- [x] Accept fa37's integrated union: 2,245 unique cases, zero fail/error/skip;
+  original c27 failed evidence and unknown actual cause remain preserved.
+- [ ] Accept Linux mixed and complete CI. The sole fa37 Linux invocation still
+  timed out at600.023166 seconds with rawrc-15 and no JUnit/terminal origins;
+  do not rerun that source or enlarge its original600-second budget.

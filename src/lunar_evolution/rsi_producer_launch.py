@@ -359,6 +359,11 @@ class PythonProducerEpisodeStager:
             len(_wire({"episode": episode_wire, "request": request.to_dict()})) + 4096
         )
         checkpoint_maximum = _checkpoint_maximum(state)
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+        from .rsi_checkpoint_storage import reserved_checkpoint_payload_limit
+
+        if reserved_brs_staging_mode(state):
+            checkpoint_maximum = min(checkpoint_maximum, reserved_checkpoint_payload_limit(state["run_id"]))
         if len(_wire(state, checkpoint_maximum)) + pending + growth + 512 > checkpoint_maximum:
             _fail("checkpoint_capacity_exhausted")
         return growth

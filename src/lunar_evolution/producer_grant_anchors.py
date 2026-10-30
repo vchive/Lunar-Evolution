@@ -15,6 +15,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import NoReturn
 
+from .native_fixed_u_inputs import checked_fixed_u_input_owner
+
 _ROLES = frozenset({"protected-file", "readonly-directory", "writable-directory", "cwd"})
 _MAX_REQUESTS = 81
 _MAX_NODES = 256
@@ -448,6 +450,15 @@ class HeldProducerGrantPlan:
         self._records = records
         self._closed = False
 
+    def __copy__(self):
+        _fail("owner_not_transferable")
+
+    def __deepcopy__(self, _memo):
+        _fail("owner_not_transferable")
+
+    def __reduce__(self):
+        _fail("owner_not_transferable")
+
     def _lineage(self, path: str) -> tuple[_Node, ...]:
         result = [self._nodes["/"]]
         current = ""
@@ -498,7 +509,7 @@ class HeldProducerGrantPlan:
         except OSError as exc:
             raise ProducerGrantError("producer_grant_object_unavailable") from exc
 
-    def validate_protected_materials(self, materials: tuple[ProducerGrantMaterial, ...]) -> None:
+    def validate_protected_materials(self, materials: tuple[ProducerGrantMaterial, ...], *, fixed_u_owner=None) -> None:
         """Recheck retained original bytes through temporary held-parent readers.
 
         The formal caller still applies its original config/RSI-specific limits and
@@ -523,6 +534,12 @@ class HeldProducerGrantPlan:
         protected = {record.path for record in self._records if "protected-file" in record.roles}
         if set(supplied) != protected:
             _fail("material_set_mismatch")
+        if fixed_u_owner is not None:
+            try:
+                fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner, require_unexpired=False)
+                fixed_u_owner.check_materials(materials, require_unexpired=False)
+            except (OSError, ValueError, TypeError, AttributeError) as exc:
+                raise ProducerGrantError("producer_grant_fixed_u_inputs_invalid") from exc
         self.validate()
         for path in sorted(supplied):
             material = supplied[path]
@@ -530,11 +547,12 @@ class HeldProducerGrantPlan:
             if material.identity != node.identity:
                 _fail("expected_identity_mismatch")
             try:
-                _check_material_info(os.stat(node.name, dir_fd=node.parent, follow_symlinks=False), material)
+                _check_material_info(os.stat(node.name, dir_fd=node.parent, follow_symlinks=False), material,
+                                     fixed_u_owner=fixed_u_owner)
                 reader = os.open(node.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
                                  dir_fd=node.parent)
                 try:
-                    _check_material_info(os.fstat(reader), material)
+                    _check_material_info(os.fstat(reader), material, fixed_u_owner=fixed_u_owner)
                     chunks = []
                     remaining = len(material.content) + 1
                     while remaining:
@@ -547,8 +565,9 @@ class HeldProducerGrantPlan:
                     if (content != material.content
                             or hashlib.sha256(content).digest() != hashlib.sha256(material.content).digest()):
                         _fail("material_changed")
-                    _check_material_info(os.fstat(reader), material)
-                    _check_material_info(os.stat(node.name, dir_fd=node.parent, follow_symlinks=False), material)
+                    _check_material_info(os.fstat(reader), material, fixed_u_owner=fixed_u_owner)
+                    _check_material_info(os.stat(node.name, dir_fd=node.parent, follow_symlinks=False), material,
+                                         fixed_u_owner=fixed_u_owner)
                 finally:
                     active_exception = sys.exc_info()[0] is not None
                     try:
@@ -593,7 +612,13 @@ class HeldProducerGrantPlan:
         return ProducerGrantManifest(self._records, _digest(_records_payload(self._records)))
 
 
-def _check_material_info(info: os.stat_result, material: ProducerGrantMaterial) -> None:
+def _check_material_info(info: os.stat_result, material: ProducerGrantMaterial, *, fixed_u_owner=None) -> None:
+    if fixed_u_owner is not None:
+        try:
+            fixed_u_owner.check_file_info(material.path, info, require_unexpired=False)
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ProducerGrantError("producer_grant_fixed_u_inputs_invalid") from exc
+        return
     if (_identity(info) != material.identity or info.st_nlink != 1
             or stat.S_IMODE(info.st_mode) != 0o400 or info.st_size != len(material.content)
             or info.st_mtime_ns != material.mtime_ns or info.st_ctime_ns != material.ctime_ns):

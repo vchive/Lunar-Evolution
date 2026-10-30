@@ -72,6 +72,8 @@ class TrustedBootstrapRegistrationError(ValueError):
 class PublishedTrustedBootstrapRegistration:
     registration: dict[str, object]
     handoff: dict[str, object]
+    registration_file_identity: tuple[str | int, ...] | None = None
+    handoff_file_identity: tuple[str | int, ...] | None = None
 
 
 def _fail(code: str) -> None:
@@ -238,6 +240,8 @@ def publish_trusted_bootstrap_registration(
     deadline: float,
     expected_deadline_binding: object | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    retain_creation_identity: bool = False,
+    retain_creation_owner: object | None = None,
 ) -> PublishedTrustedBootstrapRegistration:
     """Publish registration and handoff while the native child remains gated.
 
@@ -245,6 +249,17 @@ def publish_trusted_bootstrap_registration(
     through spawn, and must retain the gate until this function returns. A
     publication failure leaves any written records in place for recovery.
     """
+    if type(retain_creation_identity) is not bool:
+        _fail("trusted_registration_context_invalid")
+    if retain_creation_owner is not None:
+        from .native_original_publication import NativeOriginalPublications
+
+        if type(retain_creation_owner) is not NativeOriginalPublications:
+            _fail("trusted_registration_context_invalid")
+        # Validate both empty one-shot slots before either durable publication.
+        creation_slots = tuple(retain_creation_owner._slot(role) for role in ("registration", "handoff"))
+    else:
+        creation_slots = (None, None)
     if monotonic() >= deadline:
         _fail("trusted_registration_wall_timeout")
     if not isinstance(pair, TrustedExecutablePair) or not isinstance(process, subprocess.Popen):
@@ -342,13 +357,24 @@ def publish_trusted_bootstrap_registration(
     )
     if monotonic() >= deadline or process.poll() is not None:
         _fail("trusted_registration_wall_timeout")
+    creation_pins: list[tuple[str | int, ...] | None] = []
     try:
-        for path, record in (
+        for (path, record), creation_slot in zip((
             (batch / "process-registration.json", registration),
             (batch / "trusted-bootstrap-handoff.json", handoff),
-        ):
+        ), creation_slots, strict=True):
             _verify_deadline_pin(batch, frozen_binding)
-            _atomic_json(path, record, exclusive=True)
+            if retain_creation_identity or creation_slot is not None:
+                pin = _atomic_json(
+                    path, record, exclusive=True, capture_identity=True,
+                    **({"retain_creation_owner": creation_slot} if creation_slot is not None else {}),
+                )
+                if type(pin) is not tuple or len(pin) != 6:
+                    _fail("trusted_registration_publication_unknown")
+                creation_pins.append(pin)
+            else:
+                _atomic_json(path, record, exclusive=True)
+                creation_pins.append(None)
             _verify_deadline_pin(batch, frozen_binding)
         stored_registration = _read_durable_json(
             batch / "process-registration.json", code="trusted_registration_publication_unknown",
@@ -363,7 +389,9 @@ def publish_trusted_bootstrap_registration(
     _verify_deadline_pin(batch, frozen_binding)
     if monotonic() >= deadline or process.poll() is not None:
         _fail("trusted_registration_wall_timeout")
-    return PublishedTrustedBootstrapRegistration(registration, handoff)
+    return PublishedTrustedBootstrapRegistration(
+        registration, handoff, creation_pins[0], creation_pins[1],
+    )
 
 
 __all__ = [

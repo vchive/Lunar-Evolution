@@ -132,6 +132,87 @@ def _completed(state, key, governed):
                for item in MemorySnapshot.from_dict(state["memory_snapshot"]).items)
 
 
+def preflight_reserved_brs_finalization_capacity(controller, record, state, domain):
+    """Check known future rows before publishing any next memory snapshot.
+
+    This is pure planning over already verified scheduling results. It creates
+    neither memory nor checkpoints and cannot replace any original observation.
+    Non-governed memory has an exact deterministic tail. For governed memory,
+    only the next candidate/pending generation is knowable before admission;
+    the caller repeats this preflight after each actual governed settlement.
+    """
+    from .rsi_checkpoint_storage import (
+        canonical_checkpoint_text,
+        reserved_run_payload_limit,
+        validate_reserved_checkpoint_row,
+    )
+    from .rsi_controller import _record_digest
+
+    ledger, run_id = controller.ledger, state["run_id"]
+    roots = ledger.controller_checkpoint_history(run_id)
+    payload = canonical_checkpoint_text(state)
+    if not roots or canonical_checkpoint_text(roots[-1][1]) != payload:
+        _fail("checkpoint_conflict")
+    # Start from the actual original revision/head. Subsequent digests and
+    # revisions describe the exact planned writes, never an adopted database row.
+    revision, parent = len(roots), roots[-1][0]
+    planned = strict_json(payload, maximum=8 * 1024 * 1024)
+
+    def check_next():
+        nonlocal revision, parent, payload
+        text = canonical_checkpoint_text(planned)
+        if text == payload:
+            return
+        digest = ledger._checkpoint_digest(run_id, revision, parent, planned)
+        validate_reserved_checkpoint_row(run_id, revision, parent, text, digest)
+        revision, parent, payload = revision + 1, digest, text
+
+    governed = bool(controller.generation_regression_tasks)
+    memory = MemorySnapshot.from_dict(planned["memory_snapshot"])
+    if planned["status"] != "completed":
+        for key, wire in zip(domain, planned["plan"]["practices"], strict=True):
+            execution = controller._deserialize_execution(planned["executions"][key])
+            if not execution.passed or _completed(planned, key, governed):
+                continue
+            planned.update(phase="commit", current_episode_id=key)
+            check_next()
+            decision = controller._decision_from_dict(wire)
+            item = controller._memory_item(execution, decision)
+            candidate = MemorySnapshot("snapshot-" + item.memory_id, memory.digest(), memory.items + (item,))
+            if governed:
+                generations = planned.setdefault("generations", {})
+                if key not in generations:
+                    generations[key] = {
+                        "generation_id": "controller-generation:" + _record_digest({"run": run_id, "episode": key}),
+                        "parent_memory": memory.to_dict(), "candidate_memory": candidate.to_dict(),
+                        "status": "pending", "admission_checkpoint_sha256": None,
+                    }
+                    check_next()
+                # Admission may change budgets and choose either effective
+                # snapshot. Its unknown outcome is checked at the actual write.
+                return
+            memory = candidate
+            planned.update(memory_snapshot=memory.to_dict(), phase="committed")
+            check_next()
+        planned.update(status="completed", phase="terminal")
+        check_next()
+    if record.state != "completed":
+        result = controller._flow_result(planned)
+        terminal_run = {
+            **record.payload,
+            "target_attempt_count": len(result.target_attempts),
+            "practice_episode_count": len(result.practice_episodes),
+            "memory_snapshot_sha256": result.memory_snapshot.digest(),
+            "transfer_status": result.transfer.status if result.transfer is not None else None,
+            "phase": "terminal", "current_episode_id": result.current_episode_id,
+            "target_attempts": [controller._serialize_execution(item) for item in result.target_attempts],
+            "practice_episodes": [controller._serialize_execution(item) for item in result.practice_episodes],
+            "memory_snapshot": result.memory_snapshot.to_dict(), "budget_state": planned["budget_state"],
+        }
+        if len(canonical_checkpoint_text(terminal_run).encode("utf-8")) > reserved_run_payload_limit(run_id):
+            raise RSILearningError("rsi_controller_checkpoint_capacity_exceeded")
+
+
 def read_reserved_brs_finalization(controller, record, state):
     """Reobserve complete scheduling, original terminal proof and finalization tail."""
     from .rsi_brs_publication_lineage import _policy, _validate_persisted_policy
@@ -220,10 +301,13 @@ def finalize_reserved_brs_serial(controller, record, state):
     domain = read_reserved_brs_finalization(controller, record, state)
     from .rsi_gateway import RSIMemoryStore
 
+    preflight_reserved_brs_finalization_capacity(controller, record, state, domain)
     controller.memory_store = RSIMemoryStore(MemorySnapshot.from_dict(state["memory_snapshot"]))
     if state["status"] != "completed":
         parent = MemorySnapshot.from_dict(state["root_snapshot"]).digest()
         for key, wire in zip(domain, state["plan"]["practices"], strict=True):
+            if controller.generation_regression_tasks:
+                preflight_reserved_brs_finalization_capacity(controller, record, state, domain)
             controller._commit_flow(record, state, controller._deserialize_execution(state["executions"][key]),
                                     controller._decision_from_dict(wire), frozen_parent=parent)
         result = controller._finish_flow(record, state, "completed")

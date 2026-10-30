@@ -219,6 +219,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    from .external_worker_cli import add_external_worker_parser
+
+    add_external_worker_parser(subparsers)
+
     init_parser = subparsers.add_parser("init", help="initialize a local state directory")
     _add_home(init_parser)
     _add_json(init_parser)
@@ -830,6 +834,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subject_parser.add_argument("--max-steps", type=int, default=100)
     subject_parser.add_argument("--timeout", type=float)
+    subject_parser.add_argument(
+        "--session-history", action="store_true",
+        help="retain a bounded local transcript for this fresh subject (no history replay)",
+    )
     subject_parser.add_argument(
         "--workflow-config", type=Path,
         help="opt-in frozen staged manifest and reservations JSON (normal mode only)",
@@ -5167,6 +5175,7 @@ def _effect_subject(args: argparse.Namespace) -> dict[str, object]:
         timeout=args.timeout,
         model_profile=profile,
         workflow_config=StagedWorkflowConfig.load(workflow_path) if workflow_path else None,
+        session_history=getattr(args, "session_history", False),
     )
 
 
@@ -6958,6 +6967,12 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             args._automatic_owner = _automatic_owner
             args._solve_owner_held = True
         _reject_retired_cli_strategy(args)
+        if args.command == "external-worker":
+            from .external_worker_cli import external_worker_payload
+
+            payload, status = external_worker_payload(args)
+            _emit(payload, args.json)
+            return status
         if args.command == "rsi" and args.rsi_command in {"run", "resume"}:
             from .rsi_producer_gateway import require_fixture_rsi_cli
 

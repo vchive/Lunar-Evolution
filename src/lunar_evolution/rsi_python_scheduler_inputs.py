@@ -16,6 +16,10 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, NoReturn
 
+from . import producer_python_runtime_tree as runtime_tree
+from . import rsi_brs_rejection_ready_ledger as checkpoint_row_reader
+from . import rsi_checkpoint_storage as checkpoint_storage
+from . import rsi_store as admission_store
 from .algorithm import (
     AlgorithmProblemContract,
     ConstraintSpec,
@@ -63,6 +67,7 @@ from .rsi_native_plan import NativeRSIExecutionPlan
 from .rsi_native_scheduler import NativeRSISchedulerContext, _assert_plan_binding
 
 PYTHON_RSI_SCHEDULER_INPUT_PROTOCOL = "lunar-python-rsi-scheduler-inputs-v1"
+_ORIGINAL_STAGING_IDENTITY_HELPERS = admission_store._STAGING_IDENTITY_HELPERS
 _DTO_TYPES = (
     AlgorithmProblemContract, ConstraintSpec, EvolutionSpec, InputSpec, MetricSpec,
     ObjectiveSpec, OutputSpec, SourceCheckSpec, BundleGroup, ProducerLaunchIntent,
@@ -114,7 +119,13 @@ def _shape(value: object, *, depth: int = 0, remaining: list[int] | None = None)
         # Keys are untrusted input too.  Visit them before serializers so their size contributes
         # to the same bounded shape walk and custom string-like objects cannot be substituted.
         for key in value:
-            _shape(key, depth=depth + 1, remaining=remaining)
+            # Keep live key iteration and the same occurrence/depth budget.
+            if type(key) is str:
+                remaining[0] -= 1
+                if depth + 1 > 48 or remaining[0] < 0 or len(key) > 128 * 1024:
+                    _fail("shape_invalid")
+            else:
+                _shape(key, depth=depth + 1, remaining=remaining)
         items = value.values()
     elif kind in {list, tuple, frozenset}:
         if len(value) > 10_000:
@@ -140,7 +151,24 @@ def _shape(value: object, *, depth: int = 0, remaining: list[int] | None = None)
     else:
         _fail("shape_invalid")
     for item in items:
-        _shape(item, depth=depth + 1, remaining=remaining)
+        # Exact scalar leaves need no recursive frame; DTOs, containers and
+        # foreign values retain the original path and all of its checks.
+        child_kind = type(item)
+        if (item is None or child_kind is bool or child_kind is str
+                or child_kind is int or child_kind is float):
+            remaining[0] -= 1
+            if depth + 1 > 48 or remaining[0] < 0:
+                _fail("shape_invalid")
+            if child_kind is str:
+                if len(item) > 128 * 1024:
+                    _fail("shape_invalid")
+            elif child_kind is int:
+                if item.bit_length() > 4096:
+                    _fail("shape_invalid")
+            elif child_kind is float and not math.isfinite(item):
+                _fail("shape_invalid")
+        else:
+            _shape(item, depth=depth + 1, remaining=remaining)
 
 
 def _path(value: object) -> Path:
@@ -246,6 +274,10 @@ def _broker(value: object) -> ProducerBrokerConfig:
 def _native(value: object, binding: PythonProducerBinding) -> NativeRSISchedulerContext:
     if type(value) is not NativeRSISchedulerContext:
         _fail("native_context_invalid")
+    try:
+        NativeRSISchedulerContext._assert_live_modules_sink(value)
+    except Exception as exc:
+        raise PythonRSISchedulerInputError("native_context_drift") from exc
     for item in (value.intent, value.attestation, value.contract, value.groups):
         _shape(item)
     broker = _broker(value.broker_config)
@@ -314,7 +346,7 @@ def _projection(
     proof: PythonProducerCheckpointBinding,
 ) -> dict[str, Any]:
     artifact = native.artifact
-    return {
+    projection = {
         "protocol": PYTHON_RSI_SCHEDULER_INPUT_PROTOCOL,
         "production_admission": False,
         "workspace": str(native.workspace), "producer_root": str(native.producer_root),
@@ -346,6 +378,10 @@ def _projection(
         "candidate_selector_id": "native-selector-v1",
         "candidate_selector_sha256": component_fingerprint(select_native_candidate),
     }
+    sink = NativeRSISchedulerContext._live_modules_sink_projection(native)
+    if sink is not None:
+        projection["live_modules_sink"] = sink
+    return projection
 
 
 @dataclass(frozen=True, slots=True)
@@ -513,6 +549,8 @@ def _code_dependencies() -> dict[str, str]:
     seam's helpers plus the native plan/input and Python runtime/binding boundaries it uses;
     it is a local code-drift identity, not package or interpreter authentication.
     """
+    if admission_store._STAGING_IDENTITY_HELPERS is not _ORIGINAL_STAGING_IDENTITY_HELPERS:
+        _fail("staging_identity_policy_drift")
     components = {
         "dependency_projection": _code_dependencies,
         "error": PythonRSISchedulerInputError,
@@ -530,15 +568,49 @@ def _code_dependencies() -> dict[str, str]:
         "native_plan_from_inputs": NativeRSIExecutionPlan.from_native_inputs.__func__,
         "native_plan_binding": _assert_plan_binding,
         "runtime_tree_verifier": verify_python_runtime_tree_manifest,
+        "runtime_tree_canonical": runtime_tree._canonical,
+        "runtime_tree_json_snapshot": runtime_tree._bounded_exact_json_snapshot,
+        "runtime_tree_json_encoder_guard": runtime_tree._json_fast_encoder_current,
         "python_binding": PythonProducerBinding,
         "python_binding_parser": parse_python_producer_binding,
         "python_sidecar_reader": read_python_producer_binding_sidecar,
         "python_sidecar_pin_validator": _validated_sidecar_pin,
         "python_checkpoint_binding": PythonProducerCheckpointBinding,
         "candidate_selector": select_native_candidate,
+        "staging_identity_guard": admission_store._staging_identity_helpers_current,
+        "staging_history_validator": admission_store.RSILedger._validate_python_producer_staging_history_tx,
+        "checkpoint_encoder": checkpoint_storage.canonical_checkpoint_text,
+        "checkpoint_row_validator": checkpoint_storage.validate_reserved_checkpoint_row,
+        "checkpoint_payload_limit": checkpoint_storage.reserved_checkpoint_payload_limit,
+        "run_row_validator": checkpoint_storage.validate_reserved_record_row,
+        "run_payload_limit": checkpoint_storage.reserved_run_payload_limit,
+        "checkpoint_row_meter": checkpoint_storage._row_size,
+        "checkpoint_storage_validator": checkpoint_storage._validate_row,
+        "checkpoint_append": admission_store.RSILedger._append_controller_checkpoint_tx,
+        "transfer_checkpoint_append": admission_store.RSILedger._append_transfer_checkpoint_tx,
+        "record_create": admission_store.RSILedger._create,
+        "record_transition": admission_store.RSILedger.transition,
         "canonical_json": canonical_json, "strict_json": strict_json,
     }
-    return {name: component_fingerprint(component) for name, component in components.items()}
+    limits = {
+        "max_depth": runtime_tree._JSON_FAST_MAX_DEPTH,
+        "max_nodes": runtime_tree._JSON_FAST_MAX_NODES,
+        "manifest_bytes": runtime_tree.MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES,
+    }
+    storage_limits = {
+        "reserved_row_bytes": checkpoint_storage.MAX_RESERVED_CHECKPOINT_ROW_BYTES,
+        "reader_row_bytes": checkpoint_row_reader._MAX_ROW_BYTES,
+        "payload_bytes": checkpoint_storage._MAX_CHECKPOINT_PAYLOAD_BYTES,
+        "checkpoint_metadata_bytes": checkpoint_storage._CHECKPOINT_FIXED_TAIL_BYTES,
+        "run_metadata_bytes": checkpoint_storage._RUN_FIXED_TAIL_BYTES,
+        "tables": checkpoint_storage._TABLES,
+    }
+    return {name: component_fingerprint(component, config=(
+                limits if name == "runtime_tree_json_snapshot" else storage_limits
+                if name in {"checkpoint_encoder", "checkpoint_row_validator", "checkpoint_payload_limit",
+                            "run_row_validator", "run_payload_limit", "checkpoint_row_meter",
+                            "checkpoint_storage_validator"} else None))
+            for name, component in components.items()}
 
 
 @dataclass(frozen=True, slots=True)

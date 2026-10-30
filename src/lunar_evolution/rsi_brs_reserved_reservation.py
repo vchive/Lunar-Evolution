@@ -128,6 +128,17 @@ def _observe_reserved_brs_reservation(
                        if key.startswith("producer_"))):
             _fail("run_origin_drift")
         previous_count, original_index, scheduling_complete = 0, None, False
+        # These bytes belong only to the freshly decoded first state in this
+        # history walk. Freeze each field at its original first comparison,
+        # after the current value is encoded, to retain refusal/short-circuit
+        # order. Every later state's value is still encoded independently.
+        first_fixed_bytes: dict[str, bytes] = {}
+
+        def original_fixed_bytes(key: str) -> bytes:
+            if key not in first_fixed_bytes:
+                first_fixed_bytes[key] = _raw(first.get(key))
+            return first_fixed_bytes[key]
+
         for index, state in enumerate(states):
             if (state.get("status") != "running"
                     and not (finalization and scheduling_complete and state.get("status") == "completed")):
@@ -136,7 +147,7 @@ def _observe_reserved_brs_reservation(
                 "executions", "python_admission_refs", "brs_reconcile_obligations",
             )):
                 _fail("attempt_shape_invalid")
-            if any(_raw(state.get(key)) != _raw(first.get(key)) for key in _FIXED
+            if any(_raw(state.get(key)) != original_fixed_bytes(key) for key in _FIXED
                    if not (finalization and scheduling_complete and key == "memory_snapshot")):
                 _fail("original_drift")
             if scheduling_complete and set(state["executions"]) != set(episode_ids):

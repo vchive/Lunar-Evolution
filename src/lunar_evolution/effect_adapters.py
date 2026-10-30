@@ -40,6 +40,7 @@ from .runtime import OpenAICompatibleRuntime
 from .staged_workflow import StagedWorkflowConfig, StagedWorkflowRunner
 from .subject_diagnostics import SubjectDiagnosticContext, SubjectDiagnosticObserver
 from .tools import LocalToolRegistry
+from .transcript import SessionTranscript
 from .workflow_checkpoint import WorkflowController
 
 MAX_JSON_BYTES = 2 * 1024 * 1024
@@ -430,6 +431,7 @@ def run_subject_adapter(
     model_runtime: object | None = None,
     model_profile: ModelProfile | None = None,
     workflow_config: StagedWorkflowConfig | None = None,
+    session_history: bool = False,
 ) -> dict[str, object]:
     """Run a fresh subject, optionally with same-process stages in normal mode.
 
@@ -437,6 +439,10 @@ def run_subject_adapter(
     attempt workspace and supplies the bounded previous-round evaluator summary; this adapter still
     starts a fresh, stateless Agent session and never discovers machine-wide Agent state.
     """
+    if type(session_history) is not bool:
+        raise EffectAdapterError("subject session_history must be a boolean")
+    if session_history and workflow_config is not None:
+        raise EffectAdapterError("subject session history cannot be combined with a staged workflow")
     request_file = Path(request_path).expanduser()
     raw_request = _read_json(request_file, "subject request")
     mode = raw_request.get("mode") if isinstance(raw_request, dict) else None
@@ -532,6 +538,7 @@ def run_subject_adapter(
 
     diagnostic_context = SubjectDiagnosticContext.from_request(workspace, request, request_digest)
     diagnostic_observer = SubjectDiagnosticObserver()
+    agent = None
     try:
         runtime = model_runtime
         if runtime is None:
@@ -592,11 +599,20 @@ def run_subject_adapter(
                 "PATH": os.environ.get("PATH", os.defpath),
             },
         )
+        transcript = None
+        if session_history:
+            history_name = "subject.jsonl" if mode == "normal" else f"subject-{round_index:03d}.jsonl"
+            transcript = SessionTranscript(
+                workspace / "sessions" / history_name,
+                redactions=redactions, confined_workspace=workspace,
+            )
+            transcript.create_fresh()
         agent = AgentLoopRuntime(
             runtime,
             tools=tools,
             max_steps=effective_max_steps,
             profile=model_profile,
+            transcript=transcript,
         )
         def subject_event(kind: str, payload: dict[str, object]) -> None:
             if workflow_config is not None and kind == "agent_model_turn":
@@ -718,7 +734,15 @@ Case key: {case['key']}
         return receipt
     except Exception as exc:
         code = exc.diagnostic_code if isinstance(exc, EffectAdapterError) else None
-        diagnostic_observer.emit_failure(diagnostic_context, exc, code=code)
+        accepted_usage = None
+        try:
+            if agent is not None:
+                accepted_usage = agent.last_invocation.accepted_usage
+        except Exception:  # noqa: BLE001 - optional diagnostics cannot mask the execution failure
+            accepted_usage = None
+        diagnostic_observer.emit_failure(
+            diagnostic_context, exc, code=code, accepted_usage=accepted_usage,
+        )
         raise
 
 

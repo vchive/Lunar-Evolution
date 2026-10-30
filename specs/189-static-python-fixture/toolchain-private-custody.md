@@ -15,19 +15,29 @@ root, and the original process chain is fully drained before completion.
 Archive members are data only; no Zig, CPython, configure, freezer, solver,
 WebAgent or remote evaluator may run in this slice.
 
-Two actual environment constraints prevent claiming that interval today:
+Two constraints prevent claiming that complete bubblewrap interval today;
+they are not a conclusion that all read-only worker mechanisms are unavailable:
 
 - Pinned bubblewrap 0.11.1 source has a cumulative `MAX_ARGS=9000`, including
   arguments read through `--args FD`. The complete Zig inventory has 19,546
   files; its `--file FD DEST` arguments alone would number 58,638. Multiple args
   files do not reset the counter. Keep legacy recipe-v1's 16,384 files and
   1 MiB limits unchanged; do not truncate the tree or modify bubblewrap.
-- On 5090gpu, the installed AppArmor-profiled `/usr/bin/bwrap` can create the
-  initial user namespace. A fixed command with effective `CAP_SYS_ADMIN` and
-  `CAP_SETPCAP` nevertheless received `EPERM` on a read-only remount. A separate
-  tiny probe copied an inert file and exec'ed a second installed bwrap, but
-  that inner bwrap's `--unshare-user` failed with `EPERM`. Neither mechanism is
-  a supported enforcement path. Preserve both failures independently.
+- On 5090gpu, the tiny installed-bubblewrap setup copied files with `--file`
+  into private tmpfs and used bubblewrap's own `--remount-ro` before reader
+  execution successfully. The later **exec'ed child**, with effective
+  `CAP_SYS_ADMIN` and `CAP_SETPCAP`, received `EPERM` on its read-only remount.
+  A separate nested installed bwrap's `--unshare-user` also failed with `EPERM`.
+  Those two later failures refuse their repair paths; they do not negate the
+  earlier setup-time success. Preserve all three observations independently.
+
+A separately scoped two-stage inert probe subsequently succeeded using the
+already-running rootless Podman/crun/VFS service, read-only scratch-image inputs
+and actual generated-output readback followed by a new protected image. See
+`podman-inert-custody-observation-20261028.md` for first-failure preservation,
+source/evidence pins and the exact trusted-custodian boundary. This is narrow
+worker/transfer feasibility, not a full archive replay, integrated build backend
+or G1 acceptance. No host policy, group or privilege change was required.
 
 The selected executable binding for any future bwrap probe is the independently
 pinned, root-owned, non-writable installation pathname `/usr/bin/bwrap`, with

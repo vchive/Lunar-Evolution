@@ -8,6 +8,7 @@ opens a ledger, selects a child or grants execution/publication authority.
 from __future__ import annotations
 
 import builtins
+import dataclasses
 import hashlib
 import importlib
 import json
@@ -29,8 +30,9 @@ _MODULE_NAMES = (
     "rsi_brs_reserved_owner", "rsi_brs_rejection_owner", "rsi_brs_rejection_provenance",
     "rsi_brs_rejection_capacity", "rsi_brs_rejection_ready_owner", "rsi_brs_rejection_ready_final",
     "rsi_brs_serial_driver", "rsi_brs_native_provider", "rsi_brs_native_completion",
-    "rsi_brs_serial_finalization", "rsi_brs_serial_budget",
+    "rsi_brs_serial_finalization", "rsi_brs_serial_budget", "rsi_checkpoint_storage",
     "rsi_python_brs_terminal_lifecycle", "rsi_brs_terminal_evidence",
+    "static_python_fixed_runtime_observation",
 )
 _PROJECT = None
 
@@ -99,10 +101,161 @@ def _build_reserved_brs_policy():
                     "metadata", "kw_only", "_field_type"))
         return "opaque", object_id(scalar), object_id(value)
 
+    def matches_frozen(value, held, depth=0, remaining=None):
+        # The baseline is the original immutable freeze shape, not a result
+        # cache. Every call still reads the live value at its original scan.
+        scalar = kind(value)
+        if scalar is proxy_type or scalar is plain_set or scalar is plain_frozenset:
+            return freeze(value, depth, remaining) == held
+        if scalar is plain_dict:
+            if length(value) > maximum:
+                fail()
+            if (held[0] != "mapping" or held[1] != object_id(scalar)
+                    or held[2] != object_id(value)):
+                return False
+            entries = held[3]
+            if length(value) != length(entries):
+                return False
+            # Only exact str keys permit hook-free direct dictionary lookups.
+            # Heterogeneous keys retain the original unordered freeze path.
+            if some(key[0] != "str" for key, _item in entries):
+                return freeze(value, depth, remaining) == held
+        if remaining is None:
+            remaining = [100_000]
+        remaining[0] -= 1
+        if depth > 48 or remaining[0] < 0:
+            fail()
+        if value is None:
+            return held == ("none",)
+        if scalar is plain_str:
+            return held[0] == "str" and value == held[1]
+        if scalar is plain_bytes:
+            return held[0] == "bytes" and value == held[1]
+        if scalar is plain_int:
+            return held[0] == "int" and value == held[1]
+        if scalar is plain_bool:
+            return held[0] == "bool" and value == held[1]
+        if scalar is plain_float:
+            if not math.isfinite(value):
+                fail()
+            return held[0] == "float" and value == held[1]
+        if scalar is plain_dict:
+            if not entries:
+                return length(value) == 0
+            # This temporary index contains only held exact str keys. It is
+            # rebuilt on every observation and stores no validation result.
+            # Never key-lookup in the live dict: a concurrent foreign insertion
+            # could otherwise make a lookup execute the inserted key's __eq__.
+            expected_items = plain_dict((key[1], expected) for key, expected in entries)
+            seen = 0
+            child_depth = depth + 1
+            for key, item in value.items():
+                if kind(key) is not plain_str:
+                    return False
+                remaining[0] -= 1
+                if child_depth > 48 or remaining[0] < 0:
+                    fail()
+                expected = expected_items.get(key, missing)
+                if expected is missing:
+                    return False
+                item_kind = kind(item)
+                if (item_kind is plain_dict or item_kind is proxy_type or item_kind is plain_list
+                        or item_kind is plain_tuple or item_kind is plain_set
+                        or item_kind is plain_frozenset or item_kind is field_type):
+                    if not matches_frozen(item, expected, child_depth, remaining):
+                        return False
+                else:
+                    # Observe and charge each scalar occurrence here. Avoid a
+                    # Python recursive call for a leaf; retain the same exact
+                    # types, finite-float refusal and opaque identity checks.
+                    remaining[0] -= 1
+                    if child_depth > 48 or remaining[0] < 0:
+                        fail()
+                    if item is None:
+                        if expected != ("none",):
+                            return False
+                    elif item_kind is plain_str:
+                        if expected[0] != "str" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bytes:
+                        if expected[0] != "bytes" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_int:
+                        if expected[0] != "int" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bool:
+                        if expected[0] != "bool" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_float:
+                        if not math.isfinite(item):
+                            fail()
+                        if expected[0] != "float" or item != expected[1]:
+                            return False
+                    elif (expected[0] != "opaque" or expected[1] != object_id(item_kind)
+                            or expected[2] != object_id(item)):
+                        return False
+                seen += 1
+            return seen == length(entries)
+        if scalar is plain_list or scalar is plain_tuple:
+            if length(value) > maximum:
+                fail()
+            if (held[0] != "sequence" or held[1] != object_id(scalar)
+                    or held[2] != object_id(value) or length(value) != length(held[3])):
+                return False
+            child_depth = depth + 1
+            for item, expected in pairs(value, held[3], strict=True):
+                item_kind = kind(item)
+                if (item_kind is plain_dict or item_kind is proxy_type or item_kind is plain_list
+                        or item_kind is plain_tuple or item_kind is plain_set
+                        or item_kind is plain_frozenset or item_kind is field_type):
+                    if not matches_frozen(item, expected, child_depth, remaining):
+                        return False
+                else:
+                    remaining[0] -= 1
+                    if child_depth > 48 or remaining[0] < 0:
+                        fail()
+                    if item is None:
+                        if expected != ("none",):
+                            return False
+                    elif item_kind is plain_str:
+                        if expected[0] != "str" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bytes:
+                        if expected[0] != "bytes" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_int:
+                        if expected[0] != "int" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bool:
+                        if expected[0] != "bool" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_float:
+                        if not math.isfinite(item):
+                            fail()
+                        if expected[0] != "float" or item != expected[1]:
+                            return False
+                    elif (expected[0] != "opaque" or expected[1] != object_id(item_kind)
+                            or expected[2] != object_id(item)):
+                        return False
+            return True
+        if scalar is field_type:
+            if held[0] != "field" or held[1] != object_id(value):
+                return False
+            # freeze's immutable tuple supplies exactly its original fixed names.
+            for name, expected in held[2]:
+                if not matches_frozen(object_get(value, name), expected, depth + 1, remaining):
+                    return False
+            return True
+        return (held[0] == "opaque" and held[1] == object_id(scalar)
+                and held[2] == object_id(value))
+
     def pack_function(function):
         if kind(function) is not function_type or object_id(function) in queued:
             return
         queued.add(object_id(function))
+        # A contextmanager wrapper keeps the original generator in both its
+        # closure and __wrapped__. Pin its executable body, not just that alias.
+        pack_function(getattr(function, "__wrapped__", None))
         mappings = (function.__dict__, function.__annotations__, function.__kwdefaults__)
         if some(mapping is not None and kind(mapping) is not plain_dict for mapping in mappings):
             fail()
@@ -168,19 +321,37 @@ def _build_reserved_brs_policy():
         ("rsi_controller", "RSILearningController", (
             "_python_admission_assert_reserved_brs_child", "_drive_reserved_brs_native_serial",
             "_python_admission_active_brs_owner", "_python_admission_bind_selected_brs_handoff",
-            "_stage_producer_episode", "_commit_flow", "_resume_reserved_brs_native_serial")),
+            "_python_admission_match_brs_owner_checkpoint",
+            "_python_admission_brs_full_gate_scope",
+            "_stage_producer_episode", "_commit_flow", "_resume_reserved_brs_native_serial",
+            "_memory_item", "_decision_from_dict", "_deserialize_execution", "_flow_result",
+            "_serialize_execution")),
         ("rsi_producer_gateway", "PythonProducerRSISolverGateway", (
             "run", "bind_reserved_brs_child_controller")),
-        ("rsi_producer_launch", "PythonProducerEpisodeStager", ("stage", "validate_state", "assert_unattempted")),
+        ("rsi_producer_launch", "PythonProducerEpisodeStager", (
+            "stage", "validate_state", "assert_unattempted", "pure_preflight")),
         ("rsi_python_brs_admission", "BRSAdmissionChannel", (
             "service", "assert_selected_handoff_acknowledged")),
         ("rsi_native_scheduler", "NativeRSISchedulerProvider", (
             "__call__", "recover_live_rejection", "assert_rejection_ledger", "_inputs",
             "rsi_fingerprint_config", "_failure_claim", "validate_preclaim", "_native_rejection_snapshot",
-            "provenance_batch")),
+            "provenance_batch", "_python_publication_join")),
+        ("rsi_native_scheduler", "NativeRSISchedulerContext", (
+            "__post_init__", "_assert_live_modules_sink", "_live_modules_sink_projection",
+            "_python_handoff_suppliers")),
+        ("native_trusted_output", "_NativeTrustedEnvelopeAcquisition", ("__init__", "__copy__", "__deepcopy__")),
+        ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", ("validate", "compare")),
+        ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", ("__init__", "assert_current", "to_dict")),
+        ("static_python_fixed_profile", "FixedPythonInstallation", ("to_dict",)),
         ("rsi_store", "RSILedger", ("_select_python_producer_checkpoint_tx",
             "_validate_python_producer_staging_history_tx", "resolve_python_producer_checkpoint",
-            "_python_admission_state_tx", "append_brs_terminal_observation")),
+            "_python_admission_state_tx", "_controller_checkpoint_history_tx",
+            "_controller_checkpoint_history_rows_tx", "_checkpoint_projection_cache", "_checkpoint_projection_scope",
+            "_controller_checkpoint_idle_head",
+            "_controller_checkpoint_history_observation_tx", "append_brs_terminal_observation",
+            "_append_controller_checkpoint_tx", "_append_transfer_checkpoint_tx", "_checkpoint_digest",
+            "_create", "transition")),
+        ("rsi_store", "_CheckpointHistoryRowProjection", ("__init__",)),
     )
     external_members = []
     for module_name, class_name, names in external:
@@ -191,10 +362,24 @@ def _build_reserved_brs_policy():
             if kind(function) is property_type:
                 for accessor in (function.fget, function.fset, function.fdel):
                     pack_function(accessor)
+            elif kind(function) is static_type or kind(function) is class_type:
+                pack_function(function.__func__)
             else:
                 pack_function(function)
             external_members.append((declaration, name, function))
     for module_name, names in (
+        ("rsi_controller", ("_record_digest",)),
+        ("rsi_store", ("_admission_checkpoint_helpers_current", "_admission_checkpoint_projection",
+            "_checkpoint_projection_helpers_current", "_checkpoint_projection_constant", "_checkpoint_projection_key",
+            "_retain_checkpoint_projection", "_build_checkpoint_projection_pins")),
+        ("native_trusted_output", ("_native_output_envelope_pin", "_unique_object")),
+        ("native_fixed_live_sink", ("_pin_fixed_python_live_sink_request",)),
+        ("static_python_fixed_profile", ("_reparse", "_parse_installation", "verify_fixed_python_image")),
+        ("static_python_fixed_live_modules", (
+            "_compose", "compare_fixed_python_bound_live_modules", "_compare_live_payload")),
+        ("native_trusted_scheduler", ("_run_native_trusted_producer",
+            "_prepare_native_trusted_python_producer", "run_native_trusted_producer",
+            "run_native_trusted_producer_outcome", "_prepublication_evidence", "_native_handoff_evidence", "_native_output_envelope_pin")),
         ("rsi_python_episode_inputs", ("_resolve_python_rsi_episode_input_context",
             "resolve_reserved_python_rsi_episode_input_context", "resolve_python_rsi_episode_input_context")),
         ("rsi_producer_gateway", ("resolve_reserved_python_producer_episode_gateway",)),
@@ -212,6 +397,7 @@ def _build_reserved_brs_policy():
     builtin_bindings = plain_tuple((name, builtin_namespace[name]) for name in builtin_names)
     runtime_edges = plain_tuple((module, namespace_of(module), name, namespace_of(module)[name])
         for module, names in (
+            (dataclasses, ("fields",)),
             (hashlib, ("sha256",)), (json, ("loads", "dumps")),
             (math, ("isfinite",)), (time, ("time", "monotonic")),
             (os, ("fstat", "lstat", "listdir", "stat", "open", "read", "close")),
@@ -285,11 +471,12 @@ def _build_reserved_brs_policy():
     helper_pins = plain_tuple((function, function.__code__, function.__globals__,
         function.__defaults__, function.__kwdefaults__, function.__closure__,
         plain_tuple(cell.cell_contents for cell in (function.__closure__ or ())))
-        for function in (fail, freeze))
+        for function in (fail, freeze, matches_frozen))
 
     def project():
-        for function, code, namespace, defaults, kwdefaults, closure, captures in helper_pins:
-            if (kind(function) is not function_type or function.__code__ is not code
+        for expected, pin in pairs((fail, freeze, matches_frozen), helper_pins, strict=True):
+            function, code, namespace, defaults, kwdefaults, closure, captures = pin
+            if (function is not expected or kind(function) is not function_type or function.__code__ is not code
                     or function.__globals__ is not namespace or function.__defaults__ is not defaults
                     or function.__kwdefaults__ is not kwdefaults or function.__closure__ is not closure):
                 raise error_type(fail_message)
@@ -335,7 +522,7 @@ def _build_reserved_brs_policy():
                 if namespace.get(name, missing) is not value:
                     fail()
             for name, value in containers:
-                if freeze(namespace[name]) != value:
+                if not matches_frozen(namespace[name], value):
                     fail()
         for declaration, name, original in external_members:
             namespace = namespace_of(declaration) if kind(declaration) is module_type else type_get(declaration, "__dict__")
@@ -350,7 +537,7 @@ def _build_reserved_brs_policy():
                 if members.get(name, missing) is not value:
                     fail()
             for name, value in containers:
-                if freeze(members[name]) != value:
+                if not matches_frozen(members[name], value):
                     fail()
         # Check each held domain once, while retaining the alias and complete
         # shadow vector separately for every globals namespace below. These
@@ -374,13 +561,15 @@ def _build_reserved_brs_policy():
                     or function.__globals__ is not namespace or function.__defaults__ is not defaults
                     or function.__kwdefaults__ is not kwdefaults or function.__closure__ is not closure):
                 fail()
-            if (freeze(function.__defaults__) != default_value or freeze(function.__kwdefaults__) != kw_value
-                    or freeze(function.__dict__) != attrs or freeze(function.__annotations__) != annotations):
+            if (not matches_frozen(function.__defaults__, default_value)
+                    or not matches_frozen(function.__kwdefaults__, kw_value)
+                    or not matches_frozen(function.__dict__, attrs)
+                    or not matches_frozen(function.__annotations__, annotations)):
                 fail()
             for name, value, container in globals_used:
                 if namespace.get(name, missing) is not value:
                     fail()
-                if container is not None and freeze(namespace[name]) != container:
+                if container is not None and not matches_frozen(namespace[name], container):
                     fail()
             for cell, value in pairs(closure or (), captures, strict=True):
                 try:

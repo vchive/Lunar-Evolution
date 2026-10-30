@@ -20,7 +20,11 @@ from .rsi_identity import component_fingerprint
 from .rsi_learning import MemorySnapshot, RSILearningError
 from .rsi_native_gateway import NativeRSIExecutionConfig, NativeRSISolverGateway
 from .rsi_native_plan import NativeRSIExecutionPlan
-from .rsi_native_scheduler import NativeRSISchedulerProvider, make_native_rsi_scheduler_provider
+from .rsi_native_scheduler import (
+    NativeRSISchedulerContext,
+    NativeRSISchedulerProvider,
+    make_native_rsi_scheduler_provider,
+)
 from .rsi_python_scheduler_inputs import (
     PythonRSISchedulerInputContext,
     PythonRSISchedulerPlanFactory,
@@ -66,7 +70,7 @@ class PythonProducerRSIExecutionConfig:
             _fail("producer_binding_mismatch")
         if native.failure_ledger is not self.ledger:
             _fail("failure_ledger_mismatch")
-        if native.python_handoff_after_execution is None:
+        if not any(value is not None for value in NativeRSISchedulerContext._python_handoff_suppliers(native)):
             _fail("handoff_supplier_required")
 
 

@@ -218,6 +218,7 @@ def _postwrite_observe(self, expected: dict[str, Any]) -> None:
 
 
 def _observe(self, expected: dict[str, Any] | None = None) -> None:
+    """Close source/control callbacks with a fresh complete owner observation."""
     self._before_unlocked()
     held = _custody(self)
     _allowance(self)
@@ -368,7 +369,8 @@ def _readback(self, head: str, expected: dict[str, Any], payload: bytes, *, fina
         for instance, expected_type, names in (
             (self._ledger, RSILedger, (
                 "read_only_observations", "controller_checkpoint", "controller_checkpoint_history", "_connect",
-                "_controller_checkpoint_history_tx", "_checkpoint_python_references", "_checkpoint_digest",
+                "_controller_checkpoint_history_tx", "_controller_checkpoint_history_observation_tx",
+                "_checkpoint_python_references", "_checkpoint_digest",
                 "_checkpoint_reference_rows_tx", "_python_admission_row", "controller_lock_held", "_assert_controller_lock")),
             (self._controller, RSILearningController, (
                 "_python_admission_flow_payload", "_python_admission_assert_brs_wave", "_python_admission_brs_observations")),
@@ -445,7 +447,6 @@ def retain_rejection_provenance(self) -> None:
         self._rejection_provenance_evidence = _canonical(evidence.to_dict())
         _preflight(self, evidence, tables)
         _observe(self)
-        _fixed(self)
         _fresh(self)
         _policy_gate(self)
         held = _custody(self)
@@ -492,7 +493,6 @@ def acknowledge_rejection_provenance(self, evidence: NativeRSIRejectionEvidence,
         expected = lineage._publication_lineage_checkpoint_delta(self._rejection_c1_capture[1], wire)
         payload = self._controller._python_admission_flow_payload(expected)
         _observe(self)
-        _fixed(self)
         _fresh(self)
         _read_p(self)
         _policy_gate(self)
@@ -507,7 +507,6 @@ def acknowledge_rejection_provenance(self, evidence: NativeRSIRejectionEvidence,
             _control(self)
             _readback(self, head, expected, payload)
             _observe(self, expected)
-            _fixed(self, expected)
             _fresh(self)
             _read_p(self)
             _policy_gate(self)
@@ -569,8 +568,7 @@ def _verify_reserved_rejected_materials(workspace, entry, *, ledger, roots, ordi
     from .producer_bundle_admission import parse_producer_bundle_admission_plan
     from .rsi_brs_lineage_prefix import BRSLineagePrefix
     from .rsi_brs_rejection_capacity import (
-        _retained_reserved_brs_c1_evidence_bytes,
-        _retained_reserved_brs_c2_evidence_bytes,
+        _retained_reserved_brs_c1_c2_evidence_bytes,
     )
     from .rsi_brs_rejection_owner import (
         _read_rejection_tables_at,
@@ -669,8 +667,8 @@ def _verify_reserved_rejected_materials(workspace, entry, *, ledger, roots, ordi
     observed = _verify_terminal_batch_rejection_evidence(workspace, batch, prepared, terminal=terminal)
     tables = _read_rejection_tables_at(workspace, entry)
     all_rejected, all_published = read_reserved_brs_material_tables(workspace, c1_wire)
-    actual = _retained_reserved_brs_c1_evidence_bytes(c1_state, c1_wire, all_rejected, all_published, **options)
-    _retained_reserved_brs_c2_evidence_bytes(c1_state, c2_wire, all_rejected, all_published, **options)
+    actual, _c2_actual = _retained_reserved_brs_c1_c2_evidence_bytes(
+        c1_state, c1_wire, c2_wire, all_rejected, all_published, **options)
     binding = RejectionLineageC1Binding(run_id=rejected.run_id, episode_id=entry["episode_id"],
         journal_id=entry["journal_id"], ordinal=ordinal, checkpoint_sha256=history[index][0],
         rejected_sha256=rejected.digest(), retained_bytes=actual,
@@ -692,12 +690,14 @@ def _verify_reserved_rejected_materials(workspace, entry, *, ledger, roots, ordi
     return archive, state_bytes, evidence, terminal
 
 
-def verify_reserved_rejected_history(self, entry, *, ordinal, prefix, original_lineage_bytes):
+def verify_reserved_rejected_history(self, entry, *, ordinal, prefix, original_lineage_bytes, roots=None):
     """Validate immutable historical material without reusing old live source heads."""
     from .rsi_store import RSILedger
 
+    if roots is None:
+        roots = RSILedger.controller_checkpoint_history(self._ledger, self._run_id)
     archive, state, _evidence, _terminal = _verify_reserved_rejected_materials(self._workspace, entry,
-        ledger=self._ledger, roots=RSILedger.controller_checkpoint_history(self._ledger, self._run_id),
+        ledger=self._ledger, roots=roots,
         ordinal=ordinal, prefix=prefix, original_lineage_bytes=original_lineage_bytes)
     return archive, state
 

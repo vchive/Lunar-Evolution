@@ -23,9 +23,12 @@
 | 算法求解 | 对话式 `solve`、本地 population evolution、显式配置的本地 OpenEvolve 命令 | 候选得分依赖所配置的 evaluator，不保证一般意义上的求解质量。 |
 | RSI 学习控制 | provider-free DRS/BRS fixture、持久化 ledger、用量查询、replay 和显式 reconcile | `rsi run` 默认执行 fixture，不会运行真实 producer。 |
 | 恢复控制 | 预算、deadline、组件身份与 checkpoint 校验；未知结果要求对账 | 证据检查不代表外部进程或 runtime 已满足生产要求。 |
-| Producer 接入 | 只读项目 preflight 和 retained evidence 诊断 | 真实 sealed runtime、完整标准库闭包、项目生命周期及 Linux 中断验收仍未完成。 |
+| Producer 接入 | 固定 OpenEvolve/Shinka 源码准备、编译配方、只读 preflight 与 retained evidence 诊断 | 真实隔离构建、sealed runtime、项目生命周期及 Linux 中断验收仍未完成。 |
+| 显式外部 worker | HMAC 来源认证、持久 assignment、固定 SSH 通道、一次性派发与只读对账 | 固定 inert producer 已验证跨机通道；真实候选的账户隔离与断线后清理仍待验收。 |
 
-远程 evaluator、分布式调度、多机 ownership 和外部 worker 认证属于后续工作；当前产品形态是本地 CLI 与 Python 库。
+当前产品形态是本地 CLI 与 Python 库，单个 controller 持有本机 ledger 的权威写入权。
+可显式配置固定外部 worker；未知执行结果保留为 unknown，不能凭超时自动重派。
+多 controller 接管、分布式调度、服务 API 和远程 evaluator 不属于当前交付范围。
 
 ## 快速开始
 
@@ -40,10 +43,11 @@ python -m pip install -e .
 lunar-evolution --help
 ```
 
-开发时安装测试和 lint 工具：
+开发回归使用 `uv.lock` 中的依赖，保持测试参数 ID 和历史用例清单可重复：
 
 ```bash
-python -m pip install -e '.[dev,lint]'
+python -m pip install 'uv==0.11.8'
+uv sync --locked --no-python-downloads --extra dev --extra lint
 ```
 
 ## 运行普通任务
@@ -160,9 +164,9 @@ CI 在 Ubuntu 上覆盖 Python 3.11、3.12 和 3.13。[Linux 开发指南](docs/
 
 ## 当前发布边界
 
-provider-free DRS/BRS 控制与恢复路径已实现，并有本地回归覆盖。真实 native producer 验收仍开放，尚需独立核验 Python 源码和 toolchain、完整 runtime 闭包、sealed startup、权威输入与结果处理、进程 ownership 与生命周期，以及 Linux 中断测试。OpenEvolve/Shinka 项目 preflight 和 detached evidence reader 只是这项工作的接线与检查工具，不会启动项目，也不会授予生产准入。
+provider-free DRS/BRS 控制与恢复路径已实现，并有本地回归覆盖。发布仍需通过固定预算的 mixed 回归和最终来源完整 CI；局部测试通过不能关闭这个门槛。真实 native producer 验收还需独立核验 Python 源码和 toolchain、隔离构建与 runtime 闭包、sealed startup、权威输入与结果处理、进程 ownership 与生命周期，以及 Linux 中断测试。OpenEvolve/Shinka 源码准备和 detached evidence reader 不会授予生产准入。
 
-因此，RSI producer 的 `production_admission=false` 与 `online_publication=false` 仍是当前状态。远程 evaluator、分布式 worker 和模型权重训练不属于当前发布范围。哪些证据可以改变这些状态，见[发布工作台账](docs/current-release-backlog.md)。
+因此，RSI producer 的 `production_admission=false` 与 `online_publication=false` 仍是当前状态。外部 worker 的认证回执不授予 native 成功、结果发布或远端清理权威。远程 evaluator、多 controller 接管和模型权重训练不属于当前发布范围。哪些证据可以改变这些状态，见[发布工作台账](docs/current-release-backlog.md)。
 
 ## 贡献与许可
 

@@ -58,15 +58,21 @@ def _pipe(fd: int, direction: int) -> None:
 
 def _wait_ready(
     ack_read_fd: int, deadline: float, monotonic: Callable[[], float],
+    *, watcher: subprocess.Popen | None = None,
 ) -> None:
     """Consume exact readiness within the original budget at any valid FD.
 
     The acknowledgement reader is shared with bootstrap, which does not read
     it before host control delivery. Readiness therefore has one consumer and
     never changes pipe flags or introduces a second reception-time deadline.
+    A caller may retain another ACK writer while its original watcher starts;
+    that writer must not hide a watcher which exits before readiness. Observe
+    only the exact owned Popen between bounded waits, without signaling it.
     """
     code = "native_guardian_ready_invalid"
     try:
+        if watcher is not None and not isinstance(watcher, _POPEN_TYPE):
+            raise NativeGuardianError(code)
         remaining = _remaining(deadline, monotonic, code)
         waiter = select.poll()
         waiter.register(ack_read_fd, select.POLLIN)
@@ -74,19 +80,30 @@ def _wait_ready(
         # select's FD_SETSIZE. Round only this wait, then recheck the original
         # absolute deadline before reading. Bound the platform's signed-int
         # timeout even if a caller provides an unusually distant deadline.
-        timeout_ms = math.ceil(min(remaining, 2_147_483.647) * 1000)
-        events = waiter.poll(timeout_ms)
-        _remaining(deadline, monotonic, code)
-        if (len(events) != 1 or events[0][0] != ack_read_fd
-                or not events[0][1] & select.POLLIN
-                or events[0][1] & (select.POLLERR | select.POLLNVAL | select.POLLHUP)):
-            raise NativeGuardianError(code)
-        if os.read(ack_read_fd, 2) != b"R":
-            raise NativeGuardianError(code)
-        _remaining(deadline, monotonic, code)
+        while True:
+            if watcher is not None and watcher.poll() is not None:
+                raise NativeGuardianError(code)
+            interval = min(remaining, .05) if watcher is not None else remaining
+            timeout_ms = math.ceil(min(interval, 2_147_483.647) * 1000)
+            events = waiter.poll(timeout_ms)
+            remaining = _remaining(deadline, monotonic, code)
+            if watcher is not None and watcher.poll() is not None:
+                raise NativeGuardianError(code)
+            if not events and watcher is not None:
+                continue
+            if (len(events) != 1 or events[0][0] != ack_read_fd
+                    or not events[0][1] & select.POLLIN
+                    or events[0][1] & (select.POLLERR | select.POLLNVAL | select.POLLHUP)):
+                raise NativeGuardianError(code)
+            if os.read(ack_read_fd, 2) != b"R":
+                raise NativeGuardianError(code)
+            _remaining(deadline, monotonic, code)
+            if watcher is not None and watcher.poll() is not None:
+                raise NativeGuardianError(code)
+            return
     except NativeGuardianError:
         raise
-    except (OSError, ValueError, OverflowError) as exc:
+    except (OSError, ValueError, OverflowError, subprocess.SubprocessError) as exc:
         raise NativeGuardianError(code) from exc
 
 
@@ -252,7 +269,7 @@ def start_native_guardian(
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         owner = NativeGuardianOwner(process, watcher, group_fd, deadline, monotonic)
-        _wait_ready(ack_read_fd, deadline, monotonic)
+        _wait_ready(ack_read_fd, deadline, monotonic, watcher=watcher)
         if watcher.poll() is not None or process.poll() is not None:
             raise NativeGuardianError("native_guardian_ready_invalid")
         return owner

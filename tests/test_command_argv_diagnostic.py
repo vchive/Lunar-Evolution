@@ -2,7 +2,6 @@
 
 import json
 import shlex
-import subprocess
 from copy import deepcopy
 
 import pytest
@@ -26,9 +25,9 @@ def test_json_encoded_arrays_return_static_correctable_error_without_dispatch(tm
 
     def process(argv, **kwargs):
         calls.append((argv, kwargs))
-        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        return b"", b"", "succeeded", 0, None
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", process)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", process)
     result = LocalToolRegistry(allow_exec=True).execute("run_command", {"command": command}, tmp_path)
     assert not result.success and not result.artifacts
     assert calls == []
@@ -51,19 +50,22 @@ def test_non_array_json_and_ordinary_strings_preserve_shlex_and_process_contract
 
     def process(argv, **kwargs):
         calls.append((argv, kwargs))
-        return subprocess.CompletedProcess(argv, 7, stdout="fixture-stdout", stderr="fixture-stderr")
+        return b"fixture-stdout", b"fixture-stderr", "failed", 7, "process_failed"
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", process)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", process)
     monkeypatch.setattr("lunar_evolution.tools.time.monotonic", lambda: 100)
     registry = LocalToolRegistry(allow_exec=True, command_timeout=30, command_environment=environment)
     with registry.execution_deadline(103):
         result = registry.execute("run_command", {"command": command}, tmp_path)
     assert calls == [(shlex.split(command), {
-        "cwd": tmp_path, "env": environment, "shell": False, "text": True,
-        "capture_output": True, "timeout": 3, "check": False,
+        "cwd": str(tmp_path), "environment": environment, "timeout": 3,
+        "output_limit": 20000, "capture_limit": 20000,
+        "process_observer": None, "process_released": None,
     })]
     assert not result.success and not result.artifacts
-    assert result.output == "exit_code=7\nstdout:\nfixture-stdout\nstderr:\nfixture-stderr"
+    assert result.output == (
+        "exit_code=7\nstdout:\nfixture-stdout\nstderr:\nfixture-stderr\nerror=process_failed"
+    )
 
 
 @pytest.mark.parametrize("command", [
@@ -75,10 +77,9 @@ def test_actual_argv_arrays_remain_exact(tmp_path, monkeypatch, command):
 
     def process(argv, **kwargs):
         calls.append(argv)
-        assert kwargs["shell"] is False
-        return subprocess.CompletedProcess(argv, 0, stdout="fixture", stderr="")
+        return b"fixture", b"", "succeeded", 0, None
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", process)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", process)
     result = LocalToolRegistry(allow_exec=True).execute("run_command", {"command": command}, tmp_path)
     assert result.success and calls == [command]
 
@@ -91,9 +92,9 @@ def test_deep_json_probe_failure_keeps_existing_string_path(tmp_path, monkeypatc
 
     def process(argv, **kwargs):
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0, stdout="fixture", stderr="")
+        return b"fixture", b"", "succeeded", 0, None
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", process)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", process)
     result = LocalToolRegistry(allow_exec=True).execute("run_command", {"command": command}, tmp_path)
     assert result.success and calls == [shlex.split(command)]
 
@@ -107,10 +108,10 @@ def test_json_value_error_probe_keeps_existing_string_path(tmp_path, monkeypatch
 
     def process(argv, **kwargs):
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0, stdout="fixture", stderr="")
+        return b"fixture", b"", "succeeded", 0, None
 
     monkeypatch.setattr("lunar_evolution.tools.json.loads", invalid_integer)
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", process)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", process)
     result = LocalToolRegistry(allow_exec=True).execute("run_command", {"command": command}, tmp_path)
     assert result.success and calls == [shlex.split(command)]
 
@@ -120,7 +121,7 @@ def test_invalid_real_arrays_keep_existing_validation(tmp_path, monkeypatch, com
     def forbidden(*args, **kwargs):
         pytest.fail("invalid arrays must not launch a subprocess")
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", forbidden)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", forbidden)
     result = LocalToolRegistry(allow_exec=True).execute("run_command", {"command": command}, tmp_path)
     assert not result.success and not result.artifacts
     assert result.output == "tool_error: ToolError: command must be a non-empty string or string array"
@@ -131,7 +132,7 @@ def test_disabled_execution_precedes_json_diagnostic(tmp_path, monkeypatch):
         pytest.fail("disabled commands must not be parsed or dispatched")
 
     monkeypatch.setattr("lunar_evolution.tools.json.loads", forbidden)
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", forbidden)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", forbidden)
     result = LocalToolRegistry().execute("run_command", {"command": "[]"}, tmp_path)
     assert not result.success and "run_command is disabled" in result.output
     assert "argv" not in result.output
@@ -149,8 +150,7 @@ def test_model_corrects_next_tool_call_without_hidden_retry_or_usage_reset(tmp_p
 
     def process(command, **kwargs):
         calls.append(command)
-        assert kwargs["shell"] is False
-        return subprocess.CompletedProcess(command, 0, stdout="fixture-success", stderr="")
+        return b"fixture-success", b"", "succeeded", 0, None
 
     class Model:
         def complete(self, messages, tools=(), timeout=None):
@@ -171,7 +171,7 @@ def test_model_corrects_next_tool_call_without_hidden_retry_or_usage_reset(tmp_p
             assert "exit_code=0" in messages[-1]["content"]
             return ModelTurn("completed", response_model="fixture", usage=usage)
 
-    monkeypatch.setattr("lunar_evolution.tools.subprocess.run", process)
+    monkeypatch.setattr("lunar_evolution.candidate_execution_runner._bounded_process_bytes", process)
     transcript = SessionTranscript(tmp_path / "transcript.jsonl")
     runtime = AgentLoopRuntime(
         Model(), tools=LocalToolRegistry(allow_exec=True), max_steps=2,

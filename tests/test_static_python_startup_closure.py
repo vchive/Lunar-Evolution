@@ -639,20 +639,23 @@ def test_parser_does_not_call_filesystem_process_network_or_environment_apis(
     def forbidden(*_args, **_kwargs):
         raise AssertionError("startup-closure parser must remain provider-free and in-memory")
 
-    monkeypatch.setattr(builtins, "open", forbidden)
-    monkeypatch.setattr(os, "open", forbidden)
-    monkeypatch.setattr(os, "getenv", forbidden)
-    monkeypatch.setattr(os, "environ", _ForbiddenEnvironment())
-    monkeypatch.setattr(socket, "socket", forbidden)
-    monkeypatch.setattr(subprocess, "Popen", forbidden)
-    monkeypatch.setattr(subprocess, "run", forbidden)
-    monkeypatch.setattr(urllib.request, "urlopen", forbidden)
-    result = startup_closure.parse_static_python_startup_closure(
-        raw,
-        installation_descriptor_raw=descriptor_raw,
-        **_pins(vector, f01, descriptor_raw, raw),
-    )
-    assert result.canonical_bytes == raw
+    # Pytest emits its verbose call report before fixture teardown. Keep these
+    # process-wide denials scoped to the parser, then restore reporting's APIs.
+    with monkeypatch.context() as guard:
+        guard.setattr(builtins, "open", forbidden)
+        guard.setattr(os, "open", forbidden)
+        guard.setattr(os, "getenv", forbidden)
+        guard.setattr(os, "environ", _ForbiddenEnvironment())
+        guard.setattr(socket, "socket", forbidden)
+        guard.setattr(subprocess, "Popen", forbidden)
+        guard.setattr(subprocess, "run", forbidden)
+        guard.setattr(urllib.request, "urlopen", forbidden)
+        result = startup_closure.parse_static_python_startup_closure(
+            raw,
+            installation_descriptor_raw=descriptor_raw,
+            **_pins(vector, f01, descriptor_raw, raw),
+        )
+        assert result.canonical_bytes == raw
 
 
 class _ForbiddenEnvironment(dict):

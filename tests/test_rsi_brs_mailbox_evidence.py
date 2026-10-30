@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from contextlib import closing
 from copy import deepcopy
 from dataclasses import replace
 from types import SimpleNamespace
@@ -96,35 +97,49 @@ def test_four_observations_preserve_root_fence_and_restart_inspection_writes_not
         value.ledger.database.with_name(value.ledger.database.name + suffix)
         for suffix in ("", "-wal")
     )
-    before = {
-        path: None if not path.exists() else path.read_bytes()
-        for path in sqlite_artifacts
-    }
-    original = rebuilt._connect
-    statements = []
+    # Own the baseline SQLite/WAL lifetime explicitly. mode=ro may materialize
+    # empty WAL bookkeeping; do not depend on old connections surviving until GC.
+    with closing(sqlite3.connect(
+        value.ledger.database.as_uri() + "?mode=ro", uri=True, timeout=30,
+    )) as baseline:
+        baseline.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+        before = {
+            path: None if not path.exists() else path.read_bytes()
+            for path in sqlite_artifacts
+        }
+        identities = {
+            path: None if not path.exists() else (path.stat().st_dev, path.stat().st_ino)
+            for path in sqlite_artifacts
+        }
+        original = rebuilt._connect
+        statements = []
 
-    def read_only():
-        assert getattr(rebuilt._observation_scope, "depth", 0) > 0
-        connection = original()
-        connection.set_trace_callback(statements.append)
-        return connection
+        def read_only():
+            assert getattr(rebuilt._observation_scope, "depth", 0) > 0
+            connection = original()
+            connection.set_trace_callback(statements.append)
+            return connection
 
-    def forbidden(*_args, **_kwargs):
-        pytest.fail("inspection initialized or wrote a ledger")
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("inspection initialized or wrote a ledger")
 
-    monkeypatch.setattr(rebuilt, "_connect", read_only)
-    monkeypatch.setattr(RSILedger, "__init__", forbidden)
-    result = inspect_brs_mailbox_evidence(rebuilt, value.run_id, value.episode_id)
-    assert result["status"] == "transport_observed" and result["head"] == head
-    assert result["records"][-1]["worker_receipt_observed"] is True
-    assert result["callback_observation"] == result["native_process_observation"] == "unobserved"
-    assert result["terminal_evidence"] is False
-    assert {
-        path: None if not path.exists() else path.read_bytes()
-        for path in sqlite_artifacts
-    } == before
-    assert all(not statement.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "CREATE"))
-               for statement in statements)
+        monkeypatch.setattr(rebuilt, "_connect", read_only)
+        monkeypatch.setattr(RSILedger, "__init__", forbidden)
+        result = inspect_brs_mailbox_evidence(rebuilt, value.run_id, value.episode_id)
+        assert result["status"] == "transport_observed" and result["head"] == head
+        assert result["records"][-1]["worker_receipt_observed"] is True
+        assert result["callback_observation"] == result["native_process_observation"] == "unobserved"
+        assert result["terminal_evidence"] is False
+        assert {
+            path: None if not path.exists() else path.read_bytes()
+            for path in sqlite_artifacts
+        } == before
+        assert {
+            path: None if not path.exists() else (path.stat().st_dev, path.stat().st_ino)
+            for path in sqlite_artifacts
+        } == identities
+        assert all(not statement.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "CREATE"))
+                   for statement in statements)
 
 
 def test_missing_and_partial_suffix_never_claim_receipt_or_callback(capture):

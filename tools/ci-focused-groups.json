@@ -1,0 +1,899 @@
+{
+  "schema": "lunar-ci-focused-groups-v1",
+  "groups": [
+    {
+      "id": "regression-shards",
+      "label": "Verify deterministic shards, historical runner compatibility and opt-in CI progress",
+      "files": [
+        "tests/test_regression_runner_shards.py",
+        "tests/test_ci_stage_diagnostics.py",
+        "tests/test_ci_console.py"
+      ],
+      "expected_tests": 263,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-ready-capsule-scalars",
+      "label": "Verify fresh ready-capsule and flow scalar validation",
+      "files": [
+        "tests/test_rsi_ready_capsule_scalar_validation.py",
+        "tests/test_rsi_producer_staging_capsule.py",
+        "tests/test_rsi_ready_capsule_consumers.py",
+        "tests/test_rsi_ready_capsule_staging_flow.py",
+        "tests/test_rsi_flow_payload_scalar_validation.py"
+      ],
+      "expected_tests": 203,
+      "zero_skips": true
+    },
+    {
+      "id": "candidate-cleanup-deadline",
+      "label": "Verify bounded cleanup deadline EOF observation",
+      "files": [
+        "tests/test_candidate_execution_cleanup_deadline.py"
+      ],
+      "expected_tests": 17,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-bounded-caches",
+      "label": "Verify bounded checkpoint and source caches",
+      "files": [
+        "tests/test_rsi_checkpoint_digest_cache.py",
+        "tests/test_rsi_source_cache.py",
+        "tests/test_rsi_source_normalization.py",
+        "tests/test_rsi_identity.py",
+        "tests/test_rsi_identity_drift.py"
+      ],
+      "expected_tests": 124,
+      "zero_skips": true
+    },
+    {
+      "id": "python-toolchain-private-copy",
+      "label": "Verify complete toolchain copy setup",
+      "files": [
+        "tests/test_static_python_toolchain_private_copy.py",
+        "tests/test_static_python_toolchain_private_copy_review.py"
+      ],
+      "expected_tests": 54,
+      "zero_skips": true
+    },
+    {
+      "id": "python-deferred-import-refusal",
+      "label": "Verify five fixed deferred-import source refusals",
+      "files": [
+        "tests/test_static_python_deferred_import_refusal.py",
+        "tests/test_static_python_deferred_refusal_review.py"
+      ],
+      "expected_tests": 31,
+      "zero_skips": true
+    },
+    {
+      "id": "python-candidate-codec-negative",
+      "label": "Verify candidate codec workload and source binding",
+      "files": [
+        "tests/test_static_python_candidate_codec_negative.py"
+      ],
+      "expected_tests": 22,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-admission-row",
+      "label": "Verify fresh RSI admission row parsing",
+      "files": [
+        "tests/test_rsi_python_admission_row.py"
+      ],
+      "expected_tests": 24,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-history-reference-reuse",
+      "label": "Verify single-history reference context reuse",
+      "files": [
+        "tests/test_rsi_history_reference_reuse.py",
+        "tests/test_rsi_checkpoint_owner_projection.py",
+        "tests/test_rsi_history_reference_projection.py"
+      ],
+      "expected_tests": 80,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-type-builtin-boundaries",
+      "label": "Verify exact admission types and distinct builtin namespaces",
+      "files": [
+        "tests/test_rsi_admission_exact_types.py",
+        "tests/test_rsi_admission_scalar_validation.py",
+        "tests/test_rsi_brs_builtin_domains.py",
+        "tests/test_rsi_brs_freeze_boundaries.py"
+      ],
+      "expected_tests": 143,
+      "zero_skips": true
+    },
+    {
+      "id": "runtime-directory-binding-token",
+      "label": "Verify runtime directory walks and binding token boundaries",
+      "files": [
+        "tests/test_python_runtime_directory_paths.py",
+        "tests/test_python_producer_binding_token.py"
+      ],
+      "expected_tests": 96,
+      "zero_skips": true
+    },
+    {
+      "id": "python-rsi-installation-contract",
+      "label": "Verify detached RSI marker installation description contract",
+      "files": [
+        "tests/test_static_python_rsi_installation_contract.py"
+      ],
+      "expected_tests": 189,
+      "zero_skips": true
+    },
+    {
+      "id": "python-rsi-input-report",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_rsi_input_read_report.py"
+      ],
+      "expected_tests": 219,
+      "zero_skips": true
+    },
+    {
+      "id": "python-rsi-installation-profile",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_rsi_installation_profile.py"
+      ],
+      "expected_tests": 113,
+      "zero_skips": true
+    },
+    {
+      "id": "python-rsi-launch-source",
+      "label": "Verify pinned RSI recipe generation, source-data execution views and dependency consumption",
+      "files": [
+        "tests/test_static_python_rsi_launch.py",
+        "tests/test_static_python_rsi_source_plan.py",
+        "tests/test_static_python_dependency_profile_selection.py",
+        "tests/test_static_python_configuration_generation.py",
+        "tests/test_static_python_configuration_review.py",
+        "tests/test_static_python_source_data_backend.py",
+        "tests/test_static_python_source_data_graph.py",
+        "tests/test_static_python_source_data_consumer.py",
+        "tests/test_static_python_podman_vfs_root.py",
+        "tests/test_static_python_source_data_vfs_custody.py",
+        "tests/test_static_python_source_data_vfs_backend.py",
+        "tests/test_static_python_source_data_vfs_consumer.py",
+        "tests/test_static_python_vfs_snapshots.py",
+        "tests/test_static_python_retained_runtime_spec.py",
+        "tests/test_static_python_source_data_vfs_retained_backend.py",
+        "tests/test_static_python_source_data_vfs_retained_consumer.py",
+        "tests/test_static_python_source_data_vfs_retained_custody.py"
+      ],
+      "expected_tests": 627,
+      "zero_skips": true
+    },
+    {
+      "id": "python-observation-policy",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_python_runtime_observation_policy.py"
+      ],
+      "expected_tests": 74,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-interruption",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_interruption_matrix.py"
+      ],
+      "expected_tests": 24,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-scheduler-inputs",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_scheduler_inputs.py"
+      ],
+      "expected_tests": 97,
+      "zero_skips": true
+    },
+    {
+      "id": "python-producer-recovery",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_python_producer_binding_store.py",
+        "tests/test_python_producer_checkpoint.py",
+        "tests/test_python_producer_recovery.py",
+        "tests/test_rsi_producer_checkpoint_binding.py",
+        "tests/test_rsi_producer_reconcile_binding.py",
+        "tests/test_python_producer_admission_handoff.py"
+      ],
+      "expected_tests": 117,
+      "zero_skips": true
+    },
+    {
+      "id": "python-admission",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_python_producer_admission_gate.py",
+        "tests/test_python_producer_admission_handoff.py",
+        "tests/test_python_producer_lifecycle.py"
+      ],
+      "expected_tests": 199,
+      "zero_skips": true
+    },
+    {
+      "id": "python-handoff-pin",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_producer_bundle_publication.py",
+        "tests/test_python_handoff_publication_pin.py"
+      ],
+      "expected_tests": 52,
+      "zero_skips": true
+    },
+    {
+      "id": "python-admission-export",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_python_producer_admission_anchor.py",
+        "tests/test_python_producer_anchor_io.py",
+        "tests/test_python_producer_transaction_anchor.py",
+        "tests/test_python_producer_adapter.py"
+      ],
+      "expected_tests": 127,
+      "zero_skips": true
+    },
+    {
+      "id": "python-admission-recovery",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_python_producer_recovery_anchor.py"
+      ],
+      "expected_tests": 128,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-admission",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_admission.py"
+      ],
+      "expected_tests": 128,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-admission-flow",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_admission_flow.py"
+      ],
+      "expected_tests": 54,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-publication",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_publication.py",
+        "tests/test_producer_bundle_commit_interruption.py",
+        "tests/test_producer_bundle_transaction_control.py"
+      ],
+      "expected_tests": 83,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-admission-owner",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_admission_owner.py",
+        "tests/test_producer_bundle_prepared_observer.py"
+      ],
+      "expected_tests": 30,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-brs-admission",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_brs_admission.py",
+        "tests/test_rsi_python_brs_owner.py",
+        "tests/test_rsi_python_brs_publication.py"
+      ],
+      "expected_tests": 116,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-scheduler-owner-boundary",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_scheduler_join_integration.py"
+      ],
+      "expected_tests": 14,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-brs-publication-mailbox",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_brs_publication_mailbox.py"
+      ],
+      "expected_tests": 77,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-brs-publication-inputs",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_brs_publication_inputs.py"
+      ],
+      "expected_tests": 37,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-owner-evidence",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_brs_publication_recovery.py",
+        "tests/test_rsi_python_brs_owner_prepared_pin.py",
+        "tests/test_rsi_python_brs_owner_evidence_composition.py"
+      ],
+      "expected_tests": 115,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-owner-before-evidence",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_brs_owner_before_evidence.py"
+      ],
+      "expected_tests": 31,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-success-evidence-facades",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_brs_success_evidence_facades.py"
+      ],
+      "expected_tests": 38,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-staged-terminal-checkpoint",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_brs_staged_terminal_checkpoint.py"
+      ],
+      "expected_tests": 70,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-checkpoint-preparation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_trusted_python_prepublication.py",
+        "tests/test_python_producer_binding_fresh_tree.py",
+        "tests/test_rsi_brs_publication_lineage_owner.py",
+        "tests/test_rsi_publication_lineage_checkpoint_kernel.py",
+        "tests/test_rsi_brs_prewave_policy.py",
+        "tests/test_python_producer_binding_fresh_runtime.py"
+      ],
+      "expected_tests": 218,
+      "zero_skips": true
+    },
+    {
+      "id": "runtime-tree-parser-validation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_producer_python_runtime_tree_parser_validation.py"
+      ],
+      "expected_tests": 27,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-brs-ack-detachment",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_brs_ack_detachment.py"
+      ],
+      "expected_tests": 13,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-brs-handoff",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_brs_handoff.py"
+      ],
+      "expected_tests": 30,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-brs-selected-service",
+      "label": "Verify selected service and terminal ACK wait boundaries",
+      "files": [
+        "tests/test_rsi_python_brs_selected_service.py",
+        "tests/test_rsi_python_brs_selected_wait.py",
+        "tests/test_rsi_brs_terminal_exchange_wait.py"
+      ],
+      "expected_tests": 96,
+      "zero_skips": true
+    },
+    {
+      "id": "rsi-python-brs-selected-settlement",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_rsi_python_brs_selected_settlement.py"
+      ],
+      "expected_tests": 92,
+      "zero_skips": true
+    },
+    {
+      "id": "python-source-staging",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_source_staging.py"
+      ],
+      "expected_tests": 105,
+      "zero_skips": true
+    },
+    {
+      "id": "python-source-tree-observation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_source_tree_observation.py"
+      ],
+      "expected_tests": 26,
+      "zero_skips": true
+    },
+    {
+      "id": "python-source-projection",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_source_projection.py"
+      ],
+      "expected_tests": 55,
+      "zero_skips": true
+    },
+    {
+      "id": "python-archive-observation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_archive_observation.py"
+      ],
+      "expected_tests": 66,
+      "zero_skips": true
+    },
+    {
+      "id": "python-toolchain-observation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_toolchain_observation.py"
+      ],
+      "expected_tests": 52,
+      "zero_skips": true
+    },
+    {
+      "id": "python-toolchain-tree-observation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_toolchain_tree_observation.py",
+        "tests/test_static_python_toolchain_tree_observation_review.py"
+      ],
+      "expected_tests": 72,
+      "zero_skips": true
+    },
+    {
+      "id": "python-build-inputs",
+      "label": "Verify pinned build inputs and implicit helper loader refusals",
+      "files": [
+        "tests/test_static_python_build_inputs.py",
+        "tests/test_static_python_build_recipe.py",
+        "tests/test_static_python_source_plan.py",
+        "tests/test_static_python_configure_plan.py",
+        "tests/test_static_python_podman_helper_inputs.py"
+      ],
+      "expected_tests": 147,
+      "zero_skips": true
+    },
+    {
+      "id": "python-verified-inputs",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_verified_inputs.py"
+      ],
+      "expected_tests": 143,
+      "zero_skips": true
+    },
+    {
+      "id": "python-source-preparation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_source_patches.py",
+        "tests/test_static_python_tables.py",
+        "tests/test_static_python_source_plan.py"
+      ],
+      "expected_tests": 108,
+      "zero_skips": true
+    },
+    {
+      "id": "python-source-import-audit",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_import_audit.py",
+        "tests/test_static_python_source_import_profile.py",
+        "tests/test_static_python_startup_scope_audit.py",
+        "tests/test_static_python_startup_closure.py"
+      ],
+      "expected_tests": 107,
+      "zero_skips": true
+    },
+    {
+      "id": "python-preparation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_static_python_build_recipe.py",
+        "tests/test_static_python_installation.py",
+        "tests/test_static_python_elf.py",
+        "tests/test_python_producer_binding.py",
+        "tests/test_python_producer_lifecycle.py"
+      ],
+      "expected_tests": 463,
+      "zero_skips": true
+    },
+    {
+      "id": "python-observation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_python_fixture_observation.py"
+      ],
+      "expected_tests": 43,
+      "zero_skips": true
+    },
+    {
+      "id": "executable-owner",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_linux_executable_binding.py",
+        "tests/test_linux_executable_owner.py",
+        "tests/test_linux_executable_pair_owner.py",
+        "tests/test_native_executable_owner.py",
+        "tests/test_legacy_executable_owner.py"
+      ],
+      "expected_tests": 133,
+      "zero_skips": true
+    },
+    {
+      "id": "runtime-material",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_python_runtime_material_format.py",
+        "tests/test_python_runtime_material_io.py",
+        "tests/test_producer_python_runtime_material.py"
+      ],
+      "expected_tests": 274,
+      "zero_skips": true
+    },
+    {
+      "id": "keyring-control",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_keyring_control.py"
+      ],
+      "expected_tests": 52,
+      "zero_skips": true
+    },
+    {
+      "id": "kernel-route-control",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_kernel_route_control.py"
+      ],
+      "expected_tests": 11,
+      "zero_skips": true
+    },
+    {
+      "id": "broker-destination",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_producer_broker_http_destination.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "posix-mq",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_named_ipc_control.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "python-pipe",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_python_pipe_fixture.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "ipc-control",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_ipc_control.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "grant-objects",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_grant_objects.py",
+        "tests/test_native_grant_control.py",
+        "tests/test_native_grant_inputs.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "grant-anchors",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_producer_grant_anchors.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "fd-control",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_fd_control.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "fd-handoff",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_fd_handoff.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "input-mutation",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_input_mutation_isolation.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "runtime-tree",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_producer_python_runtime_tree.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "known-failure",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_trusted_failure.py",
+        "tests/test_native_trusted_scheduler_outcome.py",
+        "tests/test_rsi_native_failure_provenance.py",
+        "tests/test_rsi_native_failure_gateway.py",
+        "tests/test_rsi_native_failure_controller.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "descendants-drain",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_child_supervision_binding.py",
+        "tests/test_native_descendants_drain.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "independent-guardian",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_guardian_host.py",
+        "tests/test_native_independent_guardian.py",
+        "tests/test_native_guardian_readiness.py"
+      ],
+      "expected_tests": 101,
+      "zero_skips": true
+    },
+    {
+      "id": "deadline-anchor",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_native_deadline_binding.py",
+        "tests/test_native_deadline_anchor.py",
+        "tests/test_producer_bootstrap.py",
+        "tests/test_trusted_bootstrap_claim.py",
+        "tests/test_trusted_bootstrap_registration.py",
+        "tests/test_trusted_worker_evidence.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "runtime-preflight",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_producer_python_runtime.py",
+        "tests/test_native_target_control_isolation.py",
+        "tests/test_native_isolation_architecture.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "trusted-adapters",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_producer_launch_inputs.py",
+        "tests/test_native_producer_launch_inputs.py",
+        "tests/test_seed_retained_admission.py",
+        "tests/test_openevolve_native.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "native-cleanup",
+      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "files": [
+        "tests/test_process_ownership.py",
+        "tests/test_producer_process.py",
+        "tests/test_native_trusted_attempt.py",
+        "tests/test_native_trusted_controller_death.py",
+        "tests/test_native_trusted_deadline_guard.py",
+        "tests/test_native_input_permission_isolation.py",
+        "tests/test_native_trusted_scheduler_e2e.py",
+        "tests/test_native_trusted_broker_cancellation_e2e.py",
+        "tests/test_controller_broker_cancellation.py",
+        "tests/test_controller_broker_crash_recovery.py",
+        "tests/test_rsi_native_inputs.py",
+        "tests/test_rsi_native_retained.py",
+        "tests/test_rsi_durable_gateway.py",
+        "tests/test_rsi_durable_gateway_controller.py",
+        "tests/test_acceptance_campaign_audit.py"
+      ],
+      "expected_tests": null,
+      "zero_skips": false
+    },
+    {
+      "id": "brs-recovery-correctness",
+      "label": "Verify durable BRS recovery fences and terminal reconciliation",
+      "files": [
+        "tests/test_rsi_brs_reconcile_obligation.py",
+        "tests/test_rsi_brs_reconcile_phase_cas.py",
+        "tests/test_rsi_brs_selected_reconcile.py",
+        "tests/test_rsi_brs_reconcile_controller.py",
+        "tests/test_rsi_brs_reconcile_integrity.py",
+        "tests/test_rsi_brs_obligation_recovery_gate.py",
+        "tests/test_rsi_brs_inspect_cli.py"
+      ],
+      "expected_tests": 85,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-owner-reconcile-registration",
+      "label": "Verify original owner mailbox recovery registration",
+      "files": [
+        "tests/test_rsi_brs_owner_reconcile_registration.py",
+        "tests/test_rsi_python_brs_owner_bridge_reconcile.py",
+        "tests/test_rsi_python_brs_owner_bridge.py"
+      ],
+      "expected_tests": 23,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-exact-result-composition",
+      "label": "Verify exact owner mailbox result composition",
+      "files": [
+        "tests/test_rsi_python_brs_exact_result_composition.py",
+        "tests/test_rsi_python_brs_result_delivery.py"
+      ],
+      "expected_tests": 28,
+      "zero_skips": true
+    },
+    {
+      "id": "brs-durable-recovery-evidence",
+      "label": "Verify original owner durable recovery observations",
+      "files": [
+        "tests/test_rsi_brs_native_process_evidence.py",
+        "tests/test_rsi_brs_mailbox_evidence.py",
+        "tests/test_rsi_brs_durable_recovery_evidence.py",
+        "tests/test_rsi_brs_durable_policy_dependencies.py"
+      ],
+      "expected_tests": 91,
+      "zero_skips": true
+    },
+    {
+      "id": "native-original-whole-scope",
+      "label": "Verify installed scope ownership and original native descriptor transfer",
+      "files": [
+        "tests/test_native_whole_scope_owner.py",
+        "tests/test_native_whole_scope_bridge.py",
+        "tests/test_native_whole_scope_bootstrap.py",
+        "tests/test_native_whole_scope_build.py",
+        "tests/test_native_whole_scope_components.py",
+        "tests/test_native_original_publication.py",
+        "tests/test_native_original_publication_linux.py",
+        "tests/test_native_whole_scope_successor.py",
+        "tests/test_native_whole_scope_successor_bootstrap.py",
+        "tests/test_native_whole_scope_successor_ownership.py",
+        "tests/test_native_whole_scope_successor_resources.py",
+        "tests/test_native_whole_scope_stdio.py",
+        "tests/test_external_worker_whole_scope_vault.py",
+        "tests/test_external_worker_whole_scope_successor_vault.py",
+        "tests/test_external_worker_whole_scope_successor_bridge.py",
+        "tests/test_external_worker_whole_scope_bridge.py",
+        "tests/test_external_worker_native_vault.py",
+        "tests/test_external_worker_guardian_vault.py"
+      ],
+      "expected_tests": 530,
+      "zero_skips": false
+    },
+    {
+      "id": "brs-idle-history-observation",
+      "label": "Verify idle polling and contiguous complete owner history observations",
+      "files": [
+        "tests/test_rsi_brs_idle_checkpoint_head.py",
+        "tests/test_rsi_brs_owner_history_observation.py",
+        "tests/test_rsi_brs_owner_scope_cost.py"
+      ],
+      "expected_tests": 27,
+      "zero_skips": true
+    },
+    {
+      "id": "native-fixed-u-input-contracts",
+      "label": "Verify original fixed-U input custody and attempt wiring",
+      "files": [
+        "tests/test_native_fixed_u_inputs.py",
+        "tests/test_native_fixed_u_attempt_inputs.py"
+      ],
+      "expected_tests": 42,
+      "zero_skips": true
+    },
+    {
+      "id": "native-fixed-u-input-bootstrap",
+      "label": "Verify production C input helpers with finite root prerequisite skips",
+      "files": [
+        "tests/test_native_fixed_u_input_bootstrap.py"
+      ],
+      "expected_tests": 87,
+      "zero_skips": false
+    },
+    {
+      "id": "native-whole-scope-custody",
+      "label": "Verify original native custody consumer and read-only abnormal recovery",
+      "files": [
+        "tests/test_native_whole_scope_custody.py",
+        "tests/test_native_whole_scope_abnormal.py",
+        "tests/test_native_whole_scope_creator_custody.py",
+        "tests/test_native_whole_scope_creator_transport.py"
+      ],
+      "expected_tests": 203,
+      "zero_skips": true
+    }
+  ]
+}

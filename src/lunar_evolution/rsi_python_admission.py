@@ -100,7 +100,19 @@ def validate_rsi_python_admission_shapes(
         else:
             _fail("shape_invalid")
     for item in items:
-        validate_rsi_python_admission_shapes(item, dto_types=dto_types, _depth=_depth + 1)
+        # Keep the child depth/type/finiteness gate fresh without a recursive
+        # Python call for scalar leaves. DTO fields must remain lazy above.
+        child_depth = _depth + 1
+        if child_depth > 48:
+            _fail("shape_invalid")
+        child_kind = type(item)
+        if item is None or child_kind is str or child_kind is bool or child_kind is int:
+            continue
+        if child_kind is float:
+            if not math.isfinite(item):
+                _fail("shape_invalid")
+            continue
+        validate_rsi_python_admission_shapes(item, dto_types=dto_types, _depth=child_depth)
 
 
 def _canonical(value: object) -> bytes:

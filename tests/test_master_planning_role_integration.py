@@ -25,7 +25,7 @@ UNKNOWN_STEP = (
 # Full external system messages, including the fixture's changing budget snapshots.
 # Feature 145 updates only the native product name to Lunar Evolution. Restoring the prior
 # system prefix reproduces all four original hashes from the pre-077 fixture; budget guidance,
-# custom-system snapshots and tool schemas remain unchanged. Originals are retained in Git.
+# custom-system snapshots remain unchanged. Originals are retained in Git.
 SYSTEM_DIGESTS = {
     "native": (
         "d327bf491a702c5d876aac69f672dfea402f721e58ed4b27bf932e70122bdf4c",
@@ -40,7 +40,8 @@ SYSTEM_DIGESTS = {
         "c7b63334f3194217f91d67d0e72935c23636972c865770d02b96d23208922c7c",
     ),
 }
-TOOLS_DIGEST = "d6bb5661855cefff43952af24186d8d9911fda1f640abf45cd5f347b60c50e51"
+# The bounded command-capture continuation updates only its output-limit description.
+TOOLS_DIGEST = "b6729293de3b1d7497e36fb31efc444a9d698f50cdfd0fbc66f1ff2982d5e0eb"
 
 
 class PlanningSubject(envelopes.EnvelopeSubject):

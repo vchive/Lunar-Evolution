@@ -558,6 +558,74 @@ def test_fingerprint_rejects_changed_validator_dependency(tmp_path, monkeypatch)
     assert observed != fingerprint
 
 
+@pytest.mark.parametrize("name,key", [
+    ("_canonical", "runtime_tree_canonical"),
+    ("_bounded_exact_json_snapshot", "runtime_tree_json_snapshot"),
+    ("_json_fast_encoder_current", "runtime_tree_json_encoder_guard"),
+])
+def test_runtime_tree_json_helper_is_an_explicit_code_dependency(monkeypatch, name, key):
+    original = scheduler._code_dependencies()
+
+    def changed(*_args, **_kwargs):
+        pytest.fail("dependency fingerprint executed a changed JSON helper")
+
+    monkeypatch.setattr(scheduler.runtime_tree, name, changed)
+    observed = scheduler._code_dependencies()
+    assert observed.keys() == original.keys()
+    assert observed[key] != original[key]
+    assert {entry: value for entry, value in observed.items() if entry != key} == {
+        entry: value for entry, value in original.items() if entry != key
+    }
+
+
+@pytest.mark.parametrize("name", [
+    "_JSON_FAST_MAX_DEPTH", "_JSON_FAST_MAX_NODES", "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES",
+])
+def test_runtime_tree_json_limit_changes_only_snapshot_dependency_fingerprint(monkeypatch, name):
+    original = scheduler._code_dependencies()
+    monkeypatch.setattr(scheduler.runtime_tree, name, getattr(scheduler.runtime_tree, name) + 1)
+    observed = scheduler._code_dependencies()
+    key = "runtime_tree_json_snapshot"
+    assert observed[key] != original[key]
+    assert {entry: value for entry, value in observed.items() if entry != key} == {
+        entry: value for entry, value in original.items() if entry != key
+    }
+
+
+@pytest.mark.parametrize("module_name,name", [
+    ("checkpoint_storage", "MAX_RESERVED_CHECKPOINT_ROW_BYTES"),
+    ("checkpoint_storage", "_CHECKPOINT_FIXED_TAIL_BYTES"),
+    ("checkpoint_storage", "_RUN_FIXED_TAIL_BYTES"),
+    ("checkpoint_storage", "_MAX_CHECKPOINT_PAYLOAD_BYTES"),
+    ("checkpoint_row_reader", "_MAX_ROW_BYTES"),
+])
+def test_checkpoint_storage_budget_drift_changes_scheduler_identity(monkeypatch, module_name, name):
+    original = scheduler._code_dependencies()
+    module = getattr(scheduler, module_name)
+    monkeypatch.setattr(module, name, getattr(module, name) + 1)
+    observed = scheduler._code_dependencies()
+    assert observed["checkpoint_payload_limit"] != original["checkpoint_payload_limit"]
+    assert observed["checkpoint_row_validator"] != original["checkpoint_row_validator"]
+
+
+@pytest.mark.parametrize("name,key", [
+    ("canonical_checkpoint_text", "checkpoint_encoder"),
+    ("validate_reserved_checkpoint_row", "checkpoint_row_validator"),
+    ("reserved_checkpoint_payload_limit", "checkpoint_payload_limit"),
+    ("_row_size", "checkpoint_row_meter"),
+    ("_validate_row", "checkpoint_storage_validator"),
+])
+def test_checkpoint_storage_helpers_are_pinned_without_execution(monkeypatch, name, key):
+    original = scheduler._code_dependencies()
+
+    def changed(*_args, **_kwargs):
+        pytest.fail("fingerprint invoked a changed storage helper")
+
+    monkeypatch.setattr(scheduler.checkpoint_storage, name, changed)
+    observed = scheduler._code_dependencies()
+    assert observed[key] != original[key]
+
+
 @pytest.mark.parametrize("domain", ["request", "memory_item", "contract"])
 def test_exact_dto_instance_cannot_shadow_serializer_with_callback(tmp_path, domain):
     value = _setup(tmp_path)

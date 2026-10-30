@@ -1,0 +1,137 @@
+# Driver input custody: next implementation prerequisites
+
+Status: overall custody design; helper-loader refusal implemented, pending
+regression. No tracer, runtime, execution entry point or receipt schema is added.
+No build, solver, model or evaluator was run. Existing consumer defaults and
+acceptance claims are unchanged.
+
+## Why production composition cannot yet be connected
+
+`PythonProducerRSIExecutionConfig` in `src/lunar_evolution/rsi_producer_gateway.py`
+requires the original `PythonRSISchedulerInputContext`, the controller's same
+ledger, native failure ledger and late execution handoff. It does not construct
+an accepted runtime from a directory or detached installation descriptor.
+`require_fixture_rsi_cli` rejects `native-producer` before contract/ledger I/O;
+`cli.py::_rsi_run_payload` constructs the explicit fixture gateway.
+`trusted_bootstrap_runtime.py` uses `sys.executable` for a provider-free fixture,
+which cannot supply the missing accepted static runtime. Feature193 F02c and
+actual F03–F06 remain open. Another configuration DTO would not close them.
+
+## Selected implementation order and custody requirements
+
+This document selects no production environment. The complete Linux input-view
+boundary is not independently accepted. Narrow setup-time bubblewrap read-only
+consumption and a later rootless Podman two-phase input/generated-output transfer
+were actually observed; see
+`../189-static-python-fixture/podman-inert-custody-observation-20261028.md`.
+They establish mechanism feasibility, not complete archive/driver closure or an
+integrated backend. The original-path software work is drafted in
+`podman-custody-integration-draft.md`. The unselected VM alternative in
+`../189-static-python-fixture/build-vm-custody.md` remains design only; installed
+QEMU or TCG availability is insufficient.
+
+The required custody mechanism must bind the complete original archive bytes to
+one protected input view before the first consumer starts, and preserve both
+contents and namespace through all driver/helper/descendant lifetimes. It must
+prevent source replacement, writable aliases, alternative mounts/views and
+external input access. Original held identities remain live until the complete
+original chain is drained; hashes before/after or chmod on ordinary copies are
+insufficient. Writable generated outputs need a distinct bounded view and an
+explicit publish/protect transition before any later command consumes them.
+
+Before execution, independently freeze the complete configured input universe:
+source, compiler and linker executables, their loaders/libraries if any, helper
+executables, build resource tree, target headers, config/response files, implicit
+CRT/support libraries, linker scripts and generated output dependencies. Unknown
+paths and unapproved cache products refuse; discovery cannot approve its own
+current digests.
+
+`run_dependency_checked_build` already executes the original v3 runner once,
+reads its original persisted report and outputs, and compares actual C/LLD
+depfiles against source/toolchain and earlier-work inventories. It supplies real
+process/byte comparison. It does not enumerate every driver input or prove the
+bytes consumed before post-execution readback.
+
+A pinned static `strace -f` wrapper could reveal omitted config, helper, CRT and
+cache paths, but file-named syscall logs do not establish complete consumed
+inputs. Inherited/transferred FDs, fd-based reads/mappings, metadata effects,
+io_uring/ABI coverage, unfinished events and namespace changes require explicit
+semantics. Tracing also cannot make a mutable input view immutable. Therefore
+this continuation does not add a diagnostic-only parser and label it custody.
+
+If an observer is needed for the accepted mechanism, its contract must cover
+original task/exec/fork/exit identity, cwd and inherited FDs, descriptor-relative
+paths, mappings, metadata effects and every supported input route. Missing or
+unsupported events, unresolved references, unknown children and exhausted bounds
+must refuse. Its actual execution must use the original absolute deadline,
+cancellation and create-only partial evidence; no retry or extra allowance.
+
+The existing executor and dependency comparators also require exact original
+command/output graphs. A wrapper changes executable argv and adds artifacts;
+a reviewed successor must independently bind both original and executed recipes
+and complete input/output groups before dispatch. An unpinned callback,
+monkeypatch or unversioned argv rewrite cannot retain the old manifest as if it
+described the executed commands. Original v1/v2/v3 defaults remain unchanged.
+
+## Evidence needed before the CLI loader
+
+First accept the protected input view and complete inventory with an actual
+finite inert build. Exercise undeclared config/helper/response/cache input,
+FD/cwd alias, same-byte replacement, mutation during use, observer truncation,
+unsupported input routes, cancellation, timeout and incomplete descendant drain.
+Then run the full actual CPython/freezer/static-link and ELF/image acceptance
+under that mechanism. A tiny success cannot approve the larger closure.
+
+Only after accepted build/image and actual startup/lifecycle exist can the
+per-episode loader create original request/memory/intent-bound contexts for the
+controller and gateway. Unknown recovery must remain read-only and cannot
+relaunch a replacement attempt. Complete observational inventory, immutable
+consumption, startup, solver correctness and publication are separate gates.
+
+Retained 5090gpu observations deny the exec'ed-child remount, nested
+installed-bubblewrap user-namespace operation and current supported KVM access.
+They do not deny the earlier setup-time bubblewrap read-only result or the later
+successful rootless Podman inert transfer. This work changes no host privileges,
+policy, groups or accelerator. Complete configured input closure, full immutable
+custody, original observer/executor integration and accepted runtime construction
+remain software work; the host is not described as generally unable to provide
+a read-only worker view.
+
+`driver_inputs_verified`, `immutable_custody_verified`,
+`implicit_link_inputs_verified`, `installation_accepted`,
+`production_admission` and `online_publication` remain false. No tasks or shared
+status document is changed by this design, and no mixed/CI/merge acceptance is
+claimed.
+
+## Implemented helper-loader refusal continuation (focused regression passed)
+
+The original Podman command path now checks every pinned executable file in its
+source/toolchain input view and every actual prior executable output before that
+command performs any daemon, image-import or container-create operation. The
+check also covers helpers absent from the command's explicit argv. Each command
+repeats the actual no-follow FD read, supported static x86_64 ELF header/program
+table checks, full original digest comparison and FD/name identity checks.
+Scripts, PT_INTERP/PT_DYNAMIC, unsupported loader layouts, changed bytes or
+changed original files refuse. The original deadline/cancellation checkpoints
+apply throughout; there is no cache, discovery approval, retry or extra budget.
+The default non-custody runner and recipe/report wire schemas are unchanged.
+
+This is a deliberately narrow all-helper refusal profile. The retained complete
+CPython tar source inventory preserves 116 executable source files, including
+`configure` and Python scripts; the concrete recipe preserves those roles.
+Passing that inventory to this custody profile therefore refuses before daemon
+operations. The ordinary default/configuration preparation paths are unchanged.
+Complete CPython source custody is not supported by this continuation. A future
+source-as-data permission projection or executable-only closure needs a separate
+reviewed contract; this gate neither strips modes nor skips executable sources.
+
+This closes only the previously unchecked implicit helper-loader route. It does
+not enumerate every data/config/resource read, approve generated cache products,
+establish immutable input custody or accept a build/runtime. All authority flags
+above remain false. Focused tests use actual bounded files and inert dispatch
+boundaries without running a compiler, helper, daemon, solver or model; their
+47-node helper suite passed in the 487-node affected Linux union at frozen tree
+`cf19f440383da3acaa128cc9db1cd1f88dedfe4f`, with zero failures/errors/skips,
+79.679989151 seconds and zero retries. Exact archive/Git tree, source before/after,
+worker execution, JUnit and loaded-module origins were independently checked.
+This result does not execute or accept a full CPython build or runtime.

@@ -1,5 +1,26 @@
 # Feature 193 validation
 
+## Source-data execution view v4 — 2026-10-29
+
+The explicit v4 API and capture/consumer path have completed affected software
+regression. See `source-data-execution-view-v4.md` for exact frozen trees, counts
+and original failure preservation: first 649 unique /645 pass /4 test-fixture
+failures, followed only by the two affected complete files /147 pass. All 649
+current applicable unique cases, including 120 new, now have passing results;
+product bytes/modes did not change between those trees. Both raw executions and
+archive/source/worker/JUnit/module-origin audits remain retained, not summed as
+796 different cases. Ruff, compileall and diff checks pass.
+
+The separate actual rootless inert smoke failed: first image import rc125 due
+`/var/tmp/libpod-images-import.tar…: disk quota exceeded`, at 2.045555122 seconds
+of its original 600-second budget. Static fixture-tool compilation passed, but no
+container create/start or actual OCI execution-view acceptance occurred. Existing
+service uses vfs and an observed stopped container has GraphDriver.Data=null;
+MergedDir support is not established. No daemon restart, old-container deletion,
+backend fallback or retry occurred. All acceptance/admission flags remain false.
+Evidence is retained under ignored main-workspace
+`parallel-batch-20261027/source-data-view{,-affected}-linux-20261029/`.
+
 ## Current integration status — 2026-10-12 (updated)
 
 PR54–57, PR59, PR60, PR64–67 are represented in `origin/main` through merge `31ab43c`. The retained CI is provider-free and does not establish real CPython/toolchain acquisition, sealed startup, producer lifecycle, evaluator access or production admission. The independent artifact/source/tree audit for PR54, PR55, PR56, PR57 and PR59 is now retained in [`f03-f05-raw-source-tree-audit-20261021.md`](f03-f05-raw-source-tree-audit-20261021.md). The PR54 raw job-log download still remains unavailable; the audit uses the retained immutable Git objects, API metadata and complete non-expired artifact archives instead.
@@ -381,3 +402,116 @@ stock exclusions, unclosed/partial stages, plan detachment, immutable report
 evidence, NaN/inf/bool/string clock and interruption results, real-mode and
 environment refusal, and backend exception normalization. JUnit reports zero
 failures/errors/skips locally; this is not installation or runtime evidence.
+
+## Explicit generic-envelope delivery successor — 2026-10-28
+
+The dependency recipe continuation now forwards an explicitly selected original
+producer profile through compiler, compiler/linker, standalone and explicit
+support generation. `test_static_python_dependency_profile_selection.py` adds
+default/None byte identity, complete real v1/v2 generator graphs for both
+solvers, base digest and original source-drift refusal checks. Its local actual
+consumer tests first invoke the real concrete v2 source gate, then explicitly
+project the selected launcher/producer/main bytes into a tiny inert graph.
+Original recipe wrappers, support preparation, trusted-tool runner, actual
+depfiles, persisted report and consumer readback remain real in that test;
+the fixture does not compile the full CPython graph or execute a solver. These
+new cases await the shared concentrated regression; no pass is claimed here.
+
+The default-off v2 software is described in `envelope-delivery.md`. Six new files
+ran 224 passing cases, including actual C launcher compilation with explicitly
+inert Python C API stubs. This is not a static CPython build or solver acceptance.
+
+The consolidated 32-file run on tree `226ad5d51c802b700cb38bb037418dfd947f643a`
+ran 1155 unique cases: 1153 passed, 2 failed, 0 skipped/errors; 137.440 seconds,
+16 workers, zero retries. Both failures are retained: the final inode fault test
+was targeting the removed outer duplicate instead of the remaining genuine
+`ACK -> _observe(expected) -> _fixed`; the source drift test expected
+`RSILearningError` instead of the actual rejecting `RSIFingerprintError`.
+
+Only those two test files changed in successor tree
+`7e773acc96470868f9c72d1ae64a95df43018cc4`. All 10 affected cases passed in
+53.120 seconds, zero retries, retaining actual fault injection and original C1/
+unknown/inode assertions. Product `src` and `tools` bytes are unchanged between
+the two archives. Selecting the latest outcome for each exact testcase identity
+yields 1155 passes; this is not 1163 new tests or a single-tree full rerun.
+
+Both original archives, manifests, JUnit, 16 worker collections and module
+origins were collected independently. The affected run's 34 verification checks
+and 26 original byte references pass. Its original dispatch SSH failed to return
+stdout/EOF; a separate collector reached normal EOF and verified all records.
+A fixed result-file holder observation found no writer. The original dedicated
+local SSH was identified by PID/parent/UID/cwd and terminated; dispatch rc255 is
+retained separately from the completed remote pytest result. No test was rerun
+to repair transport state. Ruff, compileall and both diff checks pass.
+
+Evidence is retained under the main workspace ignored validation root:
+`parallel-batch-20261027/envelope-rejection-combined-jdcv4ai_/` and
+`parallel-batch-20261027/envelope-provenance-fixtures-x4sjs6az/`. The earlier
+`b24440e9` mixed remains a 600-second timeout, zero retries. The subsequent clean HEAD `02b078df` also timed out at 600.031817692 seconds,
+rc=-15 and zero retries. Its 24 originals and 30 artifact-consistency checks
+passed; missing JUnit/origins still mean case failure. The original dedicated
+SSH was closed only after an independent terminal observation; driver rc255 is
+retained and the original retrieval/classifier recorded failure. Python3.11
+history CI passed 2318 cases; full CI remains pending. Native full-lifecycle pycache enclosure,
+accepted isolated build/runtime roots and deployment acceptance remain open;
+production admission and online publication remain false.
+
+## Native pycache diagnostic concentrated follow-up — 2026-10-28
+
+The frozen `7e75786e` Linux four-file follow-up passes all 76 unique nodes in
+13.093669 seconds, with 16 workers and zero automatic retry. Independent
+original/source/collection/execution/JUnit audit passes 152/152 checks. It fixes
+the publication creation-pin retention defect exposed by the earlier batch;
+all earlier failures remain retained. Cross-platform affected-domain union
+passes 135/135 consistency checks for 1,407 latest unique passing nodes, not a
+single all-passing Linux invocation. See the current HANDOFF for exact lineage.
+Mixed, complete CI, original workload quiescence, writer enclosure, accepted
+build/runtime custody and production admission remain open.
+
+
+## Successor recipe profile selection — 2026-10-28
+
+The explicit profile now reaches compiler dependency, linker dependency,
+standalone linker and explicit support recipes without changing omitted/None
+bytes. The 30-complete-file Linux concentrated run at tree `e93c99f5` executed
+1,048 unique nodes once with 16 workers: 1,005 passed, one CI manifest-count
+assertion failed and 42 root-prerequisite nodes skipped; elapsed 48.535873 seconds.
+All 34 new recipe-selection nodes passed, including two explicitly tiny inert
+process compositions. No complete CPython build or real solver campaign ran.
+The manifest-count correction is a separate affected-file successor; recipe
+and product source remain identical. The first failure is retained.
+
+Originals live under the main workspace ignored validation root
+`parallel-batch-20261027/next-union-tmpfs-linux-20261028/`. An independent audit
+verified archive/Git blobs, before/after inventory, all 16 worker collections,
+unique execution/JUnit correspondence and 259 loaded-module origins. Its
+7,949 consistency checks confirm the retained outcomes, including the failure
+and skipped prerequisites; they are not additional product tests or deployment
+acceptance. Full CI, accepted input/build custody, complete runtime/solver
+integration and production admission remain open.
+
+
+## Eight-output configuration review software — 2026-10-28
+
+The frozen concentrated Linux union at tree
+`1d996092e37968a844fa81e5d8227430d5ef639e` includes all 101 independent-review
+and 15 configuration-generation nodes, all passing. The full 40-file union
+executed 1,407 unique nodes once with 16 workers and zero retries: 1,240 pass,
+6 fail, 118 error and 43 prerequisite/platform skips, in 63.412017 seconds.
+Those failures are retained; this is not an all-green full union. The failed
+native C harness/old source inventories and worker error adapter are outside
+the configuration-review test files, and receive separate affected supplements.
+
+The binder retains the actual eight original outputs and exact external review
+manifest as recipe inputs. Independent expected-pin equality does not establish
+that an independent human reviewed the real configuration. Tests use synthetic
+finite profiles and original concrete graphs; no full CPython build, accepted
+immutable build custody, static runtime or real solver campaign is claimed.
+Legacy omitted/None paths and all-or-none forwarding through four successor
+recipe APIs are covered. The first union's archive/source before-after,
+worker collection and unique execution/JUnit/module-origin correspondence were
+independently audited (4,451 consistency checks). Evidence lives under the main
+workspace ignored `parallel-batch-20261027/configuration-vault-successor-union-linux-20261028/`.
+Later affected native-fixture supplements do not re-execute these passed review
+nodes. Final-source CI, accepted configuration/build/runtime roots and production
+admission remain separate gates.

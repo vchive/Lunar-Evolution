@@ -203,6 +203,36 @@ def test_private_fixed_success_uses_only_preparation_seam_original_exchange_and_
     assert bound._state == "returned" and bound._claim == claim
     assert value.scope.exchange._state == "consumed"
     assert [event[0] for event in value.events].count("prepare") == 1
+
+
+def test_private_fixed_preparation_forwards_explicit_native_observation_supplier(binding_fixture, monkeypatch):
+    value = binding_fixture
+    context = value.provider.context
+
+    def supplier(_run):
+        raise AssertionError("this component test stops at the native preparation seam")
+
+    object.__setattr__(context, "python_handoff_after_execution", None)
+    object.__setattr__(context, "python_handoff_after_native_execution", supplier)
+    object.__setattr__(context, "live_modules_sink", object())
+    monkeypatch.setattr(NativeRSISchedulerContext, "_assert_live_modules_sink", lambda self: self.live_modules_sink)
+    calls = []
+
+    def prepare(*_args, **options):
+        assert options["python_handoff_after_execution"] is None
+        assert options["python_handoff_after_native_execution"] is supplier
+        assert options["live_modules_sink"] is context.live_modules_sink
+        options["evidence_revalidator"]("inert_preparation")
+        calls.append(options)
+        return value.preparation
+
+    monkeypatch.setattr(native, "_prepare_native_trusted_python_producer", prepare)
+    _published_components(value)
+    _inert_endpoint(value)
+    _bind(value)
+    _claim(value)
+    assert type(_run_with_original_exchange(value)) is NativeRSIReceiptBundle
+    assert len(calls) == 1
     assert value.provider._live_rejection is None
     assert value.ledger.inspect_native_episode_claim(value.request,
         plan_sha256=value.native_plan.plan_sha256).status == "started"

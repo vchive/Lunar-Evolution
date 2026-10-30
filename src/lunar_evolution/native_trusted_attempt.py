@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from .http_transport import _validate_fixed_destination_endpoint
@@ -28,11 +28,17 @@ from .native_bootstrap import (
     LINUX_KEYRING_CONTROL_IMPLEMENTATION,
     LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
     NativeBootstrapArtifact,
+    NativeBootstrapCompletionSink,
     NativeBootstrapError,
+    NativeBootstrapPrivateSink,
     encode_native_bootstrap_control,
     encode_native_bootstrap_control_v2,
+    encode_native_bootstrap_control_v3,
+    encode_native_bootstrap_control_v4,
     load_native_bootstrap_artifact,
     native_bootstrap_command,
+    native_whole_scope_bootstrap_command,
+    native_whole_scope_successor_bootstrap_command,
 )
 from .native_deadline_binding import (
     NativeDeadlineBindingError,
@@ -40,9 +46,32 @@ from .native_deadline_binding import (
     persist_native_deadline_binding,
     verify_native_deadline_binding,
 )
+from .native_fixed_live_sink import (
+    FixedPythonLiveSinkRequest,
+    NativeFixedLiveSinkCapture,
+    NativeFixedLiveSinkError,
+)
+from .native_fixed_u_inputs import NativeFixedUInputError
 from .native_grant_inputs import NativeGrantInputError, original_native_grant_inputs
 from .native_guardian import NativeGuardianError, NativeGuardianOwner, start_native_guardian
-from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
+from .native_guardian_registration import (
+    NativeGuardianCustodyRequest,
+    NativeGuardianRegistrationError,
+)
+from .native_original_publication import (
+    NativeOriginalPublicationError,
+    hold_native_original_publications,
+)
+from .native_pycache_diagnostic import (
+    NativePycacheDiagnosticError,
+    NativePycacheDiagnosticRequest,
+    original_native_pycache_diagnostic_scope,
+)
+from .native_trusted_capture import (
+    NativeTrustedCaptureError,
+    _stable_bytes,
+    capture_native_trusted_output,
+)
 from .native_trusted_cleanup import (
     NativeTrustedCleanupError,
     persist_native_trusted_cleanup,
@@ -57,6 +86,7 @@ from .native_trusted_streams import (
     recover_native_trusted_stream_capture,
     start_native_trusted_stream_capture,
 )
+from .native_whole_scope import NativeWholeScopeError, NativeWholeScopeOwner
 from .process_ownership import (
     ProcessCleanupStatus,
     RegisteredProcess,
@@ -73,6 +103,7 @@ from .producer_bootstrap import (
 from .producer_broker_ipc import (
     ProducerBrokerConfig,
     ProducerBrokerObservation,
+    _original_broker_exchange_pin,
     serve_producer_broker,
 )
 from .producer_bundle_deadline import _boot_id as _producer_boot_id
@@ -93,6 +124,7 @@ from .producer_process import (
     _current_process_owned,
     _current_recovery_lock_identity,
     _digest_without,
+    _file_identity,
     _process_owner_identity,
     _read_durable_json,
     _recovery_lock,
@@ -107,8 +139,25 @@ from .rsi_native_inputs import (
     NativeRSIInputError,
     validate_native_rsi_launch_inputs,
 )
+from .static_python_fixed_live_modules import FixedPythonBoundLiveModules
+from .static_python_producer_completion import (
+    COMPLETION_PROFILE,
+    FixedProducerCompletionBinding,
+    FixedProducerCompletionError,
+    NativeFixedProducerCompletionCapture,
+    _original_completion_reader_pin,
+    compare_fixed_producer_completion,
+)
+from .static_python_producer_envelope_completion import compare_fixed_producer_envelope_completion
+from .static_python_producer_envelope_source import (
+    FIXED_PRODUCER_ENVELOPE_PROFILE,
+    validate_fixed_producer_envelope_argv,
+)
+from .static_python_pycache_grants import PycacheGrantBindingError
+from .static_python_pycache_monitor import PycacheMonitorError
 from .trusted_bootstrap_binding import (
     TrustedBootstrapBindingError,
+    _original_linux_bootstrap_owner,
     _validate_original_linux_executable_pair,
     prepare_trusted_executable_pair,
 )
@@ -156,7 +205,75 @@ _DEADLINE_FIELDS = frozenset({
 
 
 @dataclass(frozen=True, slots=True)
-class NativeTrustedAttemptObservation:
+class NativeTrustedRegisteredContext:
+    """Detached original pre-gate identities for a trusted installed observer.
+
+    No attestation/gate nonce, key, live descriptor, Popen or mutable graph is
+    exposed. These values cannot reconstruct runtime authority; the installed
+    launcher separately retains the original intent/attestation/artifact.
+    """
+
+    workspace: str
+    producer_root: str
+    artifact_path: str
+    launch_id: str
+    journal_id: str
+    run_id: str
+    parent_task_id: str
+    task_id: str
+    launch_sha256: str
+    intent_sha256: str
+    attestation_sha256: str
+    bootstrap_descriptor_sha256: str
+    bootstrap_artifact_sha256: str
+    bootstrap_allowlist_id: str
+    registration_json: bytes
+    handoff_json: bytes
+    deadline_json: bytes
+    deadline_binding_json: bytes
+    recovery_lock_identity: tuple[int, int]
+    registration_file_identity: tuple[str | int, ...]
+    handoff_file_identity: tuple[str | int, ...]
+    publication_eligible: bool = False
+
+
+class _NativeTrustedAttemptOriginal:
+    __slots__ = ("_original_completion_acquisition",)
+
+
+_NATIVE_COMPLETION_TOKEN = object()
+
+
+class _NativeTrustedCompletionAcquisition:
+    __slots__ = (
+        "_originals",
+        "_pin",
+        "artifacts",
+        "attempt",
+        "attestation",
+        "binding",
+        "broker_pin",
+        "comparison",
+        "envelope",
+        "image_identity",
+        "inputs",
+        "intent",
+        "reader",
+        "request",
+    )
+
+    def __init__(self) -> None:
+        raise NativeTrustedAttemptError("native_completion_acquisition_private")
+
+    def __copy__(self):
+        raise NativeTrustedAttemptError("native_completion_acquisition_detached")
+
+    def __deepcopy__(self, memo):
+        raise NativeTrustedAttemptError("native_completion_acquisition_detached")
+
+
+@dataclass(frozen=True, slots=True)
+class NativeTrustedAttemptObservation(_NativeTrustedAttemptOriginal):
     launch_id: str
     journal_id: str
     status: str
@@ -171,6 +288,156 @@ class NativeTrustedAttemptObservation:
     stream_capture_sha256: str | None = None
     stream_observation: NativeTrustedStreamObservation | None = None
     broker_observation: ProducerBrokerObservation | None = None
+    live_modules_observation: FixedPythonBoundLiveModules | None = None
+    producer_completion_bytes: bytes | None = None
+    producer_completion_partial_bytes: bytes | None = None
+
+
+def _original_native_completion_pin(attempt: NativeTrustedAttemptObservation) -> tuple | None:
+    """Revalidate one private original attempt's computation acquisition.
+
+    Public DTO constructors, byte fields, copies and durable recovery carry no
+    acquisition. This pin remains separate from runtime/build acceptance.
+    """
+    try:
+        if type(attempt) is not NativeTrustedAttemptObservation:
+            raise ValueError
+        acquired = getattr(attempt, "_original_completion_acquisition", None)
+        if acquired is None:
+            return None
+        if type(acquired) is not _NativeTrustedCompletionAcquisition:
+            raise ValueError
+        originals = (acquired, attempt, acquired.inputs, acquired.intent, acquired.attestation,
+                     acquired.request, acquired.reader, acquired.binding, acquired.artifacts,
+                     acquired.comparison, acquired.broker_pin, acquired.image_identity, acquired.envelope)
+        if (type(acquired._originals) is not tuple or len(acquired._originals) != len(originals)
+                or any(current is not original for current, original in zip(originals, acquired._originals, strict=True))
+                or acquired.attempt is not attempt
+                or type(acquired.inputs) is not NativeRSIInputDescriptor
+                or type(acquired.request) is not FixedPythonLiveSinkRequest
+                or acquired.request.source_profile not in {COMPLETION_PROFILE, FIXED_PRODUCER_ENVELOPE_PROFILE}
+                or type(acquired.binding) is not FixedProducerCompletionBinding
+                or attempt.reason != "native_trusted_attempt_request_and_output_unverified"
+                or attempt.gate_released is not True or attempt.target_started is not True
+                or attempt.exit_code != 0 or attempt.cleanup_status not in {"cleaned", "already_exited"}
+                or attempt.output_capture_sha256 is None or attempt.terminal_sha256 is None
+                or attempt.live_modules_observation is None):
+            raise ValueError
+        raw = attempt.producer_completion_bytes
+        reader_pin = _original_completion_reader_pin(acquired.reader, raw)
+        broker_pin = _original_broker_exchange_pin(attempt.broker_observation)
+        if broker_pin is None or broker_pin != acquired.broker_pin:
+            raise ValueError
+        binding, inputs, observed = acquired.binding, acquired.inputs, attempt.live_modules_observation
+        solver_request = inputs.request
+        if (solver_request.solver_id != binding.solver
+                or solver_request.contract_sha256 != acquired.intent.contract_sha256
+                or solver_request.evaluator_sha256 != acquired.intent.evaluator_fingerprint
+                or solver_request.environment_sha256 != acquired.intent.environment_sha256
+                or solver_request.memory_snapshot_sha256 != inputs.memory_snapshot_sha256
+                or binding.target_pid != observed.target_pid
+                or binding.manifest_sha256 != observed.manifest_sha256
+                or binding.manifest_sha256 != inputs.manifest_sha256
+                or binding.solver != acquired.intent.producer_id
+                or (observed.image_device, observed.image_inode)
+                != acquired.image_identity
+                or binding.deadline_monotonic_ns != broker_pin[8]):
+            raise ValueError
+        comparison = _compare_original_native_completion(
+            raw, inputs=inputs, intent=acquired.intent, request=acquired.request,
+            binding=binding, broker_pin=broker_pin, artifacts=acquired.artifacts, envelope=acquired.envelope,
+        )
+        pin = (
+            reader_pin, broker_pin,
+            tuple((field.name, id(getattr(inputs, field.name)), getattr(inputs, field.name)) for field in fields(inputs)),
+            acquired.intent.digest(), acquired.attestation.digest(),
+            acquired.image_identity,
+            tuple((field.name, id(getattr(attempt, field.name)), getattr(attempt, field.name)) for field in fields(attempt)
+                  if field.name != "broker_observation"),
+            tuple((path, id(content), content, stat_info) for path, content, stat_info in acquired.artifacts),
+            comparison,
+        )
+        if acquired.envelope is not None:
+            path, content, stat_info = acquired.envelope
+            pin += ((path, id(content), content, stat_info),)
+        if pin != acquired._pin or comparison != acquired.comparison:
+            raise ValueError
+        result = (acquired, id(acquired), inputs, acquired.intent, acquired.attestation,
+                acquired.request, acquired.binding, acquired.artifacts, comparison, pin,
+                acquired.image_identity)
+        return result if acquired.envelope is None else result + (acquired.envelope,)
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError):
+        raise NativeTrustedAttemptError("native_completion_acquisition_changed") from None
+
+
+def _compare_original_native_completion(raw, *, inputs, intent, request, binding, broker_pin, artifacts, envelope):
+    """Select the exact opt-in protocol and bind target-delivered launch fields."""
+    options = {
+        "binding": binding, "request_bytes": inputs.request_json, "memory_bytes": inputs.memory_json,
+        "request_body_bytes": broker_pin[2], "reply_bytes": broker_pin[4],
+        "artifacts": tuple((path, content) for path, content, _stat in artifacts),
+    }
+    if request.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+        validate_fixed_producer_envelope_argv(
+            intent.argv, run_id=intent.run_id, producer_fingerprint=intent.producer_fingerprint,
+            manifest_sha256=inputs.manifest_sha256,
+        )
+        if (intent.envelope_path != intent.output_directory + "/producer-result.json"
+                or type(envelope) is not tuple or len(envelope) != 3
+                or envelope[0] != "producer-result.json" or type(envelope[1]) is not bytes
+                or type(envelope[2]) is not tuple):
+            raise ValueError
+        return compare_fixed_producer_envelope_completion(raw, envelope_bytes=envelope[1], **options)
+    if (request.source_profile != COMPLETION_PROFILE or envelope is not None
+            or intent.argv != (intent.argv[0], NATIVE_RSI_INPUT_MARKER, inputs.manifest_sha256)):
+        raise ValueError
+    return compare_fixed_producer_completion(raw, **options)
+
+
+def _retain_original_native_completion(
+    token: object, attempt: NativeTrustedAttemptObservation, *, inputs: NativeRSIInputDescriptor,
+    intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
+    request: FixedPythonLiveSinkRequest, reader: NativeFixedProducerCompletionCapture,
+    binding: FixedProducerCompletionBinding, artifacts: tuple, image_identity: tuple[int, int],
+    envelope: tuple | None = None,
+) -> None:
+    """Called only by the live attempt after original grant/output observation.
+
+    There is no constructor argument or durable wire for this acquisition.
+    The caller owns the grants, native terminal, original deadline and snapshots.
+    """
+    if token is not _NATIVE_COMPLETION_TOKEN:
+        raise NativeTrustedAttemptError("native_completion_acquisition_private")
+    broker_pin = _original_broker_exchange_pin(attempt.broker_observation)
+    if broker_pin is None:
+        raise NativeTrustedAttemptError("native_completion_broker_acquisition_missing")
+    comparison = _compare_original_native_completion(
+        attempt.producer_completion_bytes, inputs=inputs, intent=intent, request=request,
+        binding=binding, broker_pin=broker_pin, artifacts=artifacts, envelope=envelope,
+    )
+    acquired = object.__new__(_NativeTrustedCompletionAcquisition)
+    (acquired.inputs, acquired.intent, acquired.attestation, acquired.request, acquired.reader,
+     acquired.binding, acquired.artifacts, acquired.attempt, acquired.comparison,
+     acquired.broker_pin, acquired.image_identity) = (
+         inputs, intent, attestation, request, reader, binding, artifacts, attempt, comparison,
+         broker_pin, image_identity,
+     )
+    acquired.envelope = envelope
+    acquired._originals = (acquired, attempt, inputs, intent, attestation, request, reader,
+                           binding, artifacts, comparison, broker_pin, image_identity, envelope)
+    acquired._pin = (
+        _original_completion_reader_pin(reader, attempt.producer_completion_bytes), broker_pin,
+        tuple((field.name, id(getattr(inputs, field.name)), getattr(inputs, field.name)) for field in fields(inputs)),
+        intent.digest(), attestation.digest(), image_identity,
+        tuple((field.name, id(getattr(attempt, field.name)), getattr(attempt, field.name)) for field in fields(attempt)
+              if field.name != "broker_observation"),
+        tuple((path, id(content), content, stat_info) for path, content, stat_info in artifacts), comparison,
+    )
+    if envelope is not None:
+        path, content, stat_info = envelope
+        acquired._pin += ((path, id(content), content, stat_info),)
+    object.__setattr__(attempt, "_original_completion_acquisition", acquired)
+    _original_native_completion_pin(attempt)
 
 
 def _terminal_receipt(
@@ -230,7 +497,7 @@ def _compose_attempt_budget(
 def _native_launch_inputs(
     workspace: str | Path, *, intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
-    require_unexpired: bool,
+    require_unexpired: bool, fixed_u_owner=None,
 ) -> NativeRSIInputDescriptor | ProducerLaunchInputDescriptor | None:
     """Inspect optional input delivery without changing legacy launch bytes.
 
@@ -241,16 +508,17 @@ def _native_launch_inputs(
     if (NATIVE_RSI_INPUT_MARKER in intent.argv
             and PRODUCER_LAUNCH_INPUT_MARKER in intent.argv):
         raise NativeTrustedAttemptError("native_trusted_attempt_launch_inputs_conflict")
+    options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
     try:
         rsi = validate_native_rsi_launch_inputs(
             workspace, intent=intent, attestation=attestation, artifact=artifact,
-            require_unexpired=require_unexpired,
+            require_unexpired=require_unexpired, **options,
         )
         producer = validate_producer_launch_inputs(
             workspace, intent=intent, attestation=attestation, artifact=artifact,
-            require_unexpired=require_unexpired,
+            require_unexpired=require_unexpired, **options,
         )
-    except (NativeRSIInputError, ProducerLaunchInputError) as exc:
+    except (NativeRSIInputError, ProducerLaunchInputError, NativeFixedUInputError) as exc:
         raise NativeTrustedAttemptError(exc.code) from exc
     if rsi is not None and producer is not None:
         raise NativeTrustedAttemptError("native_trusted_attempt_launch_inputs_conflict")
@@ -261,11 +529,12 @@ def _revalidate_native_launch_inputs(
     expected: NativeRSIInputDescriptor | ProducerLaunchInputDescriptor | None,
     workspace: str | Path, *, intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
-    require_unexpired: bool,
+    require_unexpired: bool, fixed_u_owner=None,
 ) -> None:
     if _native_launch_inputs(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
         require_unexpired=require_unexpired,
+        **({"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}),
     ) != expected:
         code = ("rsi_native_inputs_binding_changed" if isinstance(expected, NativeRSIInputDescriptor)
                 else "native_trusted_attempt_launch_inputs_binding_changed")
@@ -303,10 +572,14 @@ def _deadline_record(
 
 def _persist_deadline(
     batch: Path, launch: object, *, started: float, deadline: float,
+    publications=None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     record = _deadline_record(launch, started=started, deadline=deadline)
     try:
-        binding = persist_native_deadline_binding(batch, record=record)
+        binding = persist_native_deadline_binding(
+            batch, record=record,
+            **({"retain_creation_owner": publications._slot("deadline")} if publications is not None else {}),
+        )
     except NativeDeadlineBindingError as exc:
         if exc.code == "native_deadline_binding_conflict":
             # A retained deadline is evidence that this launch already entered the
@@ -680,32 +953,49 @@ def _write_attempt_control(
 
 
 @contextmanager
-def _original_attempt_grants(inputs, *, batch: Path, working: Path, output: Path, enabled: bool):
+def _original_attempt_grants(inputs, *, batch: Path, working: Path, output: Path, enabled: bool,
+                             whole_scope=None):
     if not enabled:
         with nullcontext(None) as owner:
             yield owner
         return
     try:
-        original = original_native_grant_inputs(inputs)
+        fixed_u_owner = (whole_scope.original_fixed_u_input_owner
+                         if type(whole_scope) is NativeWholeScopeOwner else None)
+        options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
+        original = original_native_grant_inputs(inputs, **options)
         requests = tuple(ProducerGrantRequest(path, "writable-directory")
                          for path in sorted({str(working), str(output)}))
         requests += (ProducerGrantRequest(str(working), "cwd"), *original.requests)
+        if whole_scope is not None:
+            requests += whole_scope.original_readonly_grant_requests()
         with hold_producer_grants(
             requests, expected_bindings=original.expected_bindings,
-            create_writable_directories=True, creation_root=str(batch),
+            create_writable_directories=whole_scope is None,
+            creation_root=str(batch) if whole_scope is None else None,
         ) as owner:
-            owner.validate_protected_materials(original.materials)
+            owner.validate_protected_materials(original.materials, **options)
             yield owner
-    except (ProducerGrantError, NativeGrantInputError) as exc:
+    except (ProducerGrantError, NativeGrantInputError, NativeWholeScopeError, NativeFixedUInputError) as exc:
         raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_changed") from exc
 
 
-def _check_original_attempt_grants(owner, inputs) -> None:
+def _check_original_attempt_grants(owner, inputs, *, fixed_u_owner=None) -> None:
     if owner is not None:
+        options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
         try:
-            owner.validate_protected_materials(original_native_grant_inputs(inputs).materials)
-        except (ProducerGrantError, NativeGrantInputError) as exc:
+            owner.validate_protected_materials(original_native_grant_inputs(inputs, **options).materials, **options)
+        except (ProducerGrantError, NativeGrantInputError, NativeFixedUInputError) as exc:
             raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_changed") from exc
+
+
+@contextmanager
+def _original_pycache_scope(request, **options):
+    try:
+        with original_native_pycache_diagnostic_scope(request, **options) as scope:
+            yield scope
+    except (NativePycacheDiagnosticError, PycacheGrantBindingError, PycacheMonitorError) as exc:
+        raise NativeTrustedAttemptError("native_trusted_attempt_pycache_diagnostic_unknown") from exc
 
 
 def run_native_trusted_attempt(
@@ -719,6 +1009,11 @@ def run_native_trusted_attempt(
     monotonic: Callable[[], float] = time.monotonic,
     cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
+    registered_observer: Callable[[NativeTrustedRegisteredContext], None] | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
+    guardian_custody: NativeGuardianCustodyRequest | None = None,
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None = None,
+    whole_scope: NativeWholeScopeOwner | None = None,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
 
@@ -729,6 +1024,37 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_admission_invalid")
     if not isinstance(artifact, NativeBootstrapArtifact):
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
+    if whole_scope is not None and (
+        type(whole_scope) is not NativeWholeScopeOwner
+        or artifact.descriptor.platform_execution_mode != "linux-fd-bound"
+        or guardian_custody is not None or monotonic is not time.monotonic
+    ):
+        raise NativeTrustedAttemptError("native_trusted_attempt_whole_scope_invalid")
+    if pycache_diagnostic is not None:
+        try:
+            NativePycacheDiagnosticRequest.validate(pycache_diagnostic)
+            if artifact.descriptor.platform_execution_mode != "linux-fd-bound":
+                raise NativePycacheDiagnosticError("native_pycache_diagnostic_linux_required")
+        except (NativePycacheDiagnosticError, AttributeError, TypeError) as exc:
+            raise NativeTrustedAttemptError("native_trusted_attempt_pycache_diagnostic_invalid") from exc
+    if live_modules_sink is not None:
+        if (type(live_modules_sink) is not FixedPythonLiveSinkRequest
+                or artifact.descriptor.platform_execution_mode != "linux-fd-bound"):
+            raise NativeTrustedAttemptError("native_fixed_live_sink_request_invalid")
+        try:
+            if live_modules_sink.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+                validate_fixed_producer_envelope_argv(
+                    intent.argv, run_id=intent.run_id, producer_fingerprint=intent.producer_fingerprint,
+                    manifest_sha256=intent.argv[-1],
+                )
+                if (intent.envelope_path != intent.output_directory + "/producer-result.json"
+                        or live_modules_sink.installation.profile_version != f"fixed-{intent.producer_id}-v1"):
+                    raise ValueError
+            elif len(intent.argv) != 3 or intent.argv[1] != NATIVE_RSI_INPUT_MARKER:
+                raise ValueError
+            live_modules_sink.validate(target_sha256=intent.executable_sha256)
+        except (NativeFixedLiveSinkError, ValueError, IndexError, AttributeError) as exc:
+            raise NativeTrustedAttemptError("native_fixed_live_sink_request_invalid") from exc
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
@@ -783,15 +1109,39 @@ def run_native_trusted_attempt(
             _validate_fixed_destination_endpoint(broker_config.endpoint)
         except ValueError as exc:
             raise NativeTrustedAttemptError("native_trusted_attempt_broker_endpoint_invalid") from exc
+    if registered_observer is not None and not callable(registered_observer):
+        raise NativeTrustedAttemptError("native_trusted_attempt_registered_observer_invalid")
+    if guardian_custody is not None and (
+        type(guardian_custody) is not NativeGuardianCustodyRequest
+        or artifact.descriptor.platform_execution_mode != "linux-fd-bound"
+    ):
+        raise NativeTrustedAttemptError("native_trusted_attempt_guardian_custody_invalid")
+    if guardian_custody is not None and registered_observer is None:
+        # The original trusted observer is the delivery seam for independent
+        # retention. Never silently treat current receiver files as that owner.
+        raise NativeTrustedAttemptError("native_trusted_attempt_guardian_custody_observer_required")
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
     if _observe_cancellation(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
     started_monotonic, deadline = _compose_attempt_budget(intent, monotonic, parent_deadline)
+    fixed_u_owner = None
+    if whole_scope is not None:
+        try:
+            deadline = min(deadline, whole_scope.deadline_ns / 1_000_000_000)
+            fixed_u_owner = whole_scope.original_fixed_u_input_owner
+        except (NativeWholeScopeError, NativeFixedUInputError) as exc:
+            raise NativeTrustedAttemptError("native_trusted_attempt_whole_scope_invalid") from exc
+    fixed_u_options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
     inputs = _native_launch_inputs(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
-        require_unexpired=True,
+        require_unexpired=True, **fixed_u_options,
     )
+    if (live_modules_sink is not None
+            and live_modules_sink.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE
+            and (type(inputs) is not NativeRSIInputDescriptor
+                 or inputs.request.solver_id != intent.producer_id)):
+        raise NativeTrustedAttemptError("native_fixed_live_sink_request_invalid")
     if inputs is not None and inputs.deadline_unix is not None:
         # Sample monotonic before wall time, once, so setup cannot extend the original
         # absolute RSI deadline. Later admission checks may reject expiry but never remap it.
@@ -803,27 +1153,45 @@ def run_native_trusted_attempt(
         deadline = min(deadline, float(sampled_monotonic) + (inputs.deadline_unix - sampled_unix))
     _remaining(deadline, monotonic, cancelled)
     native_deadline_ns = _native_guard_deadline(deadline, monotonic, cancelled)
+    if whole_scope is not None:
+        native_deadline_ns = min(native_deadline_ns, whole_scope.deadline_ns)
     try:
         installed = load_native_bootstrap_artifact(
             artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
         )
         launch = build_trusted_bootstrap_launch(intent, attestation, installed.descriptor)
+        if guardian_custody is not None:
+            try:
+                guardian_custody.check_launch(str(launch.launch_sha256))
+            except Exception as exc:  # Explicit installed-original preflight.
+                raise NativeTrustedAttemptError("native_trusted_attempt_guardian_custody_invalid") from exc
         root = _safe_root(workspace)
         target_root = _safe_root(producer_root)
         batch = root / "evolution" / "producer-batches" / intent.journal_id
-        _safe_dir(batch, create=True)
+        _safe_dir(batch, create=whole_scope is None)
         working = _relative_path(batch, intent.working_directory)
         output = _relative_path(batch, intent.output_directory)
+        if whole_scope is not None:
+            whole_scope.check_before_launch(
+                intent, installed, native_deadline_ns, working=working, output=output,
+            )
         if installed.descriptor.platform_execution_mode != "linux-fd-bound":
             _safe_dir(working, create=True)
             _safe_dir(output, create=True)
-    except (NativeBootstrapError, ProducerBootstrapError, ProducerProcessError) as exc:
+    except (NativeBootstrapError, ProducerBootstrapError, ProducerProcessError,
+            NativeWholeScopeError, NativeFixedUInputError) as exc:
         raise NativeTrustedAttemptError("native_trusted_attempt_preflight_invalid") from exc
 
     with _recovery_lock(batch) as lock_identity, _original_attempt_grants(
         inputs, batch=batch, working=working, output=output,
         enabled=installed.descriptor.platform_execution_mode == "linux-fd-bound",
-    ) as grant_owner:
+        **({"whole_scope": whole_scope} if whole_scope is not None else {}),
+    ) as grant_owner, _original_pycache_scope(
+        pycache_diagnostic, held_grants=grant_owner, working=working, output=output,
+        deadline_ns=native_deadline_ns,
+    ) as pycache_scope, (
+        hold_native_original_publications() if whole_scope is not None else nullcontext(None)
+    ) as publications:
         process: subprocess.Popen[bytes] | None = None
         guardian: NativeGuardianOwner | None = None
         guardian_finished = installed.descriptor.platform_execution_mode != "linux-fd-bound"
@@ -843,6 +1211,10 @@ def run_native_trusted_attempt(
         stream_observation: NativeTrustedStreamObservation | None = None
         stream_capture: NativeTrustedStreamCapture | None = None
         stream_capture_failed = False
+        live_sink_capture: NativeFixedLiveSinkCapture | None = None
+        live_modules_observation: FixedPythonBoundLiveModules | None = None
+        completion_capture: NativeFixedProducerCompletionCapture | None = None
+        producer_completion_bytes: bytes | None = None
         handoff_sha256: str | None = None
         claimed = False
         cancellation_requested = False
@@ -866,12 +1238,13 @@ def run_native_trusted_attempt(
         try:
             _revalidate_native_launch_inputs(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                require_unexpired=True,
+                require_unexpired=True, **fixed_u_options,
             )
-            _check_original_attempt_grants(grant_owner, inputs)
+            _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
             _remaining(deadline, monotonic, cancelled)
             deadline_record, deadline_binding = _persist_deadline(
                 batch, launch, started=started_monotonic, deadline=deadline,
+                **({"publications": publications} if publications is not None else {}),
             )
             deadline_sha256 = str(deadline_record["deadline_sha256"])
             consumption = consume_trusted_bootstrap_attestation(
@@ -901,12 +1274,39 @@ def run_native_trusted_attempt(
                 lifeline_read, controller_lifeline_writer = os.pipe()
                 fds.add(lifeline_read)
                 guardian_fds: tuple[int, ...] = ()
-                if grant_owner is not None:
+                if grant_owner is not None and whole_scope is None:
                     guardian_finish_read, guardian_finish_write = os.pipe()
                     guardian_ack_read, guardian_ack_write = os.pipe()
                     guardian_fds = (guardian_finish_write, guardian_ack_read)
                     fds.update((guardian_finish_read, guardian_finish_write, guardian_ack_read, guardian_ack_write))
+                whole_scope_fds: tuple[int, ...] = ()
+                if whole_scope is not None:
+                    whole_scope.prepare_channels()
+                    whole_scope_fds = whole_scope.bootstrap_pass_fds
                 broker_child_fds: tuple[int, int] = ()
+                sink_child_fds: tuple[int, ...] = ()
+                private_sink: NativeBootstrapPrivateSink | None = None
+                completion_sink: NativeBootstrapCompletionSink | None = None
+                sink_image_identity: tuple[int, int] | None = None
+                if live_modules_sink is not None:
+                    sink_read, sink_write = os.pipe()
+                    fds.update((sink_read, sink_write))
+                    sink_child_fds = (sink_write,)
+                    pipe_identity = os.fstat(sink_write)
+                    target_identity = os.fstat(pair.target.pass_fd)
+                    sink_image_identity = (target_identity.st_dev, target_identity.st_ino)
+                    private_sink = NativeBootstrapPrivateSink(
+                        sink_write, pipe_identity.st_dev, pipe_identity.st_ino, native_deadline_ns,
+                    )
+                    if live_modules_sink.source_profile in {COMPLETION_PROFILE, FIXED_PRODUCER_ENVELOPE_PROFILE}:
+                        completion_read, completion_write = os.pipe()
+                        fds.update((completion_read, completion_write))
+                        sink_child_fds = (sink_write, completion_write)
+                        completion_identity = os.fstat(completion_write)
+                        completion_sink = NativeBootstrapCompletionSink(
+                            completion_write, completion_identity.st_dev,
+                            completion_identity.st_ino, native_deadline_ns,
+                        )
                 broker_env = {"PATH": os.defpath, "LANG": "C"}
                 if broker_config is not None:
                     request_read, request_write = os.pipe()
@@ -921,12 +1321,15 @@ def run_native_trusted_attempt(
 
                     def serve() -> None:
                         try:
+                            completion_options = ({"retain_original_exchange": True}
+                                                  if completion_sink is not None else {})
                             broker_state["observation"] = serve_producer_broker(
                                 request_read, response_write, intent=intent,
                                 journal_dir=batch / ".host-request-journal",
                                 config=broker_config, deadline_ns=broker_deadline_ns,
                                 ready=broker_ready,
                                 stop=broker_stop,
+                                **completion_options,
                             )
                         except Exception:  # noqa: BLE001 - fixed-code thread boundary
                             broker_state["error"] = "native_trusted_attempt_broker_unknown"
@@ -941,13 +1344,21 @@ def run_native_trusted_attempt(
                 if sys.platform.startswith("linux"):
                     _validate_original_linux_executable_pair(pair)
                 if grant_owner is not None:
-                    _check_original_attempt_grants(grant_owner, inputs)
-                    control = encode_native_bootstrap_control_v2(
+                    _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
+                    encoder = (encode_native_bootstrap_control_v4 if completion_sink is not None else
+                               encode_native_bootstrap_control_v3 if private_sink is not None
+                               else encode_native_bootstrap_control_v2)
+                    sink_kwargs = {"private_sink": private_sink} if private_sink is not None else {}
+                    if completion_sink is not None:
+                        sink_kwargs["completion_sink"] = completion_sink
+                    control = encoder(
                         launch, target_path=pair.target.executable,
                         target_argv=(pair.target.executable, *intent.argv[1:]),
                         target_cwd=working, target_fd=pair.target.pass_fd,
                         bootstrap_fd=pair.bootstrap.pass_fd, held_grants=grant_owner,
-                        reserved_fds=tuple(sorted(fds)) + pair.pass_fds + (controller_lifeline_writer,),
+                        reserved_fds=tuple(sorted(fds - set(sink_child_fds)))
+                        + pair.pass_fds + (controller_lifeline_writer,) + whole_scope_fds,
+                        **sink_kwargs,
                     )
                 else:
                     policy = build_producer_isolation_policy(read_paths=read_paths, write_dirs=[working, output])
@@ -966,16 +1377,25 @@ def run_native_trusted_attempt(
                         if installed.descriptor.platform_execution_mode == "linux-fd-bound" else None
                     ),
                     grant_object_binding=LINUX_GRANT_OBJECT_BINDING if grant_owner is not None else None,
-                    guardian_finish_fd=guardian_finish_write if grant_owner is not None else None,
-                    guardian_ack_fd=guardian_ack_read if grant_owner is not None else None,
+                    guardian_finish_fd=guardian_finish_write if grant_owner is not None and whole_scope is None else None,
+                    guardian_ack_fd=guardian_ack_read if grant_owner is not None and whole_scope is None else None,
+                ) if whole_scope is None else (
+                    native_whole_scope_successor_bootstrap_command
+                    if whole_scope._successor_session is not None else native_whole_scope_bootstrap_command
+                )(
+                    pair.bootstrap.executable, control_fd=control_read, gate_fd=gate_read,
+                    frame_fd=frame_write, controller_lifeline_fd=lifeline_read,
+                    scope_enrollment_fd=whole_scope.enrollment_fd,
+                    scope_lifecycle_fd=whole_scope.lifecycle_fd, profile_fd=whole_scope.profile_fd,
+                    deadline_monotonic_ns=native_deadline_ns,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
-                _check_original_attempt_grants(grant_owner, inputs)
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                 if grant_owner is not None:
                     _revalidate_native_launch_inputs(
                         inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                        require_unexpired=True,
+                        require_unexpired=True, **fixed_u_options,
                     )
                 if sys.platform.startswith("linux"):
                     _validate_original_linux_executable_pair(pair)
@@ -983,22 +1403,58 @@ def run_native_trusted_attempt(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
                     pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
-                              *broker_child_fds, *guardian_fds, lifeline_read,
+                              *broker_child_fds, *guardian_fds, *whole_scope_fds, lifeline_read,
+                              *sink_child_fds,
                               *(grant_owner.pass_fds if grant_owner is not None else ())),
                     cwd="/" if grant_owner is not None else str(working), env=broker_env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
+                if whole_scope is not None:
+                    # Capture/deliver B's original pidfd before starting any
+                    # capture/broker threads or making a competing wait call.
+                    whole_scope.start_original(
+                        process=process, launch=launch, intent=intent,
+                        bootstrap=_original_linux_bootstrap_owner(pair),
+                        controller_lifeline_fd=lifeline_read,
+                        deadline_ns=native_deadline_ns,
+                    )
+                if private_sink is not None:
+                    os.close(sink_write)
+                    fds.remove(sink_write)
+                    live_sink_capture = NativeFixedLiveSinkCapture(
+                        sink_read, deadline=deadline, monotonic=monotonic,
+                        cancelled=lambda: _observe_cancellation(cancelled),
+                    ).start()
+                    fds.remove(sink_read)
+                if completion_sink is not None:
+                    os.close(completion_write)
+                    fds.remove(completion_write)
+                    # The kernel deadline was composed once from the original
+                    # allowance. Round conservatively when crossing ns -> float.
+                    completion_capture = NativeFixedProducerCompletionCapture(
+                        completion_read, deadline=math.nextafter(native_deadline_ns / 1e9, -math.inf),
+                    ).start()
+                    fds.remove(completion_read)
                 check_deadline()
-                if grant_owner is not None:
+                if grant_owner is not None and whole_scope is None:
                     try:
                         _validate_original_linux_executable_pair(pair)
-                        guardian = start_native_guardian(
-                            process=process, executable=pair.bootstrap.executable,
-                            bootstrap_fd=pair.bootstrap.pass_fd, lifeline_fd=lifeline_read,
-                            finish_fd=guardian_finish_read, ack_fd=guardian_ack_write,
-                            ack_read_fd=guardian_ack_read, deadline=deadline,
-                            deadline_ns=native_deadline_ns, monotonic=monotonic,
-                        )
+                        if guardian_custody is None:
+                            guardian = start_native_guardian(
+                                process=process, executable=pair.bootstrap.executable,
+                                bootstrap_fd=pair.bootstrap.pass_fd, lifeline_fd=lifeline_read,
+                                finish_fd=guardian_finish_read, ack_fd=guardian_ack_write,
+                                ack_read_fd=guardian_ack_read, deadline=deadline,
+                                deadline_ns=native_deadline_ns, monotonic=monotonic,
+                            )
+                        else:
+                            guardian = guardian_custody.start_original(
+                                process=process, bootstrap=_original_linux_bootstrap_owner(pair),
+                                launch_sha256=str(launch.launch_sha256), lifeline_fd=lifeline_read,
+                                finish_fd=guardian_finish_read, ack_fd=guardian_ack_write,
+                                ack_read_fd=guardian_ack_read, deadline=deadline,
+                                deadline_ns=native_deadline_ns, monotonic=monotonic,
+                            )
                     except NativeGuardianError as exc:
                         # Preserve a live original owner if bounded startup cleanup could
                         # not complete before the caller closes the original writer.
@@ -1037,6 +1493,9 @@ def run_native_trusted_attempt(
                     attestation=attestation, pair=pair, process=process, ready_frame=ready,
                     recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
                     expected_deadline_binding=deadline_binding,
+                    **({"retain_creation_identity": True}
+                       if registered_observer is not None or pycache_scope is not None or whole_scope is not None else {}),
+                    **({"retain_creation_owner": publications} if publications is not None else {}),
                 )
                 registration = published.registration
                 handoff_sha256 = str(published.handoff["handoff_sha256"])
@@ -1085,14 +1544,119 @@ def run_native_trusted_attempt(
                     raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                    require_unexpired=True,
+                    require_unexpired=True, **fixed_u_options,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
                 if _current_recovery_lock_identity(batch) != lock_identity:
                     raise NativeTrustedAttemptError("native_trusted_attempt_registration_unknown")
-                _check_original_attempt_grants(grant_owner, inputs)
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                 _remaining(deadline, monotonic, cancelled)
+                if registered_observer is not None or pycache_scope is not None or whole_scope is not None:
+                    def registered_context() -> NativeTrustedRegisteredContext:
+                        # Only the trusted original attempt supplies this seam. Check
+                        # every original leg both before and after the observer;
+                        # its return cannot renew the deadline or authorize release.
+                        _remaining(deadline, monotonic, cancelled)
+                        check_deadline()
+                        _revalidate_native_launch_inputs(
+                            inputs, root, intent=intent, attestation=attestation,
+                            artifact=installed, require_unexpired=True, **fixed_u_options,
+                        )
+                        _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
+                        load_native_bootstrap_artifact(
+                            installed.path, descriptor=installed.descriptor,
+                            allowlist_id=installed.allowlist_id,
+                        )
+                        # Origin pins come from the actual publication write FDs,
+                        # before publisher return. Current path reads only compare;
+                        # they must never establish a replacement as the original.
+                        registration_pin = published.registration_file_identity
+                        handoff_pin = published.handoff_file_identity
+                        if registration_pin is None or handoff_pin is None:
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                        current_registration = _read_durable_json(
+                            batch / "process-registration.json",
+                            code="native_trusted_attempt_registered_context_drift",
+                        )
+                        current_handoff = _read_durable_json(
+                            batch / "trusted-bootstrap-handoff.json",
+                            code="native_trusted_attempt_registered_context_drift",
+                        )
+                        if (current_registration != registration
+                                or current_handoff != published.handoff
+                                or _current_recovery_lock_identity(batch) != lock_identity
+                                or tuple(_file_identity(
+                                    batch / "process-registration.json",
+                                ).values()) != registration_pin
+                                or tuple(_file_identity(
+                                    batch / "trusted-bootstrap-handoff.json",
+                                ).values()) != handoff_pin):
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                        check_deadline()
+                        _remaining(deadline, monotonic, cancelled)
+                        return NativeTrustedRegisteredContext(
+                            workspace=str(root), producer_root=str(target_root),
+                            artifact_path=str(installed.path),
+                            launch_id=launch.launch_id, journal_id=launch.journal_id,
+                            run_id=launch.run_id, parent_task_id=launch.parent_task_id,
+                            task_id=launch.task_id, launch_sha256=str(launch.launch_sha256),
+                            intent_sha256=launch.intent_sha256,
+                            attestation_sha256=launch.attestation_sha256,
+                            bootstrap_descriptor_sha256=launch.bootstrap_descriptor_sha256,
+                            bootstrap_artifact_sha256=installed.artifact_sha256,
+                            bootstrap_allowlist_id=installed.allowlist_id,
+                            registration_json=_canonical(current_registration),
+                            handoff_json=_canonical(current_handoff),
+                            deadline_json=_canonical(deadline_record),
+                            deadline_binding_json=_canonical(deadline_binding),
+                            recovery_lock_identity=lock_identity,
+                            registration_file_identity=registration_pin,
+                            handoff_file_identity=handoff_pin,
+                        )
+
+                    original_context = registered_context()
+                    if whole_scope is not None:
+                        whole_scope.bind_original_registration(publications, context=original_context)
+                        if registered_context() != original_context:
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                    if guardian_custody is not None:
+                        guardian_custody.bind_original_registration(original_context, guardian)
+                        if registered_context() != original_context:
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                    observer_context = replace(original_context)
+                    if registered_observer is not None:
+                        try:
+                            if registered_observer(observer_context) is not None:
+                                raise NativeTrustedAttemptError("native_trusted_attempt_registered_observer_failed")
+                        except Exception as exc:  # Fixed trusted observer boundary.
+                            raise NativeTrustedAttemptError(
+                                "native_trusted_attempt_registered_observer_failed",
+                            ) from exc
+                    if (observer_context != original_context
+                            or registered_context() != original_context):
+                        raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                    if guardian_custody is not None:
+                        guardian_custody.check_registered(original_context, guardian)
+                    _remaining(deadline, monotonic, cancelled)
+                    if pycache_scope is not None:
+                        try:
+                            pycache_scope.arm_before_target(registered_context)
+                        except (NativePycacheDiagnosticError, PycacheGrantBindingError,
+                                PycacheMonitorError) as exc:
+                            raise NativeTrustedAttemptError(
+                                "native_trusted_attempt_pycache_diagnostic_arm_failed",
+                            ) from exc
+                        _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
+                        _remaining(deadline, monotonic, cancelled)
+                if whole_scope is not None:
+                    whole_scope.check_before_launch(
+                        intent, installed, native_deadline_ns, working=working, output=output,
+                    )
+                    check_deadline()
+                    _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
+                    _remaining(deadline, monotonic, cancelled)
+                    whole_scope.release_original()
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
@@ -1110,6 +1674,17 @@ def run_native_trusted_attempt(
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_target_start_unknown")
                 target_started = True
+                if live_sink_capture is not None:
+                    raw_live_modules = live_sink_capture.finish()
+                    _remaining(deadline, monotonic, cancelled)
+                    check_deadline()
+                    assert live_modules_sink is not None and sink_image_identity is not None
+                    live_modules_observation = live_modules_sink.compare(
+                        raw_live_modules, image_device=sink_image_identity[0],
+                        image_inode=sink_image_identity[1], target_pid=started.observed_pid,
+                        manifest_sha256=intent.argv[-1],
+                    )
+                    _remaining(deadline, monotonic, cancelled)
                 # Keep a small slice of the attempt budget available for the owner-checked
                 # cleanup path. This remains inside the caller deadline; it only makes a
                 # late terminal frame timeout conservative instead of entering cleanup with
@@ -1128,19 +1703,33 @@ def run_native_trusted_attempt(
                     if remaining <= _CLEANUP_RESERVE_SECONDS:
                         raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
                     try:
-                        exit_code = process.wait(
-                            timeout=min(0.05, remaining)
-                        )
+                        if whole_scope is not None and whole_scope._successor_session is not None:
+                            exit_code = whole_scope.wait_original_bootstrap(timeout=min(0.05, remaining))
+                        else:
+                            exit_code = process.wait(
+                                timeout=min(0.05, remaining)
+                            )
                         break
                     except subprocess.TimeoutExpired:
                         continue
+                if completion_capture is not None:
+                    producer_completion_bytes = completion_capture.finish()
+                    _remaining(deadline, monotonic, cancelled)
+                    check_deadline()
                 if guardian is not None:
                     guardian.finish()
                     guardian_finished = True
                     check_deadline()
+                if whole_scope is not None:
+                    whole_scope.finish()
+                    guardian_finished = True
+                    check_deadline()
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
-                TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError, ProducerIsolationError,
-                ProducerGrantError, ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
+                TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError,
+                NativeGuardianRegistrationError, ProducerIsolationError,
+                NativeWholeScopeError, NativeFixedUInputError, NativeOriginalPublicationError,
+                ProducerGrantError, ProducerProcessError, NativeFixedLiveSinkError, FixedProducerCompletionError,
+                OSError, subprocess.SubprocessError) as exc:
             if not claimed:
                 if isinstance(exc, NativeTrustedAttemptError) and exc.code in {
                     "native_trusted_attempt_deadline_write_unknown",
@@ -1216,6 +1805,10 @@ def run_native_trusted_attempt(
                 if (guardian is not None and not guardian.cleanup()
                         and reason != "native_trusted_attempt_cleanup_unknown"):
                     reason = "native_trusted_attempt_guardian_cleanup_unknown"
+                if whole_scope is not None and not guardian_finished:
+                    whole_scope.cleanup()
+                    if reason == "native_trusted_attempt_terminal_receipt_missing":
+                        reason = "native_trusted_attempt_whole_scope_cleanup_unknown"
             if stream_capture is not None:
                 try:
                     stream_observation = stream_capture.finish(deadline=deadline)
@@ -1223,6 +1816,19 @@ def run_native_trusted_attempt(
                         stream_capture_failed = True
                 except NativeTrustedStreamError:
                     stream_capture_failed = True
+            if live_sink_capture is not None and live_modules_observation is None:
+                live_sink_capture.cancel()
+                try:
+                    live_sink_capture.finish()
+                except NativeFixedLiveSinkError as exc:
+                    if reason == "native_trusted_attempt_terminal_receipt_missing":
+                        reason = exc.code
+            if completion_capture is not None and producer_completion_bytes is None:
+                try:
+                    completion_capture.cancel()
+                except FixedProducerCompletionError as exc:
+                    if reason == "native_trusted_attempt_terminal_receipt_missing":
+                        reason = exc.code
             if broker_thread is not None:
                 if broker_stop is not None and reason != "native_trusted_attempt_terminal_receipt_missing":
                     broker_stop.set()
@@ -1264,9 +1870,9 @@ def run_native_trusted_attempt(
         try:
             _revalidate_native_launch_inputs(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                require_unexpired=False,
+                require_unexpired=False, **fixed_u_options,
             )
-            _check_original_attempt_grants(grant_owner, inputs)
+            _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
             if deadline_binding is not None:
                 check_deadline()
         except NativeTrustedAttemptError as exc:
@@ -1278,6 +1884,7 @@ def run_native_trusted_attempt(
             and gate_released and target_started
             and exit_code is None
             and cleanup_status in {"cleaned", "already_exited"}
+            and (whole_scope is None or guardian_finished)
         ):
             try:
                 observed = observe_trusted_bootstrap_attempt(
@@ -1326,7 +1933,7 @@ def run_native_trusted_attempt(
                 # call the cancellation callback again after cleanup has been verified.
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                    require_unexpired=False,
+                    require_unexpired=False, **fixed_u_options,
                 )
                 _remaining(deadline, monotonic)
                 check_deadline()
@@ -1384,7 +1991,7 @@ def run_native_trusted_attempt(
                 )
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                    require_unexpired=False,
+                    require_unexpired=False, **fixed_u_options,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
@@ -1440,7 +2047,7 @@ def run_native_trusted_attempt(
                 check_deadline()
             except NativeTrustedAttemptError as exc:
                 reason = exc.code
-        return NativeTrustedAttemptObservation(
+        result = NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
             registration_sha256=(str(registration["registration_sha256"]) if registration else None),
@@ -1453,7 +2060,77 @@ def run_native_trusted_attempt(
             broker_observation=(broker_observation if isinstance(
                 broker_observation, ProducerBrokerObservation,
             ) else None),
+            live_modules_observation=live_modules_observation,
+            producer_completion_bytes=producer_completion_bytes,
+            producer_completion_partial_bytes=(completion_capture.partial_bytes
+                                               if completion_capture is not None else None),
         )
+        if (live_modules_sink is not None
+                and live_modules_sink.source_profile in {COMPLETION_PROFILE, FIXED_PRODUCER_ENVELOPE_PROFILE}
+                and reason == "native_trusted_attempt_request_and_output_unverified"
+                and producer_completion_bytes is not None and completion_capture is not None):
+            try:
+                if type(inputs) is not NativeRSIInputDescriptor or sink_image_identity is None:
+                    raise NativeTrustedAttemptError("native_completion_original_inputs_missing")
+                _remaining(deadline, monotonic, cancelled)
+                check_deadline()
+                if time.monotonic_ns() >= native_deadline_ns:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
+                paths = (("candidate.py", "result.json") if intent.producer_id == "openevolve"
+                         else ("gen_0/main.py", "programs.sqlite"))
+                snapshots = []
+                for path in paths:
+                    if time.monotonic_ns() >= native_deadline_ns:
+                        raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                    raw, info = _stable_bytes(
+                        output.joinpath(*path.split("/")), limit=min(intent.output_max_bytes, 256 * 1024),
+                        deadline=deadline, monotonic=monotonic,
+                    )
+                    snapshots.append((path, raw, tuple(sorted(info.items()))))
+                envelope_snapshot = None
+                if live_modules_sink.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+                    if time.monotonic_ns() >= native_deadline_ns:
+                        raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                    raw, info = _stable_bytes(
+                        batch / intent.envelope_path, limit=min(intent.output_max_bytes, 128 * 1024),
+                        deadline=deadline, monotonic=monotonic,
+                    )
+                    envelope_snapshot = ("producer-result.json", raw, tuple(sorted(info.items())))
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
+                _revalidate_native_launch_inputs(
+                    inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                    require_unexpired=False, **fixed_u_options,
+                )
+                _remaining(deadline, monotonic, cancelled)
+                check_deadline()
+                if time.monotonic_ns() >= native_deadline_ns:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                _retain_original_native_completion(
+                    _NATIVE_COMPLETION_TOKEN, result, inputs=inputs, intent=intent, attestation=attestation,
+                    request=live_modules_sink, reader=completion_capture,
+                    binding=FixedProducerCompletionBinding(
+                        intent.producer_id, live_modules_observation.target_pid,
+                        inputs.manifest_sha256, native_deadline_ns,
+                    ), artifacts=tuple(snapshots), image_identity=sink_image_identity,
+                    envelope=envelope_snapshot,
+                )
+                _remaining(deadline, monotonic, cancelled)
+                check_deadline()
+                if time.monotonic_ns() >= native_deadline_ns:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+            except (NativeTrustedAttemptError, FixedProducerCompletionError, NativeTrustedCaptureError,
+                    ProducerGrantError, OSError, AttributeError, TypeError, ValueError) as exc:
+                # A copied/detached replacement never repairs the original run.
+                # Preserve diagnostics; this run simply has no acquisition.
+                if hasattr(result, "_original_completion_acquisition"):
+                    object.__delattr__(result, "_original_completion_acquisition")
+                result = replace(result, reason=(exc.code if isinstance(exc, NativeTrustedAttemptError)
+                                                else "native_completion_original_chain_unknown"))
+        if (pycache_scope is not None
+                and result.reason == "native_trusted_attempt_request_and_output_unverified"):
+            pycache_scope.permit_diagnostic_delivery()
+        return result
 
 
 def _verify_terminal_record(
@@ -1902,6 +2579,7 @@ def recover_native_trusted_lifecycle_audit(
 __all__ = [
     "NativeTrustedAttemptError",
     "NativeTrustedAttemptObservation",
+    "NativeTrustedRegisteredContext",
     "audit_native_trusted_lifecycle",
     "persist_native_trusted_lifecycle_audit",
     "recover_native_trusted_attempt",
