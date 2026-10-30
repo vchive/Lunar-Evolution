@@ -67,7 +67,18 @@ validator disagreed on the terminal tag. A separate read-only diagnostic
 reproduced the original validator refusal. Root-cause review receipt SHA256:
 `a8bfa3d0ab0517600057d770d2a7e8805bd7765e458b3f4f254d7989d8c5a97c`.
 The common finite predicate is corrected in `terminal-state-consistency.md`;
-its 73 added focused cases and final-source CI still require execution. No
+all 73 additions passed in the 826-case concentrated Linux batch, with no
+failures/errors/skips/retries and unchanged source bytes/Git execution bits.
+On an independently reconstructed clean `0de18312` product, a new once-only
+300-second read-only diagnostic passed the original report/VFS validation,
+all four input trees and all 532 output FD readbacks in 20.712070 seconds.
+The original failed report and workspace were not modified; no dependency
+receipt, comparison artifact or candidate was written. An earlier diagnostic
+preflight correctly refused the test product's extra pytest cache before any
+product import; the test product was preserved and the clean build copy was
+constructed from the pinned source archive instead. This is separate post-build
+readback, not a successful rerun of the original consumer.
+Its final-source CI and a fresh corrected-source build remain required. No
 successful original dependency receipt or Shinka installation candidate is
 claimed from this failed attempt.
 

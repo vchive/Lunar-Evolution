@@ -46,3 +46,12 @@ post-build readback is a new, separately labelled observation of the original
 retained evidence; it cannot create an original successful dependency receipt or
 grant build/runtime acceptance. A new-source CI and independent audit remain
 required before merge.
+
+The final `0de18312` source passed all 826 unique cases across 19 complete Linux
+files, including all 73 additions, in 9.241618 seconds including the harness.
+There were no failures, errors, skips or retries. Collection, execution and
+JUnit keys/order matched; all 2770 source files' bytes/Git execution bits were
+unchanged, and all 285 recorded import origins belonged to that source inventory.
+Ruff, compileall and diff checks passed. Existing groups remain 83/65 zero-skip;
+the affected source group is 1167 and the expected group sum is 7983. This batch
+does not repeat or add together the earlier 663 native/serial influence cases.

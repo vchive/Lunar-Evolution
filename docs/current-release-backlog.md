@@ -64,7 +64,9 @@ accepted by the runner but refused by the validator. All14,441 archive members,
 VFS/control and original four-tree inputFD checks passed. The old failure remains
 failed. A shared finite exited/stopped predicate now fixes that disagreement,
 retaining wait/reaped/profile gates and refusing malformed terminal scalars;
-73added focused cases await the final concentrated run and independent review.
+All73 additions passed in the826-case/19-file concentrated Linux batch on0de18312,
+9.241618s including the harness, zero failures/errors/skips/retries, source bytes/
+Git executable bits and285import origins verified. Final-source CI still applies.
 See [actual build observations](../specs/193-static-python-rsi-launch/full-build-observation-20261031.md).
 Final CI/source status remains in PR199 and its independent original evidence.
 
