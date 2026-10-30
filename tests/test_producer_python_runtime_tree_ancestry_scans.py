@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,8 +43,11 @@ def test_retained_original_ancestry_loop_matches_actual_historical_ast():
                 and [part.id for part in node.target.elts] == ["label", "root"])
     # Exact loop independently present in historical 1e6, PR189 2486 and
     # pre-change 869198bc. The previous component scan left it unchanged.
-    assert hashlib.sha256(ast.dump(loop).encode()).hexdigest() == (
-        "9f3d71e360b06d6ad9353ad7dc88fa1dcec0024f8c1407f7fb3c750edd9a0cb4")
+    # Python 3.13 omits empty lists by default; pin the complete AST on every
+    # supported interpreter, including its empty args/keywords/orelse fields.
+    dumped = ast.dump(loop, show_empty=True) if sys.version_info >= (3, 13) else ast.dump(loop)
+    assert hashlib.sha256(dumped.encode()).hexdigest() == (
+        "54b721b763e926e500e7f42235588ea3d6f7f9c75237981c04f0b8ceb97f5f29")
 
 
 @pytest.mark.parametrize("root,pin,accepted", [

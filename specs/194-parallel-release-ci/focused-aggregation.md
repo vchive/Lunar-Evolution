@@ -92,3 +92,20 @@ The latter now has three explicit synthetic negative cases. Provenance binds the
 complete interpreter version string as well as its version family/executable.
 Own final-source CI and external collector adaptation remain pending; these
 local synthetic checks do not establish that remote acceptance.
+
+
+## Integration count reconciliation — 2026-10-30
+
+The three original focused jobs in run40909497309 refused upstream failures
+before reading the manifest; they did not prove the manifest correct. Independent
+inspection of all three original full26402 inventories found exactly two stale
+group counts: rsi-python-scheduler-inputs81→97 and independent-guardian82→101
+(host9 + independent73 + readiness19). These are previously added case bodies;
+no test ID, file membership, skip rule or required group is removed.
+
+Update only those counts and the real-manifest assertion, keeping 83groups and
+65 zero-skip gates, expected sum7366. The regression group263 is unchanged.
+The combined Linux focused batch on tree28f7164b passed all complete aggregation
+file cases among409 collected (408pass, one unrelated Darwin-only skip), with
+original exact JUnit and source unchanged. Fresh complete CI and derived
+receipts remain required; failed original reports are never rewritten to pass.

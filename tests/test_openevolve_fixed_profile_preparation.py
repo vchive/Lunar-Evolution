@@ -151,6 +151,11 @@ def test_full_current_source_drift_refused(source):
 def test_generated_broker_contains_exact_selected_existing_source_segments():
     broker, transport = _current_sources()
     generated, records = prepare.generate_target_broker(broker, transport)
+    # Independently reviewed historical target bytes stay unchanged when only
+    # host-side broker observations update the complete source input pin.
+    assert len(generated) == 8_143
+    assert hashlib.sha256(generated).hexdigest() == (
+        "5c0474648bf173f0d24a0fcc12e6d1eedc0d9b4169c3cab4d22def2ed38d43b0")
     source_tree = ast.parse(broker)
     output_tree = ast.parse(generated)
     expected = {

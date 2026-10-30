@@ -409,8 +409,11 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 7331
+    assert sum(group["expected_tests"] or 0 for group in groups) == 7366
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
+    for identity, expected in (("rsi-python-scheduler-inputs", 97), ("independent-guardian", 101)):
+        group = next(group for group in groups if group["id"] == identity)
+        assert group["expected_tests"] == expected
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203
     assert "tests/test_rsi_flow_payload_scalar_validation.py" in ready["files"]

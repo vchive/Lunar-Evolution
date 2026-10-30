@@ -1,3 +1,24 @@
+## Current P0 — final integration compatibility fixes, 2026-10-30
+
+Run40909497309 completed: 36/42 execution jobs passed; current-4/current-5
+failed on all three Python versions, and three derived focused jobs refused
+upstream failure. No platform or budget timeout occurred. All heavy nodes,
+current-0–3 and history passed. Original failed artifacts and skips are retained.
+
+Fix the native fault fixture include order, explicitly refresh the full host
+broker provenance pin while preserving all 17 target segments, and normalize
+historical AST empty-list display across Python versions to one full digest.
+Two independently checked manifest counts become 97/101; 83 groups / 65
+zero-skip remain, expected sum7366. No product source behavior or guard changes.
+
+Frozen28f7164b: ten complete files on Linux3.12, 409unique=408passed/1Darwin-only
+skip, zero failure/error, 39.026092s, one dispatch/zero retry, 2741source files
+unchanged. The same complete 37-case ancestry domain also passed on Darwin
+3.11 and3.13 with zero skip; do not sum its repeated version executions as
+unique coverage. Ruff/compileall/diff pass. New final-source complete CI is
+required before merging PR195; P1/P2 remain open below. Production admission
+and online publication stay false.
+
 ## Current P0 follow-up — raw log visibility before display, 2026-10-30
 
 A verified small-chunk buffering window allowed console output before raw-file

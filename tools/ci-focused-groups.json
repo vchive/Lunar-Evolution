@@ -194,7 +194,7 @@
       "files": [
         "tests/test_rsi_python_scheduler_inputs.py"
       ],
-      "expected_tests": 81,
+      "expected_tests": 97,
       "zero_skips": true
     },
     {
@@ -716,7 +716,7 @@
         "tests/test_native_independent_guardian.py",
         "tests/test_native_guardian_readiness.py"
       ],
-      "expected_tests": 82,
+      "expected_tests": 101,
       "zero_skips": true
     },
     {

@@ -1,3 +1,33 @@
+<!-- final-integration-compatibility-current:start -->
+## 当前执行点：剩余 CI 兼容问题已修复并在 Linux 合批验证（2026-10-30）
+
+继续同一工作区/分支/PR195。原run40909497309已完整结束：42执行中36success，
+current4/5三Python共6failure，另3focused因upstream拒绝；没有超时/取消。此前
+所有heavy及current0–3/history三版均通过。原45job metadata和全部9失败原ZIP/
+summary/XML保全在主区ignored validation/ci-followup-20261030/failure-index.json。
+
+本轮一次修复：C fault fixture以真实resource→isolation头顺序避免函数内UAPI类型
+被header guard隐藏，不改产品seccomp；broker完整来源pin17877/cc5→29029/ab9，
+独审17segments及8143bytes target/SHA5c0474完全不变，严格拒绝漂移；历史AST
+统一包含empty list的单一hash54b721，不放宽多hash；manifest两组81→97、82→101，
+83组/65zero-skip不变，expected sum7366。原prepared manifest来源元数据改变，
+不能沿用旧manifest digest。新SDD分别在191/193原feature目录，产品src字节不变。
+
+冻结tree28f7164b2ea5a5af061ca2f0b07cdcb7b4e5128d/2741files，5090gpu Python3.12.3
+10完整文件409unique=408pass/0fail/error/1Darwin-only skip，39.026092秒，one dispatch/
+zero retry，source bytes/modes前后相同。完整ancestry文件在本机Python3.11.15及
+3.13.12各37/37pass、零skip，1.076127/1.010370秒；这些37是同一域，不累计unique。
+Linux原件remote/local17SHA一致、有效-v=1/addopts[]、collection/JUnit/origins精确；
+完整Ruff/compileall/diff通过。此次Linux唯一skip为Darwin专属；不将root前提skip
+算通过，原失败不改标签。
+
+下一步仍是新source自己的完整CI/source gate后合main；不再重复未改的focused域。
+P1完整隐式compiler/cache闭包、静态runtime/solver/生产RSI CLI及P2真实账户/原owner
+验收未完成，42root prerequisite skip不算通过。无模型/WebAgent/远程evaluator/
+真实solver/密钥/live argv-env/原benchmark写入限制有效；production_admission=false、
+online_publication=false。
+<!-- final-integration-compatibility-current:end -->
+
 <!-- raw-flush-current:start -->
 ## 当前执行点：CI 日志先刷新原件，再显示（2026-10-30）
 
