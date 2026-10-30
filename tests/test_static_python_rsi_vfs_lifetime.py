@@ -318,6 +318,8 @@ def test_held_original_object_and_named_view_substitution_refuses(owner_vector, 
     elif change == "root":
         vector.root.rename(vector.root.with_name("original-root"))
         vector.root.mkdir()
+        for name in ("source", "toolchain", "work", "out"):
+            (vector.root / name).mkdir()
     else:
         vector.state.namespace_mismatch = True
     with pytest.raises(ValueError, match="^podman_vfs_lifetime$"):
@@ -884,5 +886,5 @@ def test_original_custody_run_refuses_each_lifetime_gate_without_retry_or_early_
         assert "vfs_lifetime" in evidence["custody"]
     else:
         expected = "custody_vfs_snapshot_write" if failure == "retention" else "inert_lifetime_" + failure
-        assert evidence["custody"]["first_failure"] == expected
+        assert evidence["custody"]["first_failure"] == BuildExecutionError(expected).code
         assert "vfs_lifetime" not in evidence["custody"]
