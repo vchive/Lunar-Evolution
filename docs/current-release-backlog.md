@@ -11,8 +11,13 @@ pending PR204 integration statements below.
 The active branch is `codex/sealed-prior-transition`. The existing worker-view
 runner now captures original output FDs into attempt-owned kernel-sealed frames
 and stages later prior inputs from those same frames. Publication waits for
-the entire output group and successful original lifetime release. A concentrated
-Linux affected regression is pending; see [the contract](../specs/193-static-python-rsi-launch/sealed-prior-transition.md).
+the entire output group and successful original lifetime release. Frozen `634ac185`
+passed 2,363 cases in 53 complete Linux 3.12.3 files, including 85 additions, in 51.672603s
+with zero failures/errors/skips/retries/timeouts and the original child reaped.
+Independent review `cb3fbaa6…` verified all 2,799 source Git/archive blobs/modes,
+before/after equality and the 85 new JUnit keys by static AST reconstruction.
+Ruff/compileall/diff passed. A separate fresh six-command Podman observation
+and final-source CI are pending; see [the contract](../specs/193-static-python-rsi-launch/sealed-prior-transition.md).
 
 Necessary P1 remains protection of the actual later worker backing and complete
 driver/source/toolchain inputs, then accepted static image/material ownership,

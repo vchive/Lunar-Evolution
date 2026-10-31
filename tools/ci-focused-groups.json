@@ -191,7 +191,7 @@
         "tests/test_static_python_podman_sealed_prior.py",
         "tests/test_static_python_sealed_prior_integration.py"
       ],
-      "expected_tests": 1923,
+      "expected_tests": 1925,
       "zero_skips": true
     },
     {

@@ -615,6 +615,10 @@ See `sealed-prior-transition.md`; the final guest bind backing remains separate.
   successor staging from that same bank, and final-attempt resource cleanup.
 - [x] Independently review the implementation and integrate focused kernel-seal,
   group failure, source drift, original control and lifecycle cleanup tests.
-- [ ] Run the concentrated affected Linux regression, Ruff, compileall and diff
-  checks; preserve actual failures and validate only necessary corrections.
+- [x] Complete the single concentrated affected Linux3.12.3 regression:
+  53files/2,363pass/85new,51.672603s, zero fail/error/skip/retry/timeout,
+  original child reaped;2,799source records unchanged and independent original
+  reviewcb3fbaa6… passed. Ruff, compileall and diff checks pass.
+- [ ] Complete the separately reviewed fresh six-command Podman observation;
+  preserve pre-execution transport failures without treating them as test runs.
 - [ ] Complete this successor's final-source CI/source review and integration.

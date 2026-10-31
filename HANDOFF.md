@@ -12,7 +12,10 @@ f679fcaf… 核45原ZIP、2795源码及每版27701keys（27567pass+原134skip）
 已实现原 output role 的同一 held file FD → 单命令 memfd frame → 四项内核seal，
 原整组/after-readback/生命周期释放全部成功后才登记；后继 prior staging 只读同原
 bank 的封存字节，不重新从可变 work 路径取源。原预算贯穿，失败整批撤销、最终关闭，
-清理未知保留。独立实现/测试与集成审查并行；集中 Linux 回归尚待完成。
+清理未知保留。冻结634ac185/tree786af733的53完整文件集中 Linux3.12.3 回归
+2363pass（85新增），51.672603秒，零fail/error/skip/retry/timeout，原childreaped。
+2799源码/Gitblob/mode/归档前后相同；独审cb3fbaa6…还静态展开85新键与原JUnit逐键核对。
+Ruff/compileall/diff通过；原批次不重跑。fresh六命令Podman接线验证与本分支CI待完成。
 规格为 `specs/193-static-python-rsi-launch/sealed-prior-transition.md`。
 
 这只保护 output→staging 来源；后继普通 bind 的实际消费背板仍未全时段封存。

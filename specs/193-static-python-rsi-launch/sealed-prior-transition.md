@@ -48,3 +48,19 @@ Direct memfd guest binds require their own real rootless Podman compatibility
 evidence and are outside this bounded change. No model, WebAgent, remote
 evaluator, real solver campaign or original benchmark mutation is authorized by
 this contract.
+
+## Frozen affected regression
+
+Frozen `634ac185d12f150f388fbddfec98755c50e0976d`, tree `786af733dce681dae110d21a3b9f65d0fd8f1f2e`,
+passed all 2,363 cases in 53 complete affected files on Linux 3.12.3 in 51.672603268s.
+All 85 additions passed; there were zero failures, errors, skips, retries and
+timeouts, and the original child was reaped. The 2,799 source files match their
+Git blobs, modes and archive, with identical original before/after observations.
+Ruff, compileall and diff checks passed.
+
+Independent original review `cb3fbaa69dd5472ed55416b1fd99c67c145e94697d8160f9a865525bc151968d`
+verified all 53 file groups and reconstructed all 85 new raw JUnit keys from static
+AST parameters (59 kernel-owner cases and 26 integration cases), without importing
+pytest or rerunning tests. Original evidence is under primary ignored
+`validation/sealed-prior-transition-20261031/`. A separate actual Podman
+compatibility observation and final-source CI integration remain pending.

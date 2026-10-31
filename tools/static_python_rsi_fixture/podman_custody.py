@@ -1119,6 +1119,8 @@ class PodmanCustody:
             observation["first_failure"] = getattr(error, "code", type(error).__name__)
             if "podman_vfs_lifetime_close_unknown" in getattr(error, "__notes__", ()):
                 observation["lifetime_close_unknown"] = True
+            if "podman_sealed_prior_cleanup_unknown" in getattr(error, "__notes__", ()):
+                observation["sealed_prior_close_unknown"] = True
             # No replacement attempt and no extra cleanup deadline. If the
             # original budget is exhausted, this may correctly remain unknown.
             if container is not None and observation["original_container_exit_confirmed"] is not True:

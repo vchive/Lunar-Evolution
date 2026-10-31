@@ -238,3 +238,35 @@ def test_attempt_always_releases_bank_and_preserves_original_failure(
         reason = {"business": "original_command_refusal", "io": "attempt_io_failure",
                   "interrupt": "interrupted"}[failure]
         assert caught.value.report.reason == reason and caught.value.report.status == "partial"
+
+
+@pytest.mark.parametrize("moment", ["begin", "snapshot"])
+def test_private_acquisition_cleanup_note_survives_original_failure_recording(
+        retained_vector, monkeypatch, moment):
+    run, evidence, _work, _events, _owners = lifecycle.original_runner(retained_vector, monkeypatch)
+    subject = retained_vector[0][0][0]
+    subject.vfs_worker_input_view = True
+    select_capture = subject.snapshot_store._lifetime
+    monkeypatch.setattr(subject.snapshot_store, "_lifetime",
+                        lambda stage, index, **_options: select_capture(stage, index))
+    error = OSError("original private acquisition failed")
+    error.add_note("podman_sealed_prior_cleanup_unknown")
+
+    def refuse(*_args, **_options):
+        raise error
+
+    if moment == "snapshot":
+        monkeypatch.setattr(subject, "_prepare_image", refuse)
+    else:
+        class Bank:
+            begin = staticmethod(refuse)
+
+        subject._sealed_prior = Bank()
+        monkeypatch.setattr(lifetime._VfsExecutionLifetime, "_bind_worker_inputs",
+                            lambda *_args, **_options: None, raising=False)
+        monkeypatch.setattr(lifetime._VfsExecutionLifetime, "_bind_worker_filesystem",
+                            lambda *_args, **_options: None, raising=False)
+    with pytest.raises(OSError) as caught:
+        run()
+    assert caught.value is error and evidence["status"] == "partial"
+    assert evidence["custody"]["sealed_prior_close_unknown"] is True
