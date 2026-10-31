@@ -13,6 +13,17 @@ Completing source preparation does not complete installation/runtime acceptance;
 This checklist is the current execution state; older grouped open items below
 retain their historical scope and do not undo these narrower completions.
 
+Current bounded continuation: [worker-link-input-gates.md](worker-link-input-gates.md).
+It adds finite original pre-start format refusals and complete link-tail grammar;
+it does not close the complete configured-driver or custody items below.
+
+- [x] Specify and implement original worker-role-FD `.o/.a` checks in the same
+  inventory read, binding the original command argv and prior/input pins.
+- [x] Require the complete fixed Zig cc link capture suffix and bound in the
+  pre-dispatch graph, including the direct custody executor entry.
+- [ ] Freeze both changes and complete the combined affected Linux regression,
+  static checks and the successor's own final-source CI/integration gate.
+
 - [x] Implement the explicit original-owner five-phase lifetime path and
   connected-stream socket parser; retain old defaults and candidate contracts.
 - [x] Complete the frozen02347d68 1,683-node Linux batch and independently
@@ -43,8 +54,15 @@ retain their historical scope and do not undo these narrower completions.
   gate refuses mixed3.13.16/3.13.17; audit45ZIP/44receipts (1d5e7523…). Pin
   identical exact releases in both successor matrices without weakening provenance.
 - [x] Complete PR200's45-job CI/source gate and exact-tree main merge dd46fe0b.
-- [ ] Complete the combined successor's own final-source CI/source gate and main
-  merge, then close failed PR201 as superseded.
+- [x] Complete PR202/head e8a06e49's own final-source CI/source gate:
+  run41153073503/attempt1 all 45 jobs pass; all 45 ZIP digests/CRCs/member hashes
+  and all 14 test-role plus focused Python strings match 3.11.17/3.12.15/3.13.17.
+  Each Python retains 27,427 cases: 27,293 pass and the same 134 skip; terminal audit
+  receipt 19259aec… passes. Merge main d2cc02057a116b322421003abe4b45c566dd1a88
+  has exact tested tree f9b80832965136cd57e1bbf1d82f60b9e462d71f.
+- [x] Record PR201's actual closed/merged state: its head reached main as an
+  ancestor of PR202. Keep its failed original CI unchanged; main push CI
+  remains separate.
 - [ ] Complete configured driver input closure, original immutable consumption,
   protected output transitions and complete original descendant drainage.
 - [ ] Establish an accepted static image/live owner, then the first production
@@ -542,7 +560,9 @@ not an approval of the previously retained real configure observation.
 - [x] Independently review and execute one bounded read-only observation of
   seven retained real materials: 1281 inline objects and two CRT objects pass
   the present-format checks. No extraction, rebuild or image execution occurs.
-- [ ] Verify final-source complete CI and original source/artifacts, then merge.
+- [x] Verify final-source complete CI/source/originals and exact-tree integration
+  through PR202/run41153073503: 45/45 jobs, terminal audit 19259aec…;
+  main d2cc0205/tree f9b80832. Original fixture failures remain preserved.
 - [x] Exercise the explicit strict retained-candidate reader against the complete
   original worker-view build history under its own exact reviewed read-only
   plan. Present-format success does not complete this integration gate or

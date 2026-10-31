@@ -1,7 +1,8 @@
 # Opt-in retained link-object format checks
 
 Status: implemented; focused regression and retained real-byte observation
-complete, final-source full CI pending. No
+complete; PR202 passed final-source full CI/original review and merged into main.
+Complete driver closure and installation/runtime acceptance remain open. No
 compiler, linker, generated image, solver or model execution is part of this slice.
 
 The existing direct-LLD profile pins support bytes but does not interpret archive
@@ -116,8 +117,19 @@ Python release in both CI matrices (3.11.17/3.12.15/3.13.17). This fixes the
 observed PR201 patch drift; all42 test jobs succeeded, but the original3.13
 focused gate correctly refused3.13.16/3.13.17. That failed run remains failed.
 Job/artifact names,42+3 layout and the strict provenance comparison are preserved.
-Ten selected existing workflow/provenance tests passed; complete successor CI
-and independent source/artifact review are still separate merge requirements.
+Ten selected existing workflow/provenance tests passed. PR202/head
+`e8a06e49a33c7052d7bbc5128ae67a0244335c6f` then completed its own original
+run41153073503/attempt1 with all 45 jobs successful. Independent terminal review
+verified all 45 original ZIP digests/CRCs/member hashes, each Python's 27,427 cases
+(27,293 passes and the same 134 original skips), and complete Python-string
+equality across all 14 test roles, including history, and the focused source.
+Actual patches were 3.11.17/3.12.15/3.13.17. Terminal audit SHA256:
+`19259aec081ad9d95aa61127c682e6b3992cee00e7e77e050e413af1ce70ec5d`.
+Verified main merge `d2cc02057a116b322421003abe4b45c566dd1a88` has the exact tested
+tree `f9b80832965136cd57e1bbf1d82f60b9e462d71f`, with parents dd46fe0b/e8a06e49.
+PR201's head is an ancestor included by that merge, so GitHub records PR201 as
+closed/merged. Its original failed CI remains failed. Main push CI is separate;
+this integration does not grant custody, installation or runtime authority.
 
 ## Complete original-history observation
 
@@ -132,5 +144,6 @@ build was executed by the observation. Collected-original independent review pas
 complete candidate from original pins; receipt SHA256
 `ad075f62a6a2300d95781b65187a7e033eccce65c89377f26a20271600ddec90`.
 The pinned harness compared both readers; no separate legacy wire was saved
-and the auditor reran neither reader. Final-source CI remains a separate gate. See
+and the auditor reran neither reader. This observation did not replace the
+separately completed PR202 final-source CI gate. See
 `full-build-observation-20261031.md` for source identities, transport and limits.

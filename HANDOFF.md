@@ -1,14 +1,20 @@
 <!-- link-object-format-current:start -->
-## 当前开发点：显式 link-object 格式检查（2026-10-31）
+## 当前开发点：PR202 已合 main，继续 configured driver 输入闭包（2026-10-31）
 
 本节覆盖下方历史工作区和运行中状态。当前开发区为
 `/Users/liminghan/.codex/worktrees/support-object-format/lunar_agent`，分支
-`codex/support-object-format`。PR200 已通过原45/45 CI和独立原件审查，合 main 为
-`dd46fe0ba2af7c8ce01ea50194e9cfa818326b8c`，受测 tree `42b43430` 精确相等。
+`codex/configured-driver-inputs`。PR202/head `e8a06e49` 已通过原
+run41153073503/attempt1 全45/45 CI和独立原件/source审查，合 main 为
+`d2cc02057a116b322421003abe4b45c566dd1a88`，tree
+`f9b80832965136cd57e1bbf1d82f60b9e462d71f` 与受测树精确相等。
+每版27,427节点为27,293pass及原134个skip；全部45ZIP的digest/CRC/member hash、
+每版14测试role及focused的完整Python字符串与精确补丁版本均核对通过，终态独审
+receipt `19259aec…`。三版为3.11.17/3.12.15/3.13.17；main push CI另算，未借此称已通过。
 PR201/head `0d9844d5` 的原 run41142583935/attempt1 已失败：44 success /1 failure，
 42个测试任务全部成功，唯一失败为3.13 focused汇总。原3.13任务混用3.13.16/3.13.17，
-严格provenance门正确拒绝；原失败和独审receipt `1d5e7523…` 保留，不合旧PR。
-后继整合PR包含worker-input-view、link-object格式和三版精确Python补丁版本固定，
+严格provenance门正确拒绝；原失败和独审receipt `1d5e7523…` 保留。其head作为PR202的
+祖先一并进入main，GitHub实际状态为closed/merged，不能记为closed-unmerged。
+PR202整合worker-input-view、link-object格式和三版精确Python补丁版本固定，
 保留原42+3任务、名称与严格汇总门。原CI base `3de1e92d` 不因main推进改写。
 
 同0d9844d5源码的完整worker-input-view Shinka构建已成功：318命令、212compiler/
@@ -30,12 +36,12 @@ section，不打开或解包成员名称。它是有限格式检查，不是完�
 2原归档流读无extract，只精确加载2 parser模块、不执行package init；全2784源码/HEAD/ref
 前后相同。独审receipt `aaaf514f…`。证据在主区ignored
 `validation/support-object-format-20261031/`。后继仅调整test import排序；Ruff、compileall、
-diff通过。最终完整CI与新PR尚待冻结文档后启动。
+diff通过；上述PR202随后独立完成最终源码完整CI和main集成。
 
 严格retained reader完整历史观察已完成：156.101037秒/300秒/零retry，53,563B
 候选与旧reader一致；38项原件/canonical独审通过（ad075f62…）。旧reader字节只在
-原harness内比较，没有单独保存legacy wire；审计未重跑reader。下一步冻结后继整合PR，完成
-自身完整CI/source独审后合main，再将失败PR201关闭为superseded。不重建CPython，
+原harness内比较，没有单独保存legacy wire；审计未重跑reader。PR202已完成自身完整
+CI/source独审及精确树合并，旧PR201原失败保持，不将间接合入称为旧CI成功。不重建CPython，
 不重跑原失败CI，也不以7材料parser观察替代严格reader完整历史验证。
 完整configured driver输入闭包、原始不可变消费、输出保护过渡及完整
 后代drain，accepted image/live owner、首个scheduler loader、生产RSI CLI和复制case仍开放。
