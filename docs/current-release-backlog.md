@@ -1,9 +1,11 @@
 ## Current successor — finite header lexical boundary, 2026-11-01
 
-PR205 is merged as main `a094d387`. PR206/head `041e5ca2` is open with original
-CI `41223482974` in progress; its 27,904-node inventory is still expected-only.
-Keep that head and final-source material frozen while the local successor
-continues on `codex/header-directive-prefixes`.
+PR205 is merged as main `a094d387`. PR206/head `041e5ca2` completed original CI
+`41223482974` attempt1, all 45 jobs successful. Independent audit `466e07ca…`
+verified 45 ZIPs and each Python's 27,904 keys = 27,770 pass + the original 134 skip,
+including 116 additions. It is merged as main `fc336fa42`, exact tested tree
+`b1be9e0d` (root merge receipt `565b7b47…`). Preserve its original head, CI and
+final-source material while `codex/header-directive-prefixes` continues.
 
 Frozen `1fd00732`/tree `bacbfd86` adds only a pure v2 lexical refusal before the
 existing inventory. It rejects unsupported directive prefixes and lexical or

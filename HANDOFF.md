@@ -1,8 +1,11 @@
 ## 当前续开发：配置 header 的有限词法边界（2026-11-01）
 
-PR205 已合 main 为 `a094d387`。后继 PR206/head `041e5ca2` 已创建并 attached，
-原 CI `41223482974` 仍在进行；其原件审查脚本和最终源码包已经准备，不能将其
-27,904 个 expected-only 键记为已通过。PR206 的远端 head 保持冻结。
+PR205 已合 main 为 `a094d387`。PR206/head `041e5ca2` 的原 CI
+`41223482974` attempt1 已完成45项 success；45份ZIP独审 `466e07ca…`
+通过，每版27,904键=27,770 pass+原134 skip，116新增全过。PR206 已实合 main
+`fc336fa42b1ff05d11e26b2bbad8e6204e12b71c`，精确 tested tree
+`b1be9e0da95586b7c207076584f5e8a8e99f13aa`；root合并回执 `565b7b47…`。
+原 head、CI及最终源码材料继续保留。
 
 本地继续到 `codex/header-directive-prefixes`，受测提交 `1fd00732`、tree
 `bacbfd86`，已推送。新增纯 v2 词法拒绝层：行首注释、替代 introducer、
@@ -21,8 +24,8 @@ Ruff、compileall、diff 检查通过。详见
 `specs/193-static-python-rsi-launch/finite-header-lexical-boundary.md`；主区 ignored
 `validation/finite-header-lexical-20261101/` 保存两批独立原件。
 
-该分支自己的完整 CI/合 main 尚未进行；27,973 键仍仅为 expected-only。先完成
-PR206 自身 CI/source/合并门，再推进此后继。实际 sealed worker 消费、完整输入保护、
+PR206 自身 CI/source/合并门已关闭；该后继分支自己的完整 CI/合 main 尚未进行，
+27,973 键仍仅为 expected-only。实际 sealed worker 消费、完整输入保护、
 accepted runtime、首 scheduler context、生产 CLI 和复制 case 验收仍开放。
 先前 namespace-holder 准备被自动审查以 `possible cybersecurity risk` 中止的记录
 仍有效；本轮只开发纯解析层，没有重试该机制，所有 authority claims 保持 false。

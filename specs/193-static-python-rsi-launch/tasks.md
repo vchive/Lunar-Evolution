@@ -3,7 +3,8 @@
 ## Current finite header lexical successor — 2026-11-01
 
 See `finite-header-lexical-boundary.md`. PR205 is merged; PR206/head041e5ca2
-remains frozen with its original CI in progress. The separate pushed successor
+passed original CI41223482974 attempt1 and is merged as main `fc336fa42`,
+exact tested tree `b1be9e0d`. The separate pushed successor
 `codex/header-directive-prefixes` adds a pure v2 lexical refusal and 69 tests.
 
 - [x] Independently review implementation, preserved wire/error order and all
@@ -18,7 +19,9 @@ remains frozen with its original CI in progress. The separate pushed successor
   match both old observed facts,source2803/dirs308/origins245/input pins match.
   No pytest rerun, approval replacement or relabeling of the original failure.
 - [x] Pass Ruff, compileall and diff checks; push the completed code.
-- [ ] Finish PR206's original full CI/source gate and precise-tree integration.
+- [x] Finish PR206's original full CI/source gate and precise-tree integration:
+  all 45 jobs success, 45 ZIPs independently audited `466e07ca…`; each Python
+  27,904 keys = 27,770 pass + original 134 skip, 116 new pass; merge receipt `565b7b47…`.
 - [ ] Complete this successor's separate final-source CI/main gate. Its27,973
   node list remains expected-only; runtime and actual worker gates stay open.
 

@@ -1,8 +1,10 @@
 # Finite configuration-header lexical boundary
 
 This successor continues the explicitly selected configuration-review v2 reader.
-PR206 remains frozen at `041e5ca2`; its source, original tests and CI have their
-own gate. The existing literal-operand check covers recognized direct includes,
+PR206's original head remains pinned at `041e5ca2`; its original CI/source gate
+passed independently (`466e07ca…`) and it is merged as main `fc336fa42`, exact
+tested tree `b1be9e0d` (merge receipt `565b7b47…`). The existing literal-operand
+check covers recognized direct includes,
 but the reader silently ignores alternative directive introducers and comments
 before or between their tokens. Full original-byte and independent review pins
 remain effective; this gap does not establish a bypass of that approval.
@@ -79,7 +81,7 @@ These observed facts and compatibility results do not create review approval.
 
 Evidence lives under primary ignored `validation/finite-header-lexical-20261101/`.
 The code is pushed on `codex/header-directive-prefixes`; its own full CI and
-main integration remain open after PR206's gate. The27,973-key inventory is
+main integration remain open, separately from PR206's closed gate. The27,973-key inventory is
 expected-only (predicted27,839pass plus the original134skip), with83focused
 groups/65zero-skip gates, source group2,137 and configured sum8,953. No CI or
 runtime success follows from that prediction.
