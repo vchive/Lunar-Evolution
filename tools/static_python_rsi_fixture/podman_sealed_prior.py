@@ -23,6 +23,7 @@ MAX_OUTPUT_BYTES = 128 * 1024**2
 _MAX_BYTES = 8 * 1024**3
 _MAX_FRAMES = 512
 _MAX_RECORDS = 32768
+_MAX_LEAF_HANDLES = 4096
 _CHUNK = 65536
 _SEAL_NAMES = ("F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
@@ -170,6 +171,12 @@ class _Entry:
     offset: int
 
 
+@dataclass(frozen=True, slots=True)
+class _Leaf:
+    record: _Record
+    held: _Held
+
+
 def _write(descriptor, block, offset, checkpoint):
     consumed = 0
     while consumed < len(block):
@@ -179,6 +186,100 @@ def _write(descriptor, block, offset, checkpoint):
         if type(written) is not int or not 0 < written <= len(block) - consumed:
             _refuse()
         consumed += written
+
+
+def _leaf_info(leaf, seals, checkpoint, *, borrowed=None, sealed=True):
+    """Verify an owned leaf, or an exact borrowed alias without taking ownership."""
+    checkpoint()
+    descriptor = leaf.held.fd if borrowed is None else borrowed
+    if (type(descriptor) is not int or descriptor < 0 or leaf.held.fd < 0
+            or leaf.held.identity is None):
+        _refuse()
+    info = os.fstat(descriptor)
+    checkpoint()
+    row = leaf.record
+    if (not stat.S_ISREG(info.st_mode) or _identity(info) != leaf.held.identity
+            or info.st_nlink != 0 or info.st_size != row.size
+            or stat.S_IMODE(info.st_mode) != (0o500 if row.executable else 0o400)):
+        _refuse()
+    if borrowed is None and not fcntl.fcntl(descriptor, fcntl.F_GETFD) & fcntl.FD_CLOEXEC:
+        _refuse()
+    actual = fcntl.fcntl(descriptor, fcntl.F_GET_SEALS)
+    checkpoint()
+    if (sealed and actual & seals != seals) or (not sealed and actual != 0):
+        _refuse()
+    return info
+
+
+def _verify_leaf_bytes(leaf, seals, checkpoint, *, borrowed=None):
+    before = _leaf_info(leaf, seals, checkpoint, borrowed=borrowed)
+    descriptor = leaf.held.fd if borrowed is None else borrowed
+    digest, count = hashlib.sha256(), 0
+    while count < leaf.record.size:
+        checkpoint()
+        block = os.pread(descriptor, min(_CHUNK, leaf.record.size - count), count)
+        checkpoint()
+        if not block or len(block) > leaf.record.size - count:
+            _refuse()
+        digest.update(block)
+        count += len(block)
+    checkpoint()
+    if (os.pread(descriptor, 1, leaf.record.size) != b""
+            or digest.hexdigest() != leaf.record.sha256
+            or _pin(_leaf_info(leaf, seals, checkpoint, borrowed=borrowed)) != _pin(before)):
+        _refuse()
+    checkpoint()
+
+
+class _SealedPriorLease:
+    """Private owned export handles; mount strings are not detached authority.
+
+    This object alone does not prove that an OCI runtime bound these objects or
+    that the worker's directory namespace stayed fixed while consuming them.
+    """
+
+    def __init__(self, bank, leaves, holders, pid):
+        self._bank, self._leaves, self._holders, self._pid = bank, leaves, holders, pid
+        self._closed = False
+        self._mounts = tuple((path, f"/proc/{pid}/fd/{leaf.held.fd}")
+                             for path, leaf in sorted(leaves.items()))
+
+    def _check(self):
+        self._bank._check()
+        if (self._closed or self._bank._export is not self or os.getpid() != self._pid
+                or self._bank._pending is not None):
+            _refuse()
+
+    def mounts(self):
+        self._check()
+        for leaf in self._leaves.values():
+            _verify_leaf_bytes(leaf, self._bank._seals, self._bank._checkpoint)
+        self._check()
+        return self._mounts
+
+    def verify_leaf(self, path, borrowed_fd):
+        self._check()
+        if (type(path) is not str or path not in self._leaves
+                or type(borrowed_fd) is not int or borrowed_fd < 0):
+            _refuse()
+        leaf = self._leaves[path]
+        _verify_leaf_bytes(leaf, self._bank._seals, self._bank._checkpoint)
+        _verify_leaf_bytes(leaf, self._bank._seals, self._bank._checkpoint, borrowed=borrowed_fd)
+        self._check()
+
+    def _detach(self):
+        # Remove authority before release; the original holders carry all FDs.
+        self._closed = True
+        holders, self._holders = self._holders, None
+        self._leaves = None
+        self._mounts = ()
+        if self._bank._export is self:
+            self._bank._export = None
+        return holders
+
+    def close(self, primary=None):
+        if not self._closed:
+            _release(self._detach(), primary)
 
 
 class _SealedPriorBatch:
@@ -294,6 +395,8 @@ class _SealedPriorBank:
         self._entries = {}
         self._frames = []
         self._pending = None
+        self._export = None
+        self._exporting = False
         self._bytes = 0
         self._closed = False
 
@@ -304,7 +407,7 @@ class _SealedPriorBank:
 
     def begin(self, records):
         self._check()
-        if self._pending is not None:
+        if self._pending is not None or self._export is not None or self._exporting:
             _refuse()
         expected = _records(records, self._checkpoint)
         if (set(expected) & set(self._entries) or len(expected) + len(self._entries) > _MAX_RECORDS
@@ -377,6 +480,60 @@ class _SealedPriorBank:
         if entry is None or entry.record != row or row.size > maximum:
             _refuse()
         return self._read_entry(entry, retain=True)
+
+    def export_worker_prior(self, records):
+        """Export every committed record into a separate command-lifetime memfd.
+
+        The source frames contain concatenated files, so only these complete
+        leaf objects can become file bind sources. No ordinary copy fallback is
+        supplied. The original bank budget also bounds the extra live bytes.
+        """
+        self._check()
+        if self._pending is not None or self._export is not None or self._exporting:
+            _refuse()
+        requested = _records(records, self._checkpoint)
+        if (requested != {path: entry.record for path, entry in self._entries.items()}
+                or len(requested) + len(self._frames) > _MAX_LEAF_HANDLES
+                or self._bytes + sum(row.size for row in requested.values()) > self._maximum_bytes):
+            _refuse()
+        # Allocate every owner slot before any descriptor or acquiring flag.
+        # Filling an existing slot cannot lose a fresh FD to list growth.
+        leaves = {}
+        holders = [_Held(-1) for _ in requested]
+        ordered = sorted(requested.items())
+        self._exporting = True
+        try:
+            pid = os.getpid()
+            for (path, row), held in zip(ordered, holders, strict=True):
+                self._check()
+                held.fd = os.memfd_create("lunar-prior-leaf", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+                held.identity = _identity(os.fstat(held.fd))
+                os.fchmod(held.fd, 0o400)
+                self._read_entry(self._entries[path], retain=False, destination=held.fd)
+                self._checkpoint()
+                os.fchmod(held.fd, 0o500 if row.executable else 0o400)
+                leaf = _Leaf(row, held)
+                _leaf_info(leaf, self._seals, self._checkpoint, sealed=False)
+                self._checkpoint()
+                fcntl.fcntl(held.fd, fcntl.F_ADD_SEALS, self._seals)
+                self._checkpoint()
+                _verify_leaf_bytes(leaf, self._seals, self._checkpoint)
+                leaves[path] = leaf
+            # Build every returned collection before publishing ownership. A
+            # control exception or allocation failure still releases this whole
+            # private pending export rather than exposing a partial lease.
+            lease = _SealedPriorLease(self, leaves, holders, pid)
+            self._check()
+            if (self._closed or self._pending is not None or self._export is not None
+                    or not self._exporting or os.getpid() != pid):
+                _refuse()
+            self._export = lease
+            self._exporting = False
+            return lease
+        except BaseException as primary:
+            self._exporting = False
+            _release(holders, primary)
+            raise
 
     def snapshot(self, root: Path, records):
         self._check()
@@ -472,16 +629,24 @@ class _SealedPriorBank:
     def close(self, primary=None):
         if self._closed:
             return
+        # Assemble the entire release vector before removing any owner. If an
+        # allocation fails, the still-open bank retains every original handle.
+        pending, export = self._pending, self._export
+        holders = [frame.held for frame in self._frames]
+        if pending is not None and pending._frame is not None:
+            holders.append(pending._frame.held)
+        if export is not None:
+            holders.extend(export._holders)
+        empty_entries, empty_frames, empty_pending_entries = {}, [], {}
         self._closed = True
-        pending, self._pending = self._pending, None
-        frames, self._frames = self._frames, []
-        self._entries = {}
+        self._pending, self._export = None, None
+        self._frames, self._entries = empty_frames, empty_entries
         self._bytes = 0
         if pending is not None:
             pending._active = False
             pending._failed = True
-            if pending._frame is not None:
-                frames.append(pending._frame)
-                pending._frame = None
-            pending._entries = {}
-        _release([frame.held for frame in frames], primary)
+            pending._frame = None
+            pending._entries = empty_pending_entries
+        if export is not None:
+            export._detach()
+        _release(holders, primary)

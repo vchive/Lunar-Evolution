@@ -71,7 +71,8 @@ def _compile(command: dict, available: dict[str, bool], *, source_data: bool = F
     if len(argv) < 11:
         _fail("compile")
     source, target = argv[argv.index("-c") + 1], argv[argv.index("-o") + 1]
-    if not source.startswith("@source/") or not target.startswith("@work/") or not target.endswith(".o"):
+    if (not source.startswith("@source/") or not source.endswith(".c")
+            or not target.startswith("@work/") or not target.endswith(".o")):
         _fail("compile")
     _prior(source, available, source_data=source_data)
     depfile = "@work/dependencies/" + target.removeprefix("@work/") + ".d"

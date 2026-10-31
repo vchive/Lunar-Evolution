@@ -100,7 +100,21 @@ Independent original review `0347ed863d4fa03c6d78170ae269717ff8b173c0c7cbd21896c
 verified the base plus eight exact file deltas, all six original payload hashes
 and the exact 110 JUnit keys including the two new static AST keys. This is a
 separate supplement, not a rerun of the 2,363-case batch or six-command smoke.
-The latter remains evidence for 634, not a claimed de066 execution. Final-source
-CI/source review and main integration remain pending. The expected inventory
-is 27,788 keys per Python (27,654 passes plus the same 134 skips); this is a
-prediction, not an observed CI result.
+The latter remains evidence for634, not a claimed de066 execution.
+
+## Original final-source integration — 2026-11-01
+
+PR205/head00bdde95b78821971e0035a1f8efa3602543f0c6 passed original
+run41214678677/attempt1,all45jobs. Independent review
+e1ae0b15327b1e600057a6731b6f9bda937028f362a09e46ccd4bf7d2e4ba700
+verified45 original ZIPs,2,799source files and all27,788keys per Python:
+27,654passes plus the same134skip keys,with all87 additions explicitly passed.
+The three exact releases remain3.11.17/3.12.15/3.13.17; historical originals,
+focused groups and genuine historical retry records remain preserved.
+
+It merged asmain a094d3872fa0aaafae4702b3066b0e3bcfc5e9ba,exact tested
+tree d560159421dac0828fe070dc53c4dfd95bd4793d,parents49acb921/00bdde95.
+Root verified-merge receipt1c799385d04a96edc2cf2e321c97a5b0d664914970854723b722f5b0dec6d89e
+confirms the join. No original test or CI was rerun. New successor final-source
+gates remain separate; worker immutable consumption and runtime/admission
+authority are still open.

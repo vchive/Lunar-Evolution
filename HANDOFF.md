@@ -1,3 +1,76 @@
+## 当前批次：有限编译语言与配置 include（2026-11-01）
+
+当前分支 `codex/sealed-prior-leaf-backing` 在逐文件 lease 上继续补齐两个实际
+preflight：原 dependency graph 只准声明的 `.c` 编译输入；configuration-review v2
+只准完整的 canonical relative literal include，并保留非 LF 控制符边界。v1、通用
+capture、有效 wire 与原 runner 不变。冻结7873dbe5/tree65bf13c0的一次11完整文件
+Linux3.12.3回归612pass，75新增全过，29.182472秒/600秒，零fail/error/skip/retry/
+timeout，原pytest与SSH均rc0/reaped；未重跑旧210例。2802源码/308目录前后及Gitblob/
+mode相等，290实际加载模块来源匹配；12原归档成员及75新增静态AST键独审8806d9dc…
+通过。Ruff、compileall、diff已通过。新CI27904键仍为expected-only；完整CI/main
+集成仍待完成。原件在主区ignored `validation/finite-driver-inputs-20261101/`。见
+`specs/193-static-python-rsi-launch/finite-driver-language-inputs.md`。
+
+PR205已合main为a094d3872fa0aaafae4702b3066b0e3bcfc5e9ba，tree d5601594…
+精确等于受测树；原run41214678677/attempt1全45成功，45ZIP/2799source及三版每版
+27788原键（27654pass+原134skip）独审e1ae0b15…通过，87新增显式pass。
+root合并核验1c799385…确认原parents49acb921/00bdde95。新批次完整CI另算。
+同树main push41222961732已completed/cancelled，不记为通过。
+实际sealed worker消费仍开放，全部runtime/admission/publication claims保持false。
+
+<!-- sealed-prior-leaf-export-current:start -->
+## 当前开发：逐文件封存导出（2026-10-31）
+
+本节覆盖下方旧进行中状态。PR205/head00bdde95已完成原CI及45原ZIP/source审查，
+合main为a094d387，精确受测tree d5601594；未重跑原CI。
+当前开发分支为 `codex/sealed-prior-leaf-backing`，后继自身CI/main仍待完成。
+
+已在原sealed bank新增command-owned逐文件memfd lease，保留同源bytes、四seal、
+exec/data模式、原checkpoint和bank+export总预算，整批发布、close-once及foreign FD
+reuse拒绝。冻结21d1662c/tree49849fa1的一次4完整文件集中Linux3.12.3回归210pass，
+41新增全部通过，4.072063秒/原600秒，零fail/error/skip/retry/timeout，原child与SSH
+rc0/reaped。2801源码/308目录前后相等，8模块来源精确；root原件独审4db5bcd2…
+核Git/归档、原JUnit及静态AST41新键，169旧键保持。Ruff/compileall/diff通过；不重跑。
+规格见 `specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md`。
+
+单次独立rootless Podman probe已实际在create拒绝：原rc125，
+`statfs /proc/1738954/fd/3: permission denied`。两个sealed host对象与import成功，
+但未到init/guest inode/写入拒绝/实际消费；helper未执行。原probe自身0.192390秒，
+parent0.264517秒/原120秒，零retry/timeout，原childreaped。35原归档成员及未知创建状态
+保留，已知image tag清理rc0；独审29b3f70a…及root核验35f4541c…通过的是失败记录，
+不是兼容验收。v1仅准备，唯一实际dispatch为v2，无fallback。
+
+lease尚未接入runner，不可据此称worker实际消费已受保护。先解决原service对精确
+sealed source的可见性，再做OCI/worker inventory/retained-history的精确挂载
+接线、目录名称保护及完整driver/source/toolchain仍待完成。runtime/production/
+publication权威保持false，不跑模型或远程评测。
+原件在主区ignored `validation/sealed-prior-leaf-export-20261031/` 与
+`validation/sealed-leaf-probe-20261031/`；27829后继键清单仍只是expected-only。
+
+### 后续只读身份观察（2026-11-01）
+
+独立metadata-v1原失败保留：同一固定systemctl命令rc0、stdout精确`0\n`、
+stderr空，在MainPID门拒绝，未获取ServiceRoot或进程元数据；不重跑v1。
+另审fresh metadata-v2，仅先通过原existing remote prefix调用一次只读info
+单字段唤起已有own socket服务，再走原systemctl和ServiceRoot。原120秒、零retry，
+rc0，1.394623秒，原child/SSH均reaped；receipt为07632905…。
+
+该次controller/service的held身份前后通过；user namespace不同
+（4026531837/4026538348），mount namespace不同（4026531832/4026538362），
+PID namespace相同（4026531836）。两者在controller视角的real/effective/saved/fs
+UID均2110、GID均2100；service uid_map为0→2110及1→1083040×65536，controller
+为全映射。controller CapEff/Prm为0，service为000001ffffffffff；两者NoNewPrivs0。
+controller自身PR_GET_DUMPABLE前后1，service dumpability未读取、仍unknown。
+2801源码bytes/exec bits及完整实际mode投影前后一致，8模块来源精确；
+source投影10633db4…、24原件清单20070f8f…。这些只说明此次不同user/mount上下文，
+不能回填旧probe根因或证明反向proc-FD可见性；claims全部保持false。
+
+namespace holder方向只到文献/设计准备；对应agent被自动安全审查以
+`possible cybersecurity risk`中止，未写入或执行v3，也未放宽权限或尝试替代机制。
+原worker实际接线、同inode消费及runtime验收仍未完成。这里只追加观察记录，
+冻结PR205、来源记录、代码/tests和旧210例回归均未改变或重跑。
+<!-- sealed-prior-leaf-export-current:end -->
+
 <!-- sealed-prior-transition-current:start -->
 ## 当前开发：原输出封存与后继 staging（2026-10-31）
 
@@ -25,8 +98,9 @@ prepare/dispatch，不能称烟测重试。
 后继de066089/tree2c628437仅补齐begin/snapshot获取失败时的cleanup-unknown记录，
 另做两个完整文件110pass（2新增），3.671546秒，零fail/error/skip/retry/timeout，
 原childreaped、2799源码前后相同，独审0347ed86…通过。此批与2363例分别报告；
-634六命令结果不改写成de066实跑。最终来源CI/source审查及本分支main集成待完成，
-27788-key后继清单仍只是expected-only。原件在主区ignored
+634六命令结果不改写成de066实跑。PR205原45job CI与source/ZIP独审e1ae0b15…现已
+通过，实际每版27788keys（27654pass+原134skip），87新增显式pass；合main a094d387，
+tree d5601594精确。后继新批次CI另算。原件在主区ignored
 `validation/sealed-prior-transition-20261031/`。
 规格为 `specs/193-static-python-rsi-launch/sealed-prior-transition.md`。
 
