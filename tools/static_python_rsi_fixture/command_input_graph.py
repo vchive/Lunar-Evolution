@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from tools.static_python_rsi_fixture.dependency_capture import MAX_DEPFILE_BYTES
-from tools.static_python_rsi_fixture.link_dependency_capture import _link
+from tools.static_python_rsi_fixture.link_dependency_capture import _explicit_support_link, _link
 from tools.static_python_rsi_fixture.standalone_linker import LINKER_PATH
 
 _ENVIRONMENT = {"LANG": "C", "LC_ALL": "C", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0"}
@@ -119,6 +119,22 @@ def _archive(command: dict, available: dict[str, bool]) -> None:
     _outputs(command, [(argv[3], False)])
 
 
+def _zig_link_capture(command: dict, target: str) -> None:
+    """The raw executor must enforce the same full tail as the capture plan.
+
+    ``_link`` also reads uninstrumented generator commands. Its implicit-link
+    parser therefore does not require a capture suffix. Do not let that broader
+    shape grant extra driver arguments at the actual pre-dispatch boundary.
+    """
+    suffix = ["-Xlinker", "--dependency-file", "-Xlinker",
+              "@work/link-dependencies/" + target.removeprefix("@work/") + ".d"]
+    argv = command["argv"]
+    if (argv[-4:] != suffix
+            or not _explicit_support_link(command) and argv[argv.index("-lm") + 3:] != suffix
+            or command["outputs"][1]["max_size"] != MAX_DEPFILE_BYTES):
+        _fail("link_capture")
+
+
 def _freezer(command: dict, available: dict[str, bool], *, source_data: bool = False) -> None:
     argv = command["argv"]
     if len(argv) != 4 or _GENERATOR.fullmatch(argv[1]) is None or not argv[2].startswith("@source/"):
@@ -166,6 +182,7 @@ def _validate_dependency_command_graph(recipe: dict, *, source_data: bool) -> No
                         _prior(reference, available)
                     depfile = "@work/link-dependencies/" + target.removeprefix("@work/") + ".d"
                     _outputs(command, [(target, True), (depfile, False)])
+                    _zig_link_capture(command, target)
             elif argv[:2] == ["@toolchain/zig", "ar"]:
                 if stage["stage"] != "link":
                     _fail("stage")

@@ -13,6 +13,15 @@ import select
 import stat
 from pathlib import Path
 
+from lunar_evolution.static_python_elf import (
+    StaticPythonELFError,
+    inspect_static_python_relocatable_elf,
+)
+from lunar_evolution.static_python_link_objects import (
+    MAX_LINK_ARCHIVE_BYTES,
+    StaticPythonLinkObjectError,
+    inspect_static_python_link_archive,
+)
 from tools.static_python_rsi_fixture import podman_vfs_root as vfs
 from tools.static_python_rsi_fixture import podman_vfs_snapshots as raw_store
 
@@ -79,7 +88,55 @@ def _stat_pin(info):
         "st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns"))
 
 
-def _observe_worker_inventory(role_fd, records, checkpoint):
+def _worker_link_inputs(argv, inventories, checkpoint=lambda: None):
+    """Select only this original command's explicit prior objects and archives.
+
+    Selection cannot discover a pin or grant a same-command output an input.
+    The complete finite command graph remains the executor's earlier gate.
+    """
+    from tools.static_python_rsi_fixture.link_dependency_capture import _link
+
+    checkpoint()
+    if (type(argv) is not list or not 0 < len(argv) <= 512
+            or any(type(arg) is not str or not 0 < len(arg) <= 4096 or "\x00" in arg for arg in argv)
+            or type(inventories) is not dict or set(inventories) != {"source", "toolchain", "work"}):
+        _refuse()
+    if argv[:2] == ["@toolchain/zig", "ar"]:
+        if (len(argv) < 5 or argv[2] != "rcsD"
+                or not argv[3].startswith("@work/libraries/") or not argv[3].endswith(".a")
+                or any(not ref.startswith("@work/") or not ref.endswith(".o") for ref in argv[4:])):
+            _refuse()
+        references = argv[4:]
+    else:
+        try:
+            link = _link({"argv": argv})
+        except (ValueError, KeyError, IndexError, TypeError):
+            _refuse()
+        references = [] if link is None else link[1]
+    if len(references) != len(set(references)):
+        _refuse()
+    selected = {role: [] for role in ("source", "toolchain", "work")}
+    rows = {}
+    for role, records in inventories.items():
+        _inventory_tree(records, checkpoint)
+        rows[role] = {}
+        for row in records:
+            checkpoint()
+            rows[role][row["path"]] = row
+    for reference in references:
+        checkpoint()
+        if not reference.startswith(("@toolchain/", "@work/")) or not reference.endswith((".o", ".a")):
+            _refuse()
+        role, path = reference[1:].split("/", 1)
+        record = rows[role].get(path)
+        if (record is None or record["executable"] is not False
+                or not 0 < record["size"] <= MAX_LINK_ARCHIVE_BYTES):
+            _refuse()
+        selected[role].append(path)
+    return {role: sorted(paths) for role, paths in selected.items()}
+
+
+def _observe_worker_inventory(role_fd, records, checkpoint, *, link_inputs=None):
     """One exact member/hash walk through a borrowed original worker role FD.
 
     Finite equality is not writer exclusion. No descriptor number or caller
@@ -87,6 +144,20 @@ def _observe_worker_inventory(role_fd, records, checkpoint):
     its nested opened descriptors.
     """
     tree, summary = _inventory_tree(records, checkpoint)
+    selected = set()
+    if link_inputs is not None:
+        if (type(link_inputs) is not list or any(type(path) is not str for path in link_inputs)
+                or len(link_inputs) != len(set(link_inputs))):
+            _refuse()
+        rows = {record["path"]: record for record in records}
+        for path in link_inputs:
+            checkpoint()
+            record = rows.get(path)
+            if (record is None or not path.endswith((".o", ".a"))
+                    or record["executable"] is not False
+                    or not 0 < record["size"] <= MAX_LINK_ARCHIVE_BYTES):
+                _refuse()
+            selected.add(path)
 
     def walk(descriptor, expected):
         checkpoint()
@@ -127,6 +198,7 @@ def _observe_worker_inventory(role_fd, records, checkpoint):
                             or bool(original.st_mode & 0o111) is not record["executable"]):
                         _refuse()
                     digest, count = hashlib.sha256(), 0
+                    retained = [] if record["path"] in selected else None
                     while True:
                         checkpoint()
                         block = os.read(child, min(65536, record["size"] + 1 - count))
@@ -137,8 +209,24 @@ def _observe_worker_inventory(role_fd, records, checkpoint):
                         if count > record["size"]:
                             _refuse()
                         digest.update(block)
+                        if retained is not None:
+                            retained.append(block)
                     if count != record["size"] or digest.hexdigest() != record["sha256"]:
                         _refuse()
+                    if retained is not None:
+                        if _stat_pin(os.fstat(child)) != _stat_pin(original):
+                            _refuse()
+                        image = b"".join(retained)
+                        retained.clear()
+                        try:
+                            if record["path"].endswith(".a"):
+                                inspect_static_python_link_archive(image, checkpoint=checkpoint)
+                            else:
+                                inspect_static_python_relocatable_elf(image, checkpoint=checkpoint)
+                        except (StaticPythonELFError, StaticPythonLinkObjectError):
+                            _refuse()
+                        finally:
+                            del image
                 if _stat_pin(os.fstat(child)) != _stat_pin(original):
                     _refuse()
                 repeated = os.open(name, flags, dir_fd=descriptor)
@@ -467,7 +555,7 @@ class _VfsExecutionLifetime:
                                     "pidfd_exited": not live, "mount_tables": mounts, "links": links})
         self.phase += 1
 
-    def _bind_worker_inputs(self, inputs, prior):
+    def _bind_worker_inputs(self, inputs, prior, *, argv=None):
         """Bind only the original run's inventories, before its start boundary."""
         if (self.closed or self.phase != 1 or not self.capture.worker_input_view
                 or hasattr(self, "_worker_inputs") or type(inputs) is not dict
@@ -476,6 +564,9 @@ class _VfsExecutionLifetime:
         self._check(live=True)
         inventories = {**inputs, "work": prior}
         _worker_input_summary(self.owner, inventories, self.checkpoint)
+        if argv is not None:
+            _worker_link_inputs(argv, inventories, self.checkpoint)
+            self._worker_argv = raw_store._json(argv)
         self.checkpoint()
         self._worker_inputs = raw_store._json(inventories)
         self.checkpoint()
@@ -488,8 +579,12 @@ class _VfsExecutionLifetime:
             self._check(live=True)
             inventories = raw_store._decode(self._worker_inputs)
             summary = _worker_input_summary(self.owner, inventories, self.checkpoint)
+            link_inputs = (_worker_link_inputs(raw_store._decode(self._worker_argv), inventories, self.checkpoint)
+                           if hasattr(self, "_worker_argv") else None)
             for role in ("source", "toolchain", "work"):
-                observed = _observe_worker_inventory(self.role_fds[role], inventories[role], self.checkpoint)
+                options = {"link_inputs": link_inputs[role]} if link_inputs is not None else {}
+                observed = _observe_worker_inventory(
+                    self.role_fds[role], inventories[role], self.checkpoint, **options)
                 if observed != {key: value for key, value in summary["roles"][role].items()
                                 if key != "root_identity"}:
                     _refuse()

@@ -1028,7 +1028,7 @@ class PodmanCustody:
                     self.checkpoint,
                 )
                 if self.vfs_worker_input_view:
-                    lifetime._bind_worker_inputs(inputs, prior)
+                    lifetime._bind_worker_inputs(inputs, prior, argv=argv)
             if capture is not None:
                 observation["vfs_snapshots"] = capture.complete({
                     "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,

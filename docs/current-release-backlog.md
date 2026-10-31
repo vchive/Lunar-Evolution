@@ -1,11 +1,12 @@
-## Current closeout — worker views, link formats and CI patch drift, 2026-10-31
+## Current closeout — PR202 merged; configured driver inputs next, 2026-10-31
 
 PR200 passed all 45 original jobs and independent source/artifact review, then
 merged as `dd46fe0b`, exact tested tree `42b43430`. PR201's original attempt
 41142583935 failed: all 42 test jobs passed, but the 3.13 focused aggregation
 correctly refused mixed 3.13.16/3.13.17 provenance. The independent failed-run
 audit (`1d5e7523…`) preserves all 45 ZIPs, 44 normal receipts and that failure.
-PR201 must be superseded rather than merged or relabeled successful.
+PR201's head entered main as an ancestor of PR202. GitHub now records PR201 as
+closed and merged; its original failed CI has not been relabeled successful.
 
 The successor combines original worker-input-view validation, explicit bounded
 GNU ar/x86_64 ET_REL consumption and exact Python release pins shared by test
@@ -19,8 +20,28 @@ originals passed independent review (`4c94cdc0…`); no final image was executed
 The strict whole-history reader observation also passed in156.101037s /300s,
 zero retry;38 independent checks reconstructed its53,563-byte canonical candidate
 (ad075f62…). Both-reader equality is the pinned harness result; no separate
-legacy wire was saved or rerun by the auditor. P0 is now this successor's
-final-source CI, independent review and verified main integration.
+legacy wire was saved or rerun by the auditor.
+
+PR202/head `e8a06e49` completed its own run41153073503/attempt1 with all 45 jobs
+successful. Independent source/original review verified all 45 ZIP digests,
+CRCs and member hashes, 27,427 cases per Python (27,293 passes plus the same 134
+skip keys), and all 14 test-role plus focused-source full Python strings at
+3.11.17/3.12.15/3.13.17. Terminal audit receipt: `19259aec…`. Verified merge
+`d2cc02057a116b322421003abe4b45c566dd1a88` has the exact tested tree
+`f9b80832965136cd57e1bbf1d82f60b9e462d71f` and original parents dd46fe0b/e8a06e49.
+This closes this successor's P0 integration gate; main push CI is a separate run.
+The current branch is `codex/configured-driver-inputs` in the same managed
+worktree. PR201 is indirectly merged.
+
+That branch now checks each original worker command's selected `.o/.a` in the
+same role-FD inventory read before start, and rejects extra Zig cc link-tail
+options before preflight. Frozen018b2173 passed all2,057 cases in47complete Linux
+files, including53additions, zero failures/errors/skips/retries in46.259197s;
+all2,787source records matched before/after, Ruff/compileall/diff passed. This
+is finite software enforcement, not complete driver closure or custody. Its own
+successor CI/source integration remains pending; see
+[the current contract](../specs/193-static-python-rsi-launch/worker-link-input-gates.md).
+
 P1 remains complete configured driver inputs, original immutable consumption,
 protected output transitions and descendant drainage, followed by accepted
 image/live ownership, the first scheduler context loader, production RSI CLI
