@@ -62,5 +62,45 @@ Independent original review `cb3fbaa69dd5472ed55416b1fd99c67c145e94697d8160f9a86
 verified all 53 file groups and reconstructed all 85 new raw JUnit keys from static
 AST parameters (59 kernel-owner cases and 26 integration cases), without importing
 pytest or rerunning tests. Original evidence is under primary ignored
-`validation/sealed-prior-transition-20261031/`. A separate actual Podman
-compatibility observation and final-source CI integration remain pending.
+`validation/sealed-prior-transition-20261031/`.
+
+## Separate actual compatibility observation
+
+The same frozen `634ac185` source completed one fresh six-command inert Podman
+observation in 14.828434830s within the original 600s allowance. Prepare and
+execution were each dispatched once, with zero automatic retries or timeouts,
+empty stderr and the original child and SSH transport reaped at rc0. All 2,799
+source files and 308 directories remained equal before/after.
+
+Independent audit `482eeb80a33c14d40eb32e6307406a76ae9664f34b1376531ef36c1148cf55c5`
+passed all 68 checks: 663 safe unique archive members, 662 manifest records,
+505 payload files, 102 VFS and 108 lifetime original records, all original role
+inventories, FD identity/bytes/pins, five phases and six command vectors. Prior
+input counts were 0/2/4/6/8/9. Fixture inputs and object/archive/link outputs
+matched exactly. This is finite inert compatibility evidence, without runtime,
+production, closure or publication acceptance.
+
+The first 60s wrapper timeout affected only source transfer, before preparation
+or execution. Its partial file is retained. A separately bounded transfer
+recovery completed before the first prepare and smoke dispatch; the successful
+execution is not a retry of a failed smoke.
+
+## Narrow cleanup-recording supplement
+
+Frozen `de066089957c3dd205d3bf07e9a81c45528a35b9`, tree
+`2c6284372fd94757d2d30990cbfd2d8b988d4c2f`, additionally persists the private
+cleanup-unknown note when begin/snapshot acquisition fails before returning
+control. It preserves the original error and does not alter the successful path.
+Two complete Linux files passed separately: 28 integration and 82 aggregation
+cases, 110 total including two additions, in 3.671546345s/600s, zero failure,
+error, skip, retry or timeout, with the original child reaped. All 2,799 source
+files matched before/after and Git blobs/modes; Ruff/compileall/diff passed.
+
+Independent original review `0347ed863d4fa03c6d78170ae269717ff8b173c0c7cbd21896cbdc5f3071bf1c`
+verified the base plus eight exact file deltas, all six original payload hashes
+and the exact 110 JUnit keys including the two new static AST keys. This is a
+separate supplement, not a rerun of the 2,363-case batch or six-command smoke.
+The latter remains evidence for 634, not a claimed de066 execution. Final-source
+CI/source review and main integration remain pending. The expected inventory
+is 27,788 keys per Python (27,654 passes plus the same 134 skips); this is a
+prediction, not an observed CI result.

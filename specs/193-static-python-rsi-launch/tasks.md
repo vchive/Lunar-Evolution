@@ -619,6 +619,13 @@ See `sealed-prior-transition.md`; the final guest bind backing remains separate.
   53files/2,363pass/85new,51.672603s, zero fail/error/skip/retry/timeout,
   original child reaped;2,799source records unchanged and independent original
   reviewcb3fbaa6… passed. Ruff, compileall and diff checks pass.
-- [ ] Complete the separately reviewed fresh six-command Podman observation;
-  preserve pre-execution transport failures without treating them as test runs.
+- [x] Complete the separately reviewed fresh six-command Podman observation on
+  634ac185:14.828435s/600s, one prepare/dispatch, zero retry/timeout, rc0/reaped;
+  independent original audit482eeb80… passes68checks over663members,505files,
+  210raw records and unchanged2799source files. Preserve the first transfer-only
+  timeout/partial; no smoke ran until transport recovery completed.
+- [x] Retain private cleanup-unknown acquisition notes in the original report;
+  separately validate de066089 in2completefiles:110pass/2new,3.671546s,zero
+  fail/error/skip/retry/timeout,source2799unchanged,independent audit0347ed86….
+  Do not combine the batches or relabel634smoke as de066execution.
 - [ ] Complete this successor's final-source CI/source review and integration.

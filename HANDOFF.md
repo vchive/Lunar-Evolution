@@ -6,7 +6,8 @@
 `83b833117c509377c1012223fc2818155a28a4a6` 精确等于受测树，parents
 `da251e3e` / `7f5c5b51`。原 run41181892998/attempt1 全45/45成功；独审
 f679fcaf… 核45原ZIP、2795源码及每版27701keys（27567pass+原134skip），
-所有221新增显式通过。root 合并核验收据1c47918d…；未重跑测试，main push CI另算。
+所有221新增显式通过。root 合并核验收据1c47918d…；未重跑测试。
+同树重复main push run41211325299已completed/cancelled；不将其记为成功。
 
 当前同工作区分支 `codex/sealed-prior-transition`，从已合 main 继续。
 已实现原 output role 的同一 held file FD → 单命令 memfd frame → 四项内核seal，
@@ -15,7 +16,18 @@ bank 的封存字节，不重新从可变 work 路径取源。原预算贯穿，
 清理未知保留。冻结634ac185/tree786af733的53完整文件集中 Linux3.12.3 回归
 2363pass（85新增），51.672603秒，零fail/error/skip/retry/timeout，原childreaped。
 2799源码/Gitblob/mode/归档前后相同；独审cb3fbaa6…还静态展开85新键与原JUnit逐键核对。
-Ruff/compileall/diff通过；原批次不重跑。fresh六命令Podman接线验证与本分支CI待完成。
+Ruff/compileall/diff通过；原批次不重跑。同634源码的fresh六命令Podman实跑通过，
+14.828435秒/原600秒，实际prepare/dispatch各一次，零retry/timeout，原child和SSH均
+rc0/reaped。完整663归档成员、505原文件、210份VFS/lifetime记录及2799源码前后一致，
+独审482eeb80…的68项检查全过。首次60秒仅传输超时，partial保留；恢复传输后才首次
+prepare/dispatch，不能称烟测重试。
+
+后继de066089/tree2c628437仅补齐begin/snapshot获取失败时的cleanup-unknown记录，
+另做两个完整文件110pass（2新增），3.671546秒，零fail/error/skip/retry/timeout，
+原childreaped、2799源码前后相同，独审0347ed86…通过。此批与2363例分别报告；
+634六命令结果不改写成de066实跑。最终来源CI/source审查及本分支main集成待完成，
+27788-key后继清单仍只是expected-only。原件在主区ignored
+`validation/sealed-prior-transition-20261031/`。
 规格为 `specs/193-static-python-rsi-launch/sealed-prior-transition.md`。
 
 这只保护 output→staging 来源；后继普通 bind 的实际消费背板仍未全时段封存。
