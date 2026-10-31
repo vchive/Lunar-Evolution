@@ -520,3 +520,13 @@ not an approval of the previously retained real configure observation.
 - [ ] Establish accepted immutable build-input custody, actual complete static
   CPython build/runtime and real solver/production CLI acceptance. F02c/L08
   remain binding; admission and online publication remain false.
+
+## Opt-in retained link-object format — 2026-10-31
+
+- [x] Inspect retained real support headers without executing or modifying them;
+  specify the finite ordinary GNU ar and x86_64 ET_REL contract in
+  `link-object-format.md`.
+- [x] Implement bounded parsing and explicitly selected original support staging
+  and worker-view retained-candidate consumption; preserve older APIs/bytes.
+- [ ] Complete the code/test batch, then collect focused regression, Ruff,
+  compileall and diff checks once. No full CPython rebuild is claimed here.

@@ -14,6 +14,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from lunar_evolution.static_python_elf import (
+    StaticPythonELFError,
+    inspect_static_python_relocatable_elf,
+)
+from lunar_evolution.static_python_link_objects import (
+    StaticPythonLinkObjectError,
+    inspect_static_python_link_archive,
+)
 from tools.static_python_rsi_fixture.build_dependency_consumer import (
     _read_pin,
     _report_outputs,
@@ -218,6 +226,39 @@ def stage_zig_lld_support_selection(
     for row in tools + [r for r in profile["inputs"] if r["path"] != "zig"]:
         _read_pin(root, row, check)
     check()
+
+
+def stage_zig_lld_support_selection_object_format(
+    preparation: RSIProfilePreparation, *, selection: ZigLLDSupportSelection,
+    expected_selection_sha256: str, zig_manifest_bytes: bytes, zig_lld_profile_bytes: bytes,
+    expected_zig_lld_profile_sha256: str, toolchain_root: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None, monotonic: Callable[[], float] = time.monotonic,
+) -> None:
+    """Opt in to inline ar/ET_REL checks before the original fresh staging path.
+
+    Pins, selection bytes and the stage API retain their original format. This
+    function does not run a generator or certify support generation/custody.
+    """
+    check = _checkpoint(deadline, interrupted, monotonic)
+    tools = complete_zig_inventory(zig_manifest_bytes)
+    profile = _profile(zig_lld_profile_bytes, expected_zig_lld_profile_sha256)
+    _selection(selection, expected_selection_sha256, preparation_sha=preparation.sha256,
+               tools=tools, profile=profile, profile_sha=expected_zig_lld_profile_sha256)
+    try:
+        for path, raw in selection.files:
+            check()
+            if path.endswith(".a"):
+                inspect_static_python_link_archive(raw, checkpoint=check)
+            else:
+                inspect_static_python_relocatable_elf(raw, checkpoint=check)
+    except (StaticPythonELFError, StaticPythonLinkObjectError):
+        _fail("object_format")
+    stage_zig_lld_support_selection(
+        preparation, selection=selection, expected_selection_sha256=expected_selection_sha256,
+        zig_manifest_bytes=zig_manifest_bytes, zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
+        toolchain_root=toolchain_root, deadline=deadline, interrupted=interrupted, monotonic=monotonic,
+    )
 
 
 def run_selected_zig_lld_seed_capture(
