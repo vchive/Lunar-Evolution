@@ -420,6 +420,9 @@ def strict_history(worker_history, monkeypatch):
         rows = [record(path, raw, path == "zig") for path, raw in sorted(tools.items())]
         history["wire"]["inputs"]["toolchain"] = rows
         for path, raw in tools.items():
+            target = history["options"]["workspace"] / "toolchain" / path
+            if target.exists():
+                target.chmod(0o700 if path == "zig" else 0o600)
             write(history["options"]["workspace"] / "toolchain", path, raw, 0o500 if path == "zig" else 0o444)
         profile = canonical({"schema": PROFILE_SCHEMA, "target": "x86_64-linux-musl",
                              "linker_execution": "static-x86_64-elf", "crt_mode": "crt1",
