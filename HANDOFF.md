@@ -1,3 +1,32 @@
+## 当前续开发：配置 header 的有限词法边界（2026-11-01）
+
+PR205 已合 main 为 `a094d387`。后继 PR206/head `041e5ca2` 已创建并 attached，
+原 CI `41223482974` 仍在进行；其原件审查脚本和最终源码包已经准备，不能将其
+27,904 个 expected-only 键记为已通过。PR206 的远端 head 保持冻结。
+
+本地继续到 `codex/header-directive-prefixes`，受测提交 `1fd00732`、tree
+`bacbfd86`，已推送。新增纯 v2 词法拒绝层：行首注释、替代 introducer、
+未闭合词法状态和块注释/旧 inventory 冲突明确拒绝，保留 v1、原 include 错误码、
+审查 pins 和成功 wire。独立代码/测试静审后，一次四完整文件 Linux3.12.3 回归
+458 个 pytest 全过，含全部 69 新增，27.364832 秒/600 秒，零 fail/error/skip/retry。
+2,803 源码、308 目录及 273 实际模块来源匹配；原件独审 `7de57ee4…` 通过。
+
+原批次整体仍为失败：同 child 的兼容 harness 把 observed facts 的嵌套字段误读为
+顶层字段，已调用 parser 后发生 KeyError，child97/SSH1；17 件原件和失败记录保留。
+没有重跑458例。独审修正后的必要纯解析补验单独通过：1.166622 秒/120 秒，
+rc0/reaped、零 retry、一次 `_header`、零 pytest/collection；699 条实际 inventory
+与两套旧 observed facts 一致，2,803 源码/308 目录、245 实际模块来源及全部输入
+pins 前后匹配。补验原件 `a3bd7be0…` 保留，不授予新审批，不改写原批次失败。
+Ruff、compileall、diff 检查通过。详见
+`specs/193-static-python-rsi-launch/finite-header-lexical-boundary.md`；主区 ignored
+`validation/finite-header-lexical-20261101/` 保存两批独立原件。
+
+该分支自己的完整 CI/合 main 尚未进行；27,973 键仍仅为 expected-only。先完成
+PR206 自身 CI/source/合并门，再推进此后继。实际 sealed worker 消费、完整输入保护、
+accepted runtime、首 scheduler context、生产 CLI 和复制 case 验收仍开放。
+先前 namespace-holder 准备被自动审查以 `possible cybersecurity risk` 中止的记录
+仍有效；本轮只开发纯解析层，没有重试该机制，所有 authority claims 保持 false。
+
 ## 当前批次：有限编译语言与配置 include（2026-11-01）
 
 当前分支 `codex/sealed-prior-leaf-backing` 在逐文件 lease 上继续补齐两个实际
