@@ -1,3 +1,81 @@
+## Current batch — finite driver-language inputs, 2026-11-01
+
+The successor adds two existing-path preflights: declared `.c` compilation
+inputs and complete canonical relative literal includes in configuration-review
+v2, including non-LF lexical boundaries. The v1 reader, generic capture,
+successful wire and runner remain unchanged. Frozen7873dbe5/tree65bf13c0 passed
+one eleven-complete-file Linux3.12.3 batch:612pass, including75new,29.182472s/
+600s,zero failure/error/skip/retry/timeout,original pytest and SSH rc0/reaped.
+All2,802 source files/308directories,Git blobs/modes and290 actual module
+origins match. Independent original review8806d9dc… verified12 archive members,
+all612JUnit keys and75 additions by static AST. Ruff/compileall/diff pass.
+The earlier210-case leaf batch is not rerun. The27,904-key successor inventory
+is expected-only; final-source CI/main remains pending. Originals are under
+primary ignored `validation/finite-driver-inputs-20261101/`.
+See [the contract](../specs/193-static-python-rsi-launch/finite-driver-language-inputs.md).
+PR205's original CI/main gate is closed below; this successor's gate remains
+separate. All authority claims stay false.
+
+## Current batch — sealed per-file export owner, 2026-10-31
+
+PR205/head00bdde95 passed original run41214678677/attempt1,45/45jobs, and
+independent original/source reviewe1ae0b15… over45ZIPs/2,799source files. Each
+Python retains27,788keys (27,654pass and the same134skip),all87 additions pass.
+It merged asmain a094d387,exact tested treed5601594,parents49acb921/00bdde95;
+root verified-merge receipt1c799385… passes. The same-tree main push
+run41222961732 is completed/cancelled,not passed. The successor branch
+`codex/sealed-prior-leaf-backing` adds a private per-file memfd lease to
+the existing sealed bank, preserving original checkpoints, combined byte/handle
+budgets, exact inode/record ownership, all-or-none acquisition and cleanup.
+Frozen21d1662c/tree49849fa1 passed the single four-complete-file Linux3.12.3
+batch:210pass including41new,4.072063s/600s,zero failure/error/skip/retry/timeout,
+original child and transport reaped/rc0. Source2801/directories308 before/after,
+eight module origins, Git/archive and exact JUnit keys were verified; root
+independent original review4db5bcd2… passed. Ruff/compileall/diff passed.
+The27829-key successor inventory is still expected-only. See [the contract](../specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md).
+
+The separately reviewed single rootless probe was refused at original create:
+rc125,`statfs /proc/1738954/fd/3: permission denied`. Both sealed host objects
+and image import succeeded; no guest init, same-inode observation, write-denial
+probe or helper execution occurred. Probe/parent elapsed0.192390/0.264517s,
+original120s,zero retries/timeouts,child reaped. All35 archived originals and
+creation-unknown state are preserved; known image-tag cleanup returned0.
+Reviews29b3f70a…/35f4541c… verify this failure, not compatibility acceptance.
+
+This owner is not wired into the worker yet. Resolving exact service/source
+visibility precedes original OCI/inventory/history integration. Leaf byte
+protection does not establish stable directory names or
+complete driver/source/toolchain protection. All authority claims stay false.
+
+### Later read-only process metadata — 2026-11-01
+
+Preserve metadata-v1's original failure: fixed systemctl returned rc0 with
+exact stdout `0\n` and empty stderr, so no ServiceRoot/process metadata was
+acquired. It was not retried. Separately reviewed fresh metadata-v2 adds only
+one read-only single-field info call through the original existing remote
+prefix, activating the existing own socket service before the original
+systemctl/ServiceRoot selection. It completed rc0 in1.394623s under the
+original120s, zero retry, with original child/SSH reaped; receipt07632905….
+
+The held controller/service identities verified before/after. Their user and
+mount namespaces differ; their PID namespace is the same. Both report host-view
+filesystem UID2110/GID2100, but the controller has the full uid map while the
+service maps0→2110 and1→1083040×65536. Controller CapEff/Prm=0 versus the
+service's000001ffffffffff; both NoNewPrivs=0. Calling-controller
+PR_GET_DUMPABLE=1 before/after; service dumpability remains unknown. All2,801
+source bytes/executable bits and the complete actual-mode projection remained
+equal, with eight frozen module origins. Source projection10633db4… and
+24-original manifest20070f8f… are preserved under primary ignored
+`validation/sealed-leaf-probe-20261031/`.
+
+This later comparison does not establish the historical proc-FD refusal cause
+or reverse service access. The namespace-holder direction reached literature/
+design preparation only; automatic safety review stopped its agent for
+`possible cybersecurity risk`. No v3 was written or executed, no permission
+was relaxed and no alternate mechanism was attempted. Actual worker wiring,
+same-inode consumption and runtime acceptance remain open. PR205 stays frozen;
+code/tests/source records and the previous210-case regression are unchanged.
+
 ## Current batch — sealed output-to-staging transition, 2026-10-31
 
 PR204 is merged as `49acb921`, exactly tested tree `83b83311`, with parents
@@ -32,7 +110,10 @@ zero failures/errors/skips/retries/timeouts, unchanged 2,799 source files and
 original child reaped; independent review `0347ed86…` passed. These batches
 are not combined into one full-run claim, and the 634 smoke remains scoped to
 634. Final-source CI/source review and this branch's main integration are
-pending; the 27,788-key successor inventory remains expected-only.
+closed by PR205's original45/45CI/source review and exact-tree main merge
+a094d387. Its27,788keys per Python are now observed original results, with
+27,654passes and the same134skips; all87additions explicitly pass. Newer
+successor inventories retain their own separate gates.
 See [the contract](../specs/193-static-python-rsi-launch/sealed-prior-transition.md).
 
 Necessary P1 remains protection of the actual later worker backing and complete

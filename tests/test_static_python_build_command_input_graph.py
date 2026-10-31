@@ -26,6 +26,8 @@ from tools.static_python_rsi_fixture.command_input_graph import (
     BuildCommandInputError,
     validate_dependency_command_graph,
 )
+from tools.static_python_rsi_fixture.concrete_recipe import ConcreteBuildRecipe
+from tools.static_python_rsi_fixture.execution_backend import RECIPE_V3_SCHEMA
 from tools.static_python_rsi_fixture.runtime_closure import canonical
 
 _COPY_IMAGE = r'''
@@ -274,4 +276,81 @@ def test_rejected_real_driver_option_is_refused_before_dispatch(build, monkeypat
     _forbid_runner(monkeypatch)
     with pytest.raises(BuildCommandInputError, match="compile_option"):
         consumer.run_dependency_checked_build(preparation, **options)
+    assert not options["workspace"].exists()
+
+
+def _source_language_case(build, version):
+    preparation, options = build()
+    if version == "v4":
+        generated = capture._data_source_capture_successor(
+            ConcreteBuildRecipe(options["recipe_bytes"], (), options["manifest_bytes"]),
+            original_source_inventory_sha256=sha(canonical(
+                json.loads(options["recipe_bytes"])["inputs"]["source"])),
+        )
+        options.update(recipe_bytes=generated.recipe_bytes, expected_recipe_sha256=generated.sha256,
+                       manifest_bytes=generated.manifest_bytes,
+                       expected_manifest_sha256=sha(generated.manifest_bytes))
+    options["custody_backend"] = ("podman-snapshots-source-data-v2" if version == "v4" else
+                                  "podman")
+    runner = (consumer.run_dependency_checked_build_v4 if version == "v4" else
+              consumer.run_dependency_checked_build)
+    return preparation, options, runner
+
+
+@pytest.mark.parametrize("version", ["v3", "v4"])
+@pytest.mark.parametrize("extension", [".s", ".S", ".i", ".cpp", ".o"])
+def test_alternate_source_language_refuses_before_original_consumer_preflight(
+    build, monkeypatch, version, extension,
+):
+    preparation, options, runner = _source_language_case(build, version)
+    wire, manifest = json.loads(options["recipe_bytes"]), json.loads(options["manifest_bytes"])
+    source = "unit" + extension
+    wire["inputs"]["source"].append({**wire["inputs"]["source"][0], "path": source})
+    wire["inputs"]["source"].sort(key=lambda record: record["path"])
+    argv = wire["stages"][0]["commands"][0]["argv"]
+    argv[argv.index("-c") + 1] = "@source/" + source
+    manifest["compilations"], manifest["links"] = capture._capture_plan(wire, instrumented=True)
+    raw = canonical(wire)
+    manifest["recipe_sha256"] = sha(raw)
+    if version == "v4":
+        original = {key: value for key, value in wire.items() if key != "input_projection"}
+        original["schema"] = RECIPE_V3_SCHEMA
+        manifest.update(base_recipe_sha256=sha(canonical(original)),
+                        source_inventory_sha256=sha(canonical(wire["inputs"]["source"])),
+                        inputs_sha256=sha(canonical(wire["inputs"])))
+    options.update(recipe_bytes=raw, expected_recipe_sha256=sha(raw),
+                   manifest_bytes=canonical(manifest), expected_manifest_sha256=sha(canonical(manifest)))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("alternate source language reached original runner or preflight")
+
+    from tools.static_python_rsi_fixture import podman_custody as custody
+
+    monkeypatch.setattr(consumer, "run_pinned_build_v3", forbidden)
+    monkeypatch.setattr(consumer, "run_pinned_build_v4", forbidden)
+    monkeypatch.setattr(custody, "preflight_podman_custody", forbidden)
+    with pytest.raises(BuildCommandInputError, match="^build_command_input_compile$"):
+        runner(preparation, **options)
+    assert not options["workspace"].exists()
+
+
+@pytest.mark.parametrize("version", ["v3", "v4"])
+def test_reviewed_c_source_reaches_original_consumer_preflight_without_wire_changes(
+    build, monkeypatch, version,
+):
+    preparation, options, runner = _source_language_case(build, version)
+    original_wire, original_manifest = options["recipe_bytes"], options["manifest_bytes"]
+
+    class PreflightReached(BaseException):
+        pass
+
+    def preflight():
+        raise PreflightReached
+
+    from tools.static_python_rsi_fixture import podman_custody as custody
+
+    monkeypatch.setattr(custody, "preflight_podman_custody", preflight)
+    with pytest.raises(PreflightReached):
+        runner(preparation, **options)
+    assert options["recipe_bytes"] == original_wire and options["manifest_bytes"] == original_manifest
     assert not options["workspace"].exists()
