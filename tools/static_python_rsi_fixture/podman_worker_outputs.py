@@ -9,7 +9,7 @@ protected output transitions, descendant drain or runtime acceptance.
 from __future__ import annotations
 
 
-def verify_worker_outputs(output_fd, records, checkpoint):
+def verify_worker_outputs(output_fd, records, checkpoint, *, _capture_file=None):
     """Verify the complete original output tree using the output size bound.
 
     The original descriptor is borrowed and remains open. The returned value is
@@ -19,4 +19,5 @@ def verify_worker_outputs(output_fd, records, checkpoint):
     from tools.static_python_rsi_fixture.execution_backend import MAX_OUTPUT_BYTES
     from tools.static_python_rsi_fixture.podman_vfs_lifetime import _observe_worker_inventory
 
-    return _observe_worker_inventory(output_fd, records, checkpoint, maximum=MAX_OUTPUT_BYTES)
+    options = {"_capture_file": _capture_file} if _capture_file is not None else {}
+    return _observe_worker_inventory(output_fd, records, checkpoint, maximum=MAX_OUTPUT_BYTES, **options)

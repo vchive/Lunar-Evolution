@@ -1,3 +1,26 @@
+## Current batch — sealed output-to-staging transition, 2026-10-31
+
+PR204 is merged as `49acb921`, exactly tested tree `83b83311`, with parents
+`da251e3e` / `7f5c5b51`. Its original run41181892998/attempt1 passed45/45jobs.
+Independent original/source audit f679fcaf… verified45ZIPs,2,795source files,
+27,701keys per Python (27,567pass and the same134skips), all221additions,
+83focused groups and historical originals. Root merge verification1c47918d…
+confirms the tree and parents; main push CI is separate. This supersedes the
+pending PR204 integration statements below.
+
+The active branch is `codex/sealed-prior-transition`. The existing worker-view
+runner now captures original output FDs into attempt-owned kernel-sealed frames
+and stages later prior inputs from those same frames. Publication waits for
+the entire output group and successful original lifetime release. A concentrated
+Linux affected regression is pending; see [the contract](../specs/193-static-python-rsi-launch/sealed-prior-transition.md).
+
+Necessary P1 remains protection of the actual later worker backing and complete
+driver/source/toolchain inputs, then accepted static image/material ownership,
+the first scheduler context and production CLI/local copied-case acceptance.
+Fixed-U and external-writer/account/root/ACL/cgroup conditions remain real
+prerequisites. The sealed staging carrier alone does not close them. Remote
+evaluators, multi-host services and model training remain outside this batch.
+
 ## Current batch — original-worker boundaries, 2026-10-31
 
 The active branch is `codex/parallel-build-closure`, continuing PR203/head

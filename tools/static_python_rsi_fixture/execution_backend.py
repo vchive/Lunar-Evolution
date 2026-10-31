@@ -16,6 +16,7 @@ import selectors
 import signal
 import stat
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -685,6 +686,8 @@ def _run_pinned_build(
     active_stage = None
     active_command = None
     operation = "recipe.write"
+    custody = None
+    sealed_prior_close_unknown = False
     try:
         _write_once(destination / "recipe.json", recipe_bytes)
         operation = "attempt.write"
@@ -860,6 +863,19 @@ def _run_pinned_build(
         )
     except Exception:  # noqa: BLE001 - preserve partial workspace without leaking paths
         reason = "attempt_io_failure"
+    finally:
+        if vfs_worker_input_view and custody is not None:
+            primary = sys.exc_info()[1]
+            try:
+                custody.close()
+            except BaseException as error:
+                sealed_prior_close_unknown = True
+                if primary is not None:
+                    primary.add_note("podman_sealed_prior_close_unknown")
+                elif reason is None and not isinstance(error, Exception):
+                    raise
+                elif reason is None:
+                    reason = "custody_sealed_prior_close_unknown"
     payload = {
         "schema": "lunar-static-python-build-execution-report-v8" if vfs_worker_input_view else
                   "lunar-static-python-build-execution-report-v7" if vfs_lifetime else
@@ -882,6 +898,8 @@ def _run_pinned_build(
         payload["custody_backend"] = source_data_backend
     if failure_detail is not None:
         payload["failure_detail"] = dict(failure_detail)
+    if sealed_prior_close_unknown:
+        payload["sealed_prior_close_unknown"] = True
     report = BuildExecutionReport(
         recipe_sha256=expected_recipe_sha256, completed_stages=tuple(completed),
         stage_evidence=tuple(_freeze(item) for item in stages), status=payload["status"], reason=reason,

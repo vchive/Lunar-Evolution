@@ -561,6 +561,11 @@ class PodmanCustody:
         self.vfs_roots, self.vfs_retained = vfs_roots, vfs_retained
         self.vfs_lifetime = vfs_lifetime
         self.vfs_worker_input_view = vfs_worker_input_view
+        self._sealed_prior = None
+        if vfs_worker_input_view:
+            from tools.static_python_rsi_fixture.podman_sealed_prior import _SealedPriorBank
+
+            self._sealed_prior = _SealedPriorBank(checkpoint)
         self.base_image: tuple[str, Path, dict] | None = None
         self.root = destination / "custody"
         self.root.mkdir(mode=0o700) if vfs_retained else self.root.mkdir()
@@ -571,6 +576,11 @@ class PodmanCustody:
             self.snapshot_store = VfsSnapshotStore(destination, checkpoint)
         self.environment = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
                             "HOME": str(destination / "work" / ".home")}
+
+    def close(self) -> None:
+        """Release this attempt's original sealed staging sources once."""
+        if self._sealed_prior is not None:
+            self._sealed_prior.close()
 
     def _control(self, argv: list[str], name: str, root: Path, operations: list[dict]) -> bytes:
         self.checkpoint()
@@ -856,10 +866,12 @@ class PodmanCustody:
             if self.image_bytes + size > MAX_CUMULATIVE_IMAGE_BYTES:
                 _fail("custody_image_attempt_budget")
             if self.vfs_worker_input_view:
-                # The original initialized worker's /work FD performs this
-                # destination readback once before start. Source copying above
-                # still hashes original prior bytes under the same checkpoint.
-                _prior_snapshot(work, root / "prior", prior, self.checkpoint, verify_copy=False)
+                # The original bank supplies successor staging bytes; work is
+                # only a report/consumer copy. The guest destination remains a
+                # separately checked ordinary bind, not immutable backing.
+                if self._sealed_prior is None:
+                    _fail("custody_sealed_prior_owner")
+                self._sealed_prior.snapshot(root / "prior", prior)
             else:
                 _prior_snapshot(work, root / "prior", prior, self.checkpoint)
             self.image_bytes += size
@@ -966,6 +978,7 @@ class PodmanCustody:
         operations = observation["operations"]
         container = None
         lifetime, lifetime_services, worker_filesystems = None, [], []
+        sealed_batch = None
         try:
             capture = self.snapshot_store.command(stage, index) if self.vfs_retained else None
             image, readonly = self._prepare_image(root=root, inputs=inputs, snapshots=snapshots,
@@ -1090,12 +1103,17 @@ class PodmanCustody:
                 copied.append(observed)
             observation["readback_outputs"] = copied
             if lifetime is not None:
+                if self.vfs_worker_input_view:
+                    if self._sealed_prior is None:
+                        _fail("custody_sealed_prior_owner")
+                    sealed_batch = self._sealed_prior.begin(copied)
+                readback_options = {"_sealed_batch": sealed_batch} if sealed_batch is not None else {}
                 observation["vfs_lifetime"] = lifetime.finish_readback(copied, {
                     "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,
                     "container_id": container, "image_id": image,
                     "root_acquisition_sha256": observation["runtime_policy"]["root_acquisition_sha256"],
                     "vfs_snapshots": observation["vfs_snapshots"],
-                })
+                }, **readback_options)
             evidence["status"] = "complete"
         except BaseException as error:
             observation["first_failure"] = getattr(error, "code", type(error).__name__)
@@ -1131,6 +1149,30 @@ class PodmanCustody:
                     observation["first_failure"] = "custody_vfs_lifetime_close_unknown"
                     _fail("custody_vfs_lifetime_close_unknown")
                 primary.add_note("podman_vfs_lifetime_close_unknown")
+            finally:
+                if sealed_batch is not None:
+                    release_error = sys.exc_info()[1]
+                    if primary is None and release_error is None and evidence["status"] == "complete":
+                        try:
+                            sealed_batch.commit()
+                        except BaseException as error:
+                            evidence["status"] = "partial"
+                            observation["first_failure"] = getattr(error, "code", type(error).__name__)
+                            try:
+                                sealed_batch.abort()
+                            except BaseException:  # noqa: BLE001 - keep the original failure
+                                observation["sealed_prior_close_unknown"] = True
+                                error.add_note("podman_sealed_prior_close_unknown")
+                            raise
+                    else:
+                        try:
+                            sealed_batch.abort()
+                        except BaseException:
+                            observation["sealed_prior_close_unknown"] = True
+                            active = release_error if release_error is not None else primary
+                            if active is None:
+                                raise
+                            active.add_note("podman_sealed_prior_close_unknown")
 
 
 def _json(value: object) -> bytes:

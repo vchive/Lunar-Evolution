@@ -600,7 +600,21 @@ worker-input-view runner; it does not confer a new authority or wire schema.
 - [x] Complete PR203's original CI/source/evidence review and verified merge:
   45/45 original jobs, audit aa7503c2…, main da251e3e/tree708b3af3 exactly tested.
   Preserve the original download timeout and reuse its20complete ZIPs.
-- [ ] Complete this successor's own final-source CI/source integration gate.
+- [x] Complete PR204's final-source CI/source integration: original45/45jobs,
+  independent auditf679fcaf…, exact tested tree83b83311 merged as49acb921.
 - [ ] Complete actual driver input closure and immutable backing/protected
   output consumption before accepted image/material acquisition, first context,
   production CLI and real copied-case acceptance. No fixture closes that gate.
+
+## Sealed output-to-staging carrier — 2026-10-31
+
+See `sealed-prior-transition.md`; the final guest bind backing remains separate.
+
+- [x] Specify and implement original-FD capture into bounded attempt-owned
+  sealed frames, complete-group publication after successful original release,
+  successor staging from that same bank, and final-attempt resource cleanup.
+- [x] Independently review the implementation and integrate focused kernel-seal,
+  group failure, source drift, original control and lifecycle cleanup tests.
+- [ ] Run the concentrated affected Linux regression, Ruff, compileall and diff
+  checks; preserve actual failures and validate only necessary corrections.
+- [ ] Complete this successor's final-source CI/source review and integration.

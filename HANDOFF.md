@@ -1,3 +1,26 @@
+<!-- sealed-prior-transition-current:start -->
+## 当前开发：原输出封存与后继 staging（2026-10-31）
+
+本节覆盖下方旧的进行中状态。PR204 已合 main：
+`49acb921e859623858b64ad0700d6ff61e625b8b`，tree
+`83b833117c509377c1012223fc2818155a28a4a6` 精确等于受测树，parents
+`da251e3e` / `7f5c5b51`。原 run41181892998/attempt1 全45/45成功；独审
+f679fcaf… 核45原ZIP、2795源码及每版27701keys（27567pass+原134skip），
+所有221新增显式通过。root 合并核验收据1c47918d…；未重跑测试，main push CI另算。
+
+当前同工作区分支 `codex/sealed-prior-transition`，从已合 main 继续。
+已实现原 output role 的同一 held file FD → 单命令 memfd frame → 四项内核seal，
+原整组/after-readback/生命周期释放全部成功后才登记；后继 prior staging 只读同原
+bank 的封存字节，不重新从可变 work 路径取源。原预算贯穿，失败整批撤销、最终关闭，
+清理未知保留。独立实现/测试与集成审查并行；集中 Linux 回归尚待完成。
+规格为 `specs/193-static-python-rsi-launch/sealed-prior-transition.md`。
+
+这只保护 output→staging 来源；后继普通 bind 的实际消费背板仍未全时段封存。
+完整driver输入、source/toolchain保护、accepted image/material owner、首context、
+生产CLI和复制case验收仍开放。固定U独占及外部writer/root/ACL/cgroup前提独立保留，
+所有runtime/admission/publication权威仍false，不跑模型或远程评测。
+<!-- sealed-prior-transition-current:end -->
+
 <!-- parallel-worker-boundaries-current:start -->
 ## 当前批量开发：原 worker 三条边界（2026-10-31）
 

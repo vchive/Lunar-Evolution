@@ -141,7 +141,8 @@ def _worker_link_inputs(argv, inventories, checkpoint=lambda: None):
     return {role: sorted(paths) for role, paths in selected.items()}
 
 
-def _observe_worker_inventory(role_fd, records, checkpoint, *, link_inputs=None, maximum=None):
+def _observe_worker_inventory(role_fd, records, checkpoint, *, link_inputs=None, maximum=None,
+                              _capture_file=None):
     """One exact member/hash walk through a borrowed original worker role FD.
 
     Finite equality is not writer exclusion. No descriptor number or caller
@@ -232,6 +233,13 @@ def _observe_worker_inventory(role_fd, records, checkpoint, *, link_inputs=None,
                             _refuse()
                         finally:
                             del image
+                    if _capture_file is not None:
+                        # Only the original output walk supplies this private
+                        # sink. Borrow the same checked FD; it is never reopened
+                        # by pathname to acquire successor staging bytes.
+                        if _stat_pin(os.fstat(child)) != _stat_pin(original):
+                            _refuse()
+                        _capture_file(child, record)
                 if _stat_pin(os.fstat(child)) != _stat_pin(original):
                     _refuse()
                 repeated = os.open(name, flags, dir_fd=descriptor)
@@ -643,8 +651,10 @@ class _VfsExecutionLifetime:
     def before_readback(self):
         self._phase("before-readback", {})
 
-    def finish_readback(self, outputs, binding):
+    def finish_readback(self, outputs, binding, *, _sealed_batch=None):
         output_raw = raw_store._json(outputs)
+        if _sealed_batch is not None and not self.capture.worker_input_view:
+            _refuse()
         if self.capture.worker_input_view:
             from tools.static_python_rsi_fixture.podman_worker_outputs import verify_worker_outputs
 
@@ -652,7 +662,9 @@ class _VfsExecutionLifetime:
                 _refuse()
             self._check(live=False)
             original_outputs = raw_store._decode(output_raw)
-            summary = verify_worker_outputs(self.role_fds["current_output"], original_outputs, self.checkpoint)
+            options = {"_capture_file": _sealed_batch.capture} if _sealed_batch is not None else {}
+            summary = verify_worker_outputs(self.role_fds["current_output"], original_outputs,
+                                             self.checkpoint, **options)
             if (summary["inventory_sha256"] != raw_store._sha(output_raw)
                     or raw_store._json(original_outputs) != output_raw):
                 _refuse()
