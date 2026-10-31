@@ -21,8 +21,10 @@ it does not close the complete configured-driver or custody items below.
   inventory read, binding the original command argv and prior/input pins.
 - [x] Require the complete fixed Zig cc link capture suffix and bound in the
   pre-dispatch graph, including the direct custody executor entry.
-- [ ] Freeze both changes and complete the combined affected Linux regression,
-  static checks and the successor's own final-source CI/integration gate.
+- [x] Freeze018b2173 and pass all2,057 cases in47complete Linux files, including
+  all53added cases, zero failure/error/skip/retry,46.259197s. All2,787 source
+  records match before/after; Ruff/compileall/diff and original JUnit counts pass.
+- [ ] Complete this successor's own final-source CI/source and integration gate.
 
 - [x] Implement the explicit original-owner five-phase lifetime path and
   connected-stream socket parser; retain old defaults and candidate contracts.

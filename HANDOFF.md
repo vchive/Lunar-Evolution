@@ -1,5 +1,5 @@
 <!-- link-object-format-current:start -->
-## 当前开发点：PR202 已合 main，继续 configured driver 输入闭包（2026-10-31）
+## 当前开发点：原 worker 链接输入前置校验（2026-10-31）
 
 本节覆盖下方历史工作区和运行中状态。当前开发区为
 `/Users/liminghan/.codex/worktrees/support-object-format/lunar_agent`，分支
@@ -10,6 +10,16 @@ run41153073503/attempt1 全45/45 CI和独立原件/source审查，合 main 为
 每版27,427节点为27,293pass及原134个skip；全部45ZIP的digest/CRC/member hash、
 每版14测试role及focused的完整Python字符串与精确补丁版本均核对通过，终态独审
 receipt `19259aec…`。三版为3.11.17/3.12.15/3.13.17；main push CI另算，未借此称已通过。
+
+本轮并行补齐两处有限拒绝门：原 worker-view 的同次 held role-FD 库存读取，
+按原始 argv 选择真正将被 ar/link 消费的 `.o/.a`，在启动前核 pin/identity/格式；
+另收紧 Zig cc 链接尾部完整 capture 参数与大小上界，未知 driver 参数在 preflight
+前拒绝。旧默认及 wire/profile/candidate bytes 不变，无新 backend/权威声明。
+冻结018b2173/tree9e1bcb83的47完整文件2,057例集中 Linux 回归全部通过，含53新增，
+46.259197s，零fail/error/skip/retry；2,787源码前后相同，Ruff/compileall/diff通过。
+原结果在主区ignored `validation/worker-link-inputs-20261031/`。后继完整CI/集成待完成，
+不重跑本批；详见Feature193 `worker-link-input-gates.md`。下方历史记录保持原义。
+
 PR201/head `0d9844d5` 的原 run41142583935/attempt1 已失败：44 success /1 failure，
 42个测试任务全部成功，唯一失败为3.13 focused汇总。原3.13任务混用3.13.16/3.13.17，
 严格provenance门正确拒绝；原失败和独审receipt `1d5e7523…` 保留。其head作为PR202的

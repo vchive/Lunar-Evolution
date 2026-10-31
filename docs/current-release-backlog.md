@@ -32,6 +32,16 @@ skip keys), and all 14 test-role plus focused-source full Python strings at
 This closes this successor's P0 integration gate; main push CI is a separate run.
 The current branch is `codex/configured-driver-inputs` in the same managed
 worktree. PR201 is indirectly merged.
+
+That branch now checks each original worker command's selected `.o/.a` in the
+same role-FD inventory read before start, and rejects extra Zig cc link-tail
+options before preflight. Frozen018b2173 passed all2,057 cases in47complete Linux
+files, including53additions, zero failures/errors/skips/retries in46.259197s;
+all2,787source records matched before/after, Ruff/compileall/diff passed. This
+is finite software enforcement, not complete driver closure or custody. Its own
+successor CI/source integration remains pending; see
+[the current contract](../specs/193-static-python-rsi-launch/worker-link-input-gates.md).
+
 P1 remains complete configured driver inputs, original immutable consumption,
 protected output transitions and descendant drainage, followed by accepted
 image/live ownership, the first scheduler context loader, production RSI CLI
