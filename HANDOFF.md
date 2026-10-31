@@ -4,7 +4,8 @@
 当前开发区仍为
 `/Users/liminghan/.codex/worktrees/support-object-format/lunar_agent`，分支
 `codex/parallel-build-closure`，从冻结 PR203/head `cb2c7016` 继续。
-PR203 的原 run41174217694/attempt1 仍在运行，尚未合 main；不要重试或取消。
+PR203 的原 run41174217694/attempt1 已45/45成功，原件/source独审仍在进行，
+尚未合 main；不要重试或取消。
 用户要求先并行完成 P0/P1 可开发代码，再统一回归。本批三个独立模块为原
 namespace-init status 校验、固定 guest 非输入数据树检查、原 output FD 完整组核对；
 root 负责接回原 custody/lifetime，旧默认和 wire/claims 保持。
@@ -23,6 +24,12 @@ producer process owner 在 claim/attestation 后的原 native attempt 内创建�
 预跑 producer 填补首次 context。既有 stager/resolver/gateway/recovery/BRS 不重做。
 生产 CLI 门和全部 custody/installation/runtime/admission/publication false 保留。
 不跑模型/WebAgent/远程 evaluator/真实 solver，不改原 benchmark、不读密钥。
+冻结3c34d9ae的四完整文件222例窄补验全过，6.177187秒，零fail/error/skip/retry；
+原191keys保留、真实新增31，2795源码前后/Gitblob/mode一致，独审2695afd0…。
+其真实v3六命令观察仍在target启动前失败（ValueError/3.588861秒/原container退出137），
+不能改称通过。现有image producer预建三个0755空scratch目录，与初版空/tmp词表
+存在静态契约差异；窄修复只允许这三个固定可选空目录，并加固定拒绝code，仍需自身
+253例受影响补验和新的独立计划/实跑。afterexit host-image观察不证明旧live内容或唯一根因。
 <!-- parallel-worker-boundaries-current:end -->
 
 <!-- link-object-format-current:start -->

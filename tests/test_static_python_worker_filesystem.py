@@ -624,3 +624,114 @@ def test_runtime_link_control_exceptions_close_held_fds_without_retry(proc_mtab_
             filesystem.verify_worker_filesystem(descriptor, **options, checkpoint=checkpoint)
         os.fstat(descriptor)
         assert failure.value is signal and checkpoints == 1 and active == set()
+
+
+@pytest.mark.parametrize("names", [(), ("home",), ("zig-global",), ("zig-local",),
+                                  ("home", "zig-global"), ("home", "zig-local"),
+                                  ("zig-global", "zig-local"), ("home", "zig-global", "zig-local")],
+                         ids=["empty", "home", "global", "local", "home-global",
+                              "home-local", "global-local", "all-three"])
+def test_fixed_empty_temporary_directories_allow_every_optional_subset(guest, names):
+    root, options = guest
+    for name in names:
+        (root / "tmp" / name).mkdir(mode=0o755)
+    verify(root, options)
+    assert (root / "tmp").stat().st_mode & 0o7777 == 0o700
+
+
+@pytest.mark.parametrize("name", ["home", "zig-global", "zig-local"])
+@pytest.mark.parametrize("change", ["nonempty-file", "nonempty-directory", "regular-file",
+                                   "symlink", "wrong-mode", "hardlinked-file"])
+def test_fixed_temporary_directories_refuse_nonempty_or_changed_nodes(guest, name, change):
+    root, options = guest
+    path = root / "tmp" / name
+    if change == "regular-file":
+        path.write_bytes(b"unapproved temporary data")
+    elif change == "symlink":
+        path.symlink_to(root / "etc")
+    elif change == "hardlinked-file":
+        original = root.parent / "independently-held-data"
+        original.write_bytes(b"unapproved temporary data")
+        os.link(original, path)
+        assert path.stat().st_nlink == 2
+    else:
+        path.mkdir(mode=0o755)
+        if change == "nonempty-file":
+            (path / "unapproved").write_bytes(b"unapproved temporary data")
+        elif change == "nonempty-directory":
+            (path / "unapproved").mkdir()
+        else:
+            path.chmod(0o700)
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+def test_optional_temporary_directories_never_make_other_required_nodes_optional(guest):
+    root, options = guest
+    for name in ("home", "zig-global", "zig-local"):
+        (root / "tmp" / name).mkdir(mode=0o755)
+    (root / "etc/hosts").unlink()
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+def test_optional_directory_replacement_at_original_reopen_refuses(guest, monkeypatch):
+    root, options = guest
+    path, real_open, count = root / "tmp/home", os.open, 0
+    path.mkdir(mode=0o755)
+
+    def open_file(name, *args, **kwargs):
+        nonlocal count
+        if name == "home":
+            count += 1
+            if count == 2:
+                path.rename(root.parent / "retained-original-home")
+                path.mkdir(mode=0o755)
+        return real_open(name, *args, **kwargs)
+
+    monkeypatch.setattr(filesystem.os, "open", open_file)
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+    assert count == 2
+
+
+@pytest.mark.parametrize("signal", [RuntimeError("original temporary directory deadline"), KeyboardInterrupt()])
+def test_optional_directory_control_exceptions_close_original_fds_without_retry(guest, monkeypatch, signal):
+    root, options = guest
+    (root / "tmp/home").mkdir(mode=0o755)
+    real_open, real_close = os.open, os.close
+    active, armed, checkpoints = set(), False, 0
+
+    def open_file(name, *args, **kwargs):
+        nonlocal armed
+        descriptor = real_open(name, *args, **kwargs)
+        active.add(descriptor)
+        if name == "home":
+            armed = True
+        return descriptor
+
+    def close_file(descriptor):
+        active.discard(descriptor)
+        return real_close(descriptor)
+
+    def checkpoint():
+        nonlocal checkpoints
+        if armed:
+            checkpoints += 1
+            raise signal
+
+    with held_root(root) as descriptor:
+        monkeypatch.setattr(filesystem.os, "open", open_file)
+        monkeypatch.setattr(filesystem.os, "close", close_file)
+        with pytest.raises(type(signal)) as failure:
+            filesystem.verify_worker_filesystem(descriptor, **options, checkpoint=checkpoint)
+        os.fstat(descriptor)
+        assert failure.value is signal and checkpoints == 1 and active == set()
+
+
+def test_worker_filesystem_refusal_retains_constant_value_error_diagnostic():
+    with pytest.raises(ValueError) as failure:
+        filesystem._refuse()
+    assert type(failure.value) is filesystem._WorkerFilesystemError
+    assert failure.value.code == str(failure.value) == "podman_worker_filesystem"
+    assert failure.value.args == ("podman_worker_filesystem",)

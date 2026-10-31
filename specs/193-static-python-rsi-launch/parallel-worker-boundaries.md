@@ -130,3 +130,31 @@ earlier live worker. It motivates the narrow fixed-link successor above; it
 does not rewrite the original failure, prove its lost inner error text or
 establish compatibility. The successor needs its own affected regression and
 separately reviewed fresh observation.
+
+## Narrow compatibility continuations
+
+Frozen3c34d9ae/tree436c13b1 passed222cases in four complete affected files on
+Linux3.12.3 in6.177187seconds, zero failure/error/skip/retry, original child
+reaped. This includes31new mtab cases;82 is the whole filesystem file count,
+not82new cases. All2,795source files matched before/after, archive, Git blob
+and execution bits. Independent original review2695afd0… passed. The previous
+2,216-case batch remains its separate frozen result.
+
+The distinct fresh V3 actual Podman attempt still failed before target start in
+3.588861seconds with generic ValueError, no completed stages and original
+container exit137. Original source-before/source-after are identical. Its
+retained host image after exit contains three fixed empty0755directories:
+`/tmp/home`, `/tmp/zig-global`, `/tmp/zig-local`. The original `_image_archive`
+producer explicitly emits the same directories. A tmpfs may preserve these
+source-owned empty directories; requiring an entirely empty tmp vocabulary is
+a static compatibility mismatch. Neither the after-exit observation nor this
+static comparison uniquely identifies the earlier live-worker failure.
+
+The narrow successor admits only those three optional empty directories through
+the existing complete no-follow FD walk; `/tmp` remains0700. Nonempty, extra,
+linked, replaced or wrongly permissioned entries still refuse. A private
+ValueError subclass carries the constant `podman_worker_filesystem` code through
+the existing original failure field, without wrapping OS/control errors or
+changing the successful wire. This successor needs its own253-case affected
+supplement and a separately reviewed new original six-command observation.
+All prior actual failures and all-false acceptance claims remain unchanged.

@@ -1,8 +1,8 @@
 ## Current batch — three original-worker boundaries, 2026-10-31
 
 The active branch is `codex/parallel-build-closure`, continuing frozen PR203/head
-`cb2c7016`. Its original run41174217694/attempt1 is still in progress; it is not
-merged or accepted yet. P0 CI/source/originals review and exact-tree integration
+`cb2c7016`. Its original run41174217694/attempt1 completed45/45success; original/source
+review remains in progress and it is not merged yet. P0 CI/source/originals review and exact-tree integration
 proceed independently of three P1 modules: original namespace-init status,
 pre-start fixed guest data-tree closure and original output-FD group readback.
 The helpers and original custody/lifetime integration are implemented. Frozen

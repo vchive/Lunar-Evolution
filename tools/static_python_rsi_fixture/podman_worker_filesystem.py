@@ -38,8 +38,12 @@ _FIXED_FILES = {
 }
 
 
+class _WorkerFilesystemError(ValueError):
+    code = "podman_worker_filesystem"
+
+
 def _refuse() -> None:
-    raise ValueError("podman_worker_filesystem")
+    raise _WorkerFilesystemError("podman_worker_filesystem")
 
 
 def _identity(info: os.stat_result) -> tuple:
@@ -104,9 +108,13 @@ def _tree(outputs: object, runtime_metadata: object, kernel_mounts: object,
     # Nodes are (kind, child vocabulary or file pin, exact mode or None).
     tree = {name: ("opaque", None, None) for name in ("source", "toolchain", "work")}
     tree.update({name: ("directory", {}, 0o755) for name in ("etc", "run", "proc", "dev")})
-    tree["tmp"] = ("directory", {}, 0o700)
+    # The fixed image producer includes these empty directories. An engine may
+    # copy them into /tmp's fresh tmpfs or leave that mount completely empty.
+    tree["tmp"] = ("directory", {
+        name: ("optional-directory", {}, 0o755) for name in ("home", "zig-global", "zig-local")
+    }, 0o700)
     tree["out"] = ("directory", {}, None)
-    entries = len(tree)
+    entries = len(tree) + len(tree["tmp"][1])
 
     def directory(parts: list[str], *, mode: int | None = 0o755) -> dict | None:
         nonlocal entries
@@ -248,7 +256,8 @@ def verify_worker_filesystem(root_fd: int, *, outputs: list[dict], runtime_metad
                 if entries > _MAX_ENTRIES or entry.name in names or entry.name not in vocabulary:
                     _refuse()
                 names.add(entry.name)
-        required = {name for name, node in vocabulary.items() if node[0] != "optional-runtime-link"}
+        required = {name for name, node in vocabulary.items()
+                    if node[0] not in {"optional-runtime-link", "optional-directory"}}
         if not required <= names:
             _refuse()
         for name in sorted(names):
@@ -268,7 +277,7 @@ def verify_worker_filesystem(root_fd: int, *, outputs: list[dict], runtime_metad
                 original = os.fstat(child)
                 if _identity(original) != _identity(named):
                     _refuse()
-                if kind == "directory":
+                if kind in {"directory", "optional-directory"}:
                     walk(child, value)
                 elif kind == "file":
                     read_file(child, value, original)
