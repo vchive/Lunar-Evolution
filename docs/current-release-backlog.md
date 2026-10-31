@@ -22,9 +22,9 @@ PR205/head00bdde95 passed original run41214678677/attempt1,45/45jobs, and
 independent original/source reviewe1ae0b15… over45ZIPs/2,799source files. Each
 Python retains27,788keys (27,654pass and the same134skip),all87 additions pass.
 It merged asmain a094d387,exact tested treed5601594,parents49acb921/00bdde95;
-root verified-merge receipt1c799385… passes. The successor
-same-tree main push run41222961732 is completed/cancelled,not passed. The
-branch `codex/sealed-prior-leaf-backing` adds a private per-file memfd lease to
+root verified-merge receipt1c799385… passes. The same-tree main push
+run41222961732 is completed/cancelled,not passed. The successor branch
+`codex/sealed-prior-leaf-backing` adds a private per-file memfd lease to
 the existing sealed bank, preserving original checkpoints, combined byte/handle
 budgets, exact inode/record ownership, all-or-none acquisition and cleanup.
 Frozen21d1662c/tree49849fa1 passed the single four-complete-file Linux3.12.3
