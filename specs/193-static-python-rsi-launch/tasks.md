@@ -590,10 +590,17 @@ worker-input-view runner; it does not confer a new authority or wire schema.
   regression: 51files/2,216pass,159new,84.630742s,zero fail/error/skip/retry;
   2,795source records unchanged, independent receipt34458982…. Ruff,
   compileall and diff checks pass; no test retries.
-- [ ] Independently review and perform the fresh finite six-command Podman
-  compatibility observation. It cannot provide protected-build/runtime authority.
-- [ ] Complete PR203's original CI/source/evidence review and verified merge;
-  then the final-source integration gate for this successor.
+- [x] Complete narrow fixed-mtab and fixed-empty-scratch compatibility fixes;
+  retain separate frozen222/253-case all-pass supplements and independent
+  original reviews2695afd0…/302b07fb…. Preserve all actual earlier failures.
+- [x] Complete independent original-record review of the successful fresh V4
+  six-command Podman observation (14.511079s/600s, zero retry/timeout),
+  receiptc005543b…. All507payload files,210raw records,30phases,61operations/
+  122logs and22current/work outputs agree. It cannot provide runtime authority.
+- [x] Complete PR203's original CI/source/evidence review and verified merge:
+  45/45 original jobs, audit aa7503c2…, main da251e3e/tree708b3af3 exactly tested.
+  Preserve the original download timeout and reuse its20complete ZIPs.
+- [ ] Complete this successor's own final-source CI/source integration gate.
 - [ ] Complete actual driver input closure and immutable backing/protected
   output consumption before accepted image/material acquisition, first context,
   production CLI and real copied-case acceptance. No fixture closes that gate.

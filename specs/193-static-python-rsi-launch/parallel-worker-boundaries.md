@@ -1,7 +1,10 @@
 # Parallel original-worker boundary enforcement
 
-This continues Feature 193 on `codex/parallel-build-closure`. PR203 remains
-frozen on its original CI attempt while this successor is developed. Complete
+This continues Feature 193 on `codex/parallel-build-closure`. PR203's original
+attempt completed45/45success and original/source audit aa7503c2… passed; it
+merged as main da251e3e with exactly tested tree708b3af3. The first originals
+download timeout remains preserved;20complete ZIPs were reused and25missing
+originals recovered without a CI/test retry. Complete
 all three software slices before a single concentrated affected regression;
 retain any genuine failure and validate only the necessary correction.
 
@@ -117,9 +120,10 @@ occurred there. The original SCP then completed successfully, the complete
 archive hash was verified, and the single batch above executed. The original
 transport pre-execution record is retained separately.
 
-The later result-documentation changes do not modify product or test bytes.
-Fresh finite Podman compatibility and this successor's final CI/source/main
-integration remain pending and must retain their own actual outcomes.
+The result-documentation changes do not modify product or test bytes. At that
+freeze, fresh finite Podman compatibility and final CI/source/main integration
+were still pending; the separate compatibility continuations below retain
+their own actual outcomes.
 
 The distinct3.12.3 six-command observation failed in3.531581seconds before
 target start, after the original initialized lifetime phase. The report retains
@@ -155,6 +159,37 @@ the existing complete no-follow FD walk; `/tmp` remains0700. Nonempty, extra,
 linked, replaced or wrongly permissioned entries still refuse. A private
 ValueError subclass carries the constant `podman_worker_filesystem` code through
 the existing original failure field, without wrapping OS/control errors or
-changing the successful wire. This successor needs its own253-case affected
-supplement and a separately reviewed new original six-command observation.
-All prior actual failures and all-false acceptance claims remain unchanged.
+changing the successful wire. The successor's own 253-case affected supplement
+and separately reviewed new original six-command observation are recorded below.
+
+Frozen `faf3c2f94ffc2d8583d3bc8d72f54f774de22049`, tree
+`df0f352ed4e2f10b1cf4babd0aab01165112c8d4`, passed all 253 cases in four complete
+affected files in 3.972089634742588 seconds, zero failure/error/skip/retry. This
+adds 31 tmp cases to the unchanged 222 keys; 113 is the whole filesystem file
+count, not 113 new cases. Independent original/source review SHA256:
+302b07fb63f982569998fbc56f3d4760fd860a6c96fb11977eefff5a9c256d6f.
+It is a narrow supplement, not a rerun or replacement of the earlier 2,216-case
+frozen batch.
+
+The V4 exact preparation and one-shot plan passed independent static review
+SHA256: ae61916d1546cc9d67c742f817ccefb5cb5255f197d7cf410c822983b4e6f97b.
+Its fresh original Podman observation on the same frozen `faf3` source completed
+all six actual inert commands in 14.511078707873821 seconds under the original
+600-second allowance. Transport took 14.643652200698853 seconds, returned zero
+and reaped its original child, with zero retry or timeout. Original product
+source-before/source-after are equal. This is finite compatibility evidence;
+no full CPython, actual solver or model acceptance is inferred.
+
+The V4 complete-original independent review passed, SHA256:
+c005543b5c09c6e5bd0e903eb7bcae6da0bf2680c24c1ce01903cf1728f1c56e.
+The archive contains507payload files plus its self-manifest and157directories.
+All102VFS and108lifetime raw records,54unique CAS bodies,30phases/six stable
+owners,61operations/122original logs,22current/work output pins,29prior-file
+pins and11final outputs match. Source2,795files/308directories are unchanged;
+recorded product module origins255→263 match the freeze. This is the reviewed
+inert compatibility boundary, not full compiler or runtime acceptance.
+
+This successor's final-source CI/source gate and verified main integration
+remain pending. The27701-key expected successor inventory is a preparation,
+not a CI result. All prior actual failures and all-false configured/custody/
+installation/runtime/admission/publication claims remain unchanged.

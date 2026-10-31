@@ -1,27 +1,41 @@
-## Current batch — three original-worker boundaries, 2026-10-31
+## Current batch — original-worker boundaries, 2026-10-31
 
-The active branch is `codex/parallel-build-closure`, continuing frozen PR203/head
-`cb2c7016`. Its original run41174217694/attempt1 completed45/45success; original/source
-review remains in progress and it is not merged yet. P0 CI/source/originals review and exact-tree integration
-proceed independently of three P1 modules: original namespace-init status,
-pre-start fixed guest data-tree closure and original output-FD group readback.
-The helpers and original custody/lifetime integration are implemented. Frozen
-566778de/tree61c527d1 passed all2,216nodes in51complete Linux files, including
-159new cases, in84.630742s with zero failures/errors/skips/retries. Source2,795
-files matched Git/archive bytes and execution bits before/after. Independent
-review34458982… preserves the sole Darwin69/Linux122 errno.EDQUOT parameter-key
-difference; all other2,215raw keys and all159new keys match, with every file's
-exact count. No tests were repeated. Ruff/compileall/diff passed. The fresh
-finite six-command Podman compatibility observation and final-source CI/main
-integration remain separate pending gates. See the
-[batch contract](../specs/193-static-python-rsi-launch/parallel-worker-boundaries.md).
+The active branch is `codex/parallel-build-closure`, continuing PR203/head
+`cb2c7016`. Its original run41174217694/attempt1 completed45/45success and independent
+original/source reviewaa7503c2… passed all45ZIPs and each version's27480keys
+(27346pass+134unchanged skips). The original download timeout and20cached ZIPs
+are preserved; only25missing originals were recovered, with no CI retry.
+PR203 merged as `da251e3e1bda9f8aea5c08087acb522951a90b16`, exactly tested
+tree708b3af3, parentsd2cc0205/cb2c7016.
 
-This does not close complete driver input routes, immutable backing or external
-writer exclusion. Accepted image/material acquisition precedes the first
-scheduler context; the per-attempt process owner is created only after the
-original plan/claim and attestation. Production CLI remains gated. Existing
-stager/resolver/gateway/recovery/BRS code is reused. Root/account/ACL/cgroup and
-fixed-U acceptance remain separate. All authority claims stay false.
+The three parallel P1 modules are implemented and integrated with the original
+custody/lifetime: namespace-init status, fixed pre-start guest data tree and
+complete held-output-FD readback. Frozen566778de passed2,216cases in51complete
+Linux files, including159new, in84.630742s. Necessary narrow continuations then
+passed222cases at3c34 and253cases atfaf3, each adding31new cases; these are
+separate frozen batches, never a combined full-run claim. Source2,795files,
+Git/archive bytes and execution bits match before/after; independent original
+reviews34458982…/2695afd0…/302b07fb… passed. Ruff/compileall/diff passed.
+
+V1–V3 actual failures remain failures. V4's fresh reviewed six-command inert
+Podman observation on frozenfaf3 completed in14.511079s/600s, zero retry/timeout,
+original child reaped and source-before/source-after equal. Complete-original
+reviewc005543b… passed507payload files plus their self-manifest,210raw records,
+30phases,61operations/122logs and22current/work output pins. This successor's
+final-source CI/source audit and main integration remain pending. The27701-key
+successor inventory is expected-only, not a reported CI result. See the [batch contract](../specs/193-static-python-rsi-launch/parallel-worker-boundaries.md).
+
+| Priority | Remaining work and dependency |
+| --- | --- |
+| P0 | Finish this successor's final-source CI/source audit and exact-tree integration; original-record review and PR203 are complete. |
+| P1 | Complete configured driver input routes, immutable original consumption, protected outputs and external-writer exclusion. |
+| P1 | Acquire accepted static image/material ownership and sealed startup, then the first scheduler context using existing stager/resolver/gateway/recovery/BRS. |
+| P1 | Connect production CLI and accept a copied local case through the original claim/attestation/native attempt. |
+
+The per-attempt producer process owner is created after claim/attestation; it is
+not an input to acquiring the first scheduler context. Fixed-U/account/root/ACL/
+cgroup acceptance remains separate. All authority claims stay false. Remote
+evaluator, multi-host service work and model training remain outside this batch.
 
 ## Current closeout — PR202 merged; configured driver inputs next, 2026-10-31
 
