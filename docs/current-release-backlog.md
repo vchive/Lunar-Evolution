@@ -5,12 +5,24 @@ Its full original/source CI gate and main merge are pending. The successor
 branch `codex/sealed-prior-leaf-backing` adds a private per-file memfd lease to
 the existing sealed bank, preserving original checkpoints, combined byte/handle
 budgets, exact inode/record ownership, all-or-none acquisition and cleanup.
-The 41 added Linux cases and four-file 210-case affected regression are prepared,
-not reported as passed. See [the contract](../specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md).
+Frozen21d1662c/tree49849fa1 passed the single four-complete-file Linux3.12.3
+batch:210pass including41new,4.072063s/600s,zero failure/error/skip/retry/timeout,
+original child and transport reaped/rc0. Source2801/directories308 before/after,
+eight module origins, Git/archive and exact JUnit keys were verified; root
+independent original review4db5bcd2… passed. Ruff/compileall/diff passed.
+The27829-key successor inventory is still expected-only. See [the contract](../specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md).
 
-This owner is not wired into the worker yet. A separately reviewed finite
-rootless compatibility observation precedes exact original OCI/inventory/history
-integration. Leaf byte protection does not establish stable directory names or
+The separately reviewed single rootless probe was refused at original create:
+rc125,`statfs /proc/1738954/fd/3: permission denied`. Both sealed host objects
+and image import succeeded; no guest init, same-inode observation, write-denial
+probe or helper execution occurred. Probe/parent elapsed0.192390/0.264517s,
+original120s,zero retries/timeouts,child reaped. All35 archived originals and
+creation-unknown state are preserved; known image-tag cleanup returned0.
+Reviews29b3f70a…/35f4541c… verify this failure, not compatibility acceptance.
+
+This owner is not wired into the worker yet. Resolving exact service/source
+visibility precedes original OCI/inventory/history integration. Leaf byte
+protection does not establish stable directory names or
 complete driver/source/toolchain protection. All authority claims stay false.
 
 ## Current batch — sealed output-to-staging transition, 2026-10-31

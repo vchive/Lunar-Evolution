@@ -7,13 +7,25 @@ run41214678677/attempt1运行中；终态后按已审查计划核45原ZIP、完�
 
 已在原sealed bank新增command-owned逐文件memfd lease，保留同源bytes、四seal、
 exec/data模式、原checkpoint和bank+export总预算，整批发布、close-once及foreign FD
-reuse拒绝。新增41个Linux kernel边界测试；准备一次4完整文件/210例集中回归，
-不是已通过结果。规格见 `specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md`。
+reuse拒绝。冻结21d1662c/tree49849fa1的一次4完整文件集中Linux3.12.3回归210pass，
+41新增全部通过，4.072063秒/原600秒，零fail/error/skip/retry/timeout，原child与SSH
+rc0/reaped。2801源码/308目录前后相等，8模块来源精确；root原件独审4db5bcd2…
+核Git/归档、原JUnit及静态AST41新键，169旧键保持。Ruff/compileall/diff通过；不重跑。
+规格见 `specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md`。
 
-本轮先验证原rootless Podman对精确sealed leaf bind的兼容性。lease尚未接入runner，
-不可据此称worker实际消费已受保护；OCI/worker inventory/retained-history的精确挂载
+单次独立rootless Podman probe已实际在create拒绝：原rc125，
+`statfs /proc/1738954/fd/3: permission denied`。两个sealed host对象与import成功，
+但未到init/guest inode/写入拒绝/实际消费；helper未执行。原probe自身0.192390秒，
+parent0.264517秒/原120秒，零retry/timeout，原childreaped。35原归档成员及未知创建状态
+保留，已知image tag清理rc0；独审29b3f70a…及root核验35f4541c…通过的是失败记录，
+不是兼容验收。v1仅准备，唯一实际dispatch为v2，无fallback。
+
+lease尚未接入runner，不可据此称worker实际消费已受保护。先解决原service对精确
+sealed source的可见性，再做OCI/worker inventory/retained-history的精确挂载
 接线、目录名称保护及完整driver/source/toolchain仍待完成。runtime/production/
 publication权威保持false，不跑模型或远程评测。
+原件在主区ignored `validation/sealed-prior-leaf-export-20261031/` 与
+`validation/sealed-leaf-probe-20261031/`；27829后继键清单仍只是expected-only。
 <!-- sealed-prior-leaf-export-current:end -->
 
 <!-- sealed-prior-transition-current:start -->

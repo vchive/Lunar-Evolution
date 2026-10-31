@@ -10,10 +10,16 @@ scope. PR205's frozen final-source CI/main gate remains separate.
 - [x] Preserve whole-group publication, original cancellation, close-once
   ownership and complete resource release without closing reused foreign FDs.
 - [x] Add41 meaningful Linux cases and update the existing focused inventory.
-- [ ] Run one combined four-complete-file210-case Linux affected regression,
-  independently inspect its originals and retain Ruff/compileall/diff results.
-- [ ] Observe the separately reviewed finite rootless sealed exec/data binds;
-  preserve actual failures without ordinary-copy substitution or test retries.
+- [x] Complete one combined four-complete-file210-case Linux affected regression
+  on21d1662c,41new,4.072063s/600s,zero fail/error/skip/retry/timeout,rc0/reaped;
+  source2801/directories308 unchanged,eight module origins,original review
+  4db5bcd2…. Ruff/compileall/diff pass; original batch not rerun.
+- [x] Execute the separately reviewed v2 finite rootless probe once and preserve
+  its actual create125/proc-FD permission refusal. No guest/helper execution or
+  backing-write probe followed. Review35 original members and retain unknown
+  container creation; no ordinary-copy substitution, retry or guessed cleanup.
+- [ ] Establish compatible original service access to the sealed source objects
+  and verify actual guest consumption; the retained failure does not pass it.
 - [ ] Integrate the lease with the original runner's exact OCI, worker inventory,
   lifetime and retained-history validators before claiming actual consumption.
 
