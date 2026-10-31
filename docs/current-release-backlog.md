@@ -5,8 +5,15 @@ The active branch is `codex/parallel-build-closure`, continuing frozen PR203/hea
 merged or accepted yet. P0 CI/source/originals review and exact-tree integration
 proceed independently of three P1 modules: original namespace-init status,
 pre-start fixed guest data-tree closure and original output-FD group readback.
-The helpers and original custody/lifetime integration are implemented, with the
-single concentrated affected regression still pending. See the
+The helpers and original custody/lifetime integration are implemented. Frozen
+566778de/tree61c527d1 passed all2,216nodes in51complete Linux files, including
+159new cases, in84.630742s with zero failures/errors/skips/retries. Source2,795
+files matched Git/archive bytes and execution bits before/after. Independent
+review34458982… preserves the sole Darwin69/Linux122 errno.EDQUOT parameter-key
+difference; all other2,215raw keys and all159new keys match, with every file's
+exact count. No tests were repeated. Ruff/compileall/diff passed. The fresh
+finite six-command Podman compatibility observation and final-source CI/main
+integration remain separate pending gates. See the
 [batch contract](../specs/193-static-python-rsi-launch/parallel-worker-boundaries.md).
 
 This does not close complete driver input routes, immutable backing or external

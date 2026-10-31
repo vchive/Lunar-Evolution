@@ -142,6 +142,11 @@ def _tree(outputs: object, runtime_metadata: object, kernel_mounts: object,
             None if override is not None else 0o444,
         )
         entries += 1
+    if "/proc" in kernels:
+        # Some supported engines install this fixed kernel route themselves.
+        # Its absence remains valid; no discovered target supplies authority.
+        tree["etc"][1]["mtab"] = ("optional-runtime-link", "/proc/mounts", 0o777)
+        entries += 1
     if "/run/.containerenv" in metadata:
         row = metadata["/run/.containerenv"]
         tree["run"][1][".containerenv"] = ("file", {"size": row["size"], "sha256": row["sha256"]}, None)
@@ -191,6 +196,44 @@ def verify_worker_filesystem(root_fd: int, *, outputs: list[dict], runtime_metad
         if count != pin["size"] or digest.hexdigest() != pin["sha256"]:
             _refuse()
 
+    def read_runtime_link(descriptor: int, name: str, target: str,
+                          named: os.stat_result, mode: int) -> None:
+        # O_PATH must be checked only for this Linux-specific optional node.
+        # Platforms without it can still collect and inspect link-free trees.
+        path_flag = getattr(os, "O_PATH", None)
+        if (type(path_flag) is not int or path_flag <= 0
+                or not stat.S_ISLNK(named.st_mode) or stat.S_IMODE(named.st_mode) != mode
+                or named.st_nlink != 1 or named.st_size != len(target.encode("ascii"))):
+            _refuse()
+        flags = path_flag | os.O_NOFOLLOW | os.O_CLOEXEC
+        child = os.open(name, flags, dir_fd=descriptor)
+        try:
+            checkpoint()
+            original = os.fstat(child)
+            if _identity(original) != _identity(named):
+                _refuse()
+            # Empty-path readlinkat reads the held symlink itself. It never
+            # traverses /proc or opens the target through the client namespace.
+            if os.readlink("", dir_fd=child) != target:
+                _refuse()
+            checkpoint()
+            if (_identity(os.fstat(child)) != _identity(original)
+                    or _identity(os.stat(name, dir_fd=descriptor, follow_symlinks=False)) != _identity(original)
+                    or os.readlink(name, dir_fd=descriptor) != target):
+                _refuse()
+            checkpoint()
+            reopened = os.open(name, flags, dir_fd=descriptor)
+            try:
+                if (_identity(os.fstat(reopened)) != _identity(original)
+                        or os.readlink("", dir_fd=reopened) != target
+                        or _identity(os.fstat(child)) != _identity(original)
+                        or _identity(os.stat(name, dir_fd=descriptor, follow_symlinks=False)) != _identity(original)):
+                    _refuse()
+            finally:
+                os.close(reopened)
+        finally:
+            os.close(child)
+
     def walk(descriptor: int, vocabulary: dict) -> None:
         nonlocal entries
         checkpoint()
@@ -205,12 +248,16 @@ def verify_worker_filesystem(root_fd: int, *, outputs: list[dict], runtime_metad
                 if entries > _MAX_ENTRIES or entry.name in names or entry.name not in vocabulary:
                     _refuse()
                 names.add(entry.name)
-        if names != set(vocabulary):
+        required = {name for name, node in vocabulary.items() if node[0] != "optional-runtime-link"}
+        if not required <= names:
             _refuse()
-        for name in sorted(vocabulary):
+        for name in sorted(names):
             checkpoint()
             kind, value, mode = vocabulary[name]
             named = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if kind == "optional-runtime-link":
+                read_runtime_link(descriptor, name, value, named, mode)
+                continue
             directory = kind != "file"
             if (not (stat.S_ISDIR(named.st_mode) if directory else stat.S_ISREG(named.st_mode))
                     or mode is not None and stat.S_IMODE(named.st_mode) != mode

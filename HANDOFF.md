@@ -8,8 +8,14 @@ PR203 的原 run41174217694/attempt1 仍在运行，尚未合 main；不要重�
 用户要求先并行完成 P0/P1 可开发代码，再统一回归。本批三个独立模块为原
 namespace-init status 校验、固定 guest 非输入数据树检查、原 output FD 完整组核对；
 root 负责接回原 custody/lifetime，旧默认和 wire/claims 保持。
-当前已实现、尚待统一测试，不能标记验收通过。执行范围和后续依赖见
-Feature193 `parallel-worker-boundaries.md`。
+冻结 `566778de` / tree `61c527d1` 的51完整文件2,216例集中 Linux 回归全部通过，
+其中159新增（27/51/50/31），84.630742秒，零fail/error/skip/retry，原child reaped。
+2,795源码Gitblob/执行位和归档逐项一致，before/after保持；Ruff/compileall/diff通过。
+独审receipt `34458982…`保留唯一平台key差异：errno.EDQUOT Darwin69/Linux122；
+其余2,215 rawkeys及全部159新增rawkeys精确一致，51文件计数全相等，未重跑。
+源码已push；真实六命令有限Podman兼容观察仍待自身精确计划审查/运行，后继完整CI和main
+集成尚未完成。执行范围和后续依赖见Feature193 `parallel-worker-boundaries.md`。
+原件在主区ignored `validation/worker-boundaries-20261031/`。
 
 完整 configured driver 闭包、原始不可变输入/输出保护和外部 writer 排除仍开放。
 后续先 acquire accepted image/material owner，再建首个 scheduler context；该次

@@ -189,7 +189,7 @@
         "tests/test_static_python_worker_init.py",
         "tests/test_static_python_worker_outputs.py"
       ],
-      "expected_tests": 1776,
+      "expected_tests": 1807,
       "zero_skips": true
     },
     {

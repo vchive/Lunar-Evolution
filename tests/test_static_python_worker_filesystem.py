@@ -8,8 +8,11 @@ immutable inputs, original execution or runtime acceptance.
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import os
+import stat
+import sys
 from contextlib import contextmanager
 
 import pytest
@@ -350,3 +353,274 @@ def test_original_control_exceptions_are_preserved_without_retry(guest, signal):
     with pytest.raises(type(signal)) as failure:
         verify(root, options, checkpoint)
     assert failure.value is signal and checkpoints == 40
+
+
+@pytest.fixture
+def proc_mtab_guest(tmp_path):
+    """Require real Linux held-symlink FD semantics, never a doubled O_PATH."""
+    path_flag = getattr(os, "O_PATH", None)
+    if sys.platform != "linux" or type(path_flag) is not int or path_flag <= 0:
+        pytest.skip("actual Linux O_PATH symlink descriptors unavailable")
+    root = tmp_path / "proc-mtab-worker"
+    options = populate_guest(root, kernel_mounts=[{"destination": "/proc", "type": "proc"}])
+    path = root / "etc/mtab"
+    path.symlink_to("/proc/mounts")
+    descriptor = None
+    try:
+        descriptor = os.open(path, path_flag | os.O_NOFOLLOW | os.O_CLOEXEC)
+        assert stat.S_ISLNK(os.fstat(descriptor).st_mode)
+        assert os.readlink("", dir_fd=descriptor) == "/proc/mounts"
+    except OSError as error:
+        if error.errno not in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP}:
+            raise
+        pytest.skip(f"kernel held-symlink readlink unavailable: errno {error.errno}")
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return root, options
+
+
+def test_optional_runtime_mtab_holds_original_link_without_opening_target(proc_mtab_guest, monkeypatch):
+    root, options = proc_mtab_guest
+    real_open, real_close, real_read, real_readlink = os.open, os.close, os.read, os.readlink
+    active, link_flags, link_reads = set(), [], []
+
+    def open_file(name, flags, *args, **kwargs):
+        descriptor = real_open(name, flags, *args, **kwargs)
+        active.add(descriptor)
+        if name == "mtab":
+            link_flags.append(flags)
+            assert stat.S_ISLNK(os.fstat(descriptor).st_mode)
+            assert not os.get_inheritable(descriptor)
+        return descriptor
+
+    def close_file(descriptor):
+        active.discard(descriptor)
+        return real_close(descriptor)
+
+    def read_file(descriptor, count):
+        assert not stat.S_ISLNK(os.fstat(descriptor).st_mode)
+        return real_read(descriptor, count)
+
+    def readlink(name, **kwargs):
+        link_reads.append(name)
+        return real_readlink(name, **kwargs)
+
+    with held_root(root) as descriptor:
+        monkeypatch.setattr(filesystem.os, "open", open_file)
+        monkeypatch.setattr(filesystem.os, "close", close_file)
+        monkeypatch.setattr(filesystem.os, "read", read_file)
+        monkeypatch.setattr(filesystem.os, "readlink", readlink)
+        filesystem.verify_worker_filesystem(descriptor, **options, checkpoint=lambda: None)
+        os.fstat(descriptor)
+        assert active == set()
+    assert len(link_flags) == 2
+    assert all(flags & os.O_PATH and flags & os.O_NOFOLLOW and flags & os.O_CLOEXEC for flags in link_flags)
+    assert link_reads == ["", "mtab", ""]
+
+
+def test_selected_proc_still_allows_absent_runtime_mtab(proc_mtab_guest):
+    root, options = proc_mtab_guest
+    (root / "etc/mtab").unlink()
+    verify(root, options)
+
+
+@pytest.mark.parametrize("missing", ["etc/hosts", "etc/passwd"])
+def test_optional_runtime_link_never_makes_fixed_metadata_optional(proc_mtab_guest, missing):
+    root, options = proc_mtab_guest
+    (root / missing).unlink()
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+@pytest.mark.parametrize("kernels", [[], [{"destination": "/dev", "type": "tmpfs"}]],
+                         ids=["unselected-proc", "other-kernel-only"])
+def test_runtime_mtab_requires_original_proc_mount_selection(guest, kernels):
+    root, options = guest
+    options["kernel_mounts"] = kernels
+    (root / "etc/mtab").symlink_to("/proc/mounts")
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+@pytest.mark.parametrize("target", ["/proc/mountz", "/proc/self/mounts", "proc/mounts", "../proc/mounts",
+                                   "/proc/../etc/passwd", "/proc/mounts/", "/proc/mount\n",
+                                   "/proc/mounts" + "x" * 128],
+                         ids=["same-size-wrong-target", "other-proc-file", "relative", "escape", "unnormalized",
+                              "trailing-slash", "control-byte", "over-bound"])
+def test_runtime_mtab_never_accepts_another_target(proc_mtab_guest, target):
+    root, options = proc_mtab_guest
+    path = root / "etc/mtab"
+    path.unlink()
+    path.symlink_to(target)
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+@pytest.mark.parametrize("name", ["etc/another-mtab", "run/mtab", "tmp/mtab", "out/mtab"])
+def test_fixed_runtime_link_never_approves_extra_symlinks(proc_mtab_guest, name):
+    root, options = proc_mtab_guest
+    (root / name).symlink_to("/proc/mounts")
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+@pytest.mark.parametrize("kind", ["regular-file", "directory"])
+def test_runtime_mtab_must_be_a_symlink(proc_mtab_guest, kind):
+    root, options = proc_mtab_guest
+    path = root / "etc/mtab"
+    path.unlink()
+    path.mkdir() if kind == "directory" else path.write_bytes(b"/proc/mounts")
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+def test_hardlinked_runtime_symlink_refuses_even_with_exact_target(proc_mtab_guest):
+    root, options = proc_mtab_guest
+    path = root / "etc/mtab"
+    os.link(path, root.parent / "second-link-name", follow_symlinks=False)
+    assert path.lstat().st_nlink == 2
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+def test_runtime_link_mode_guard_refuses_a_nonfixed_named_observation(proc_mtab_guest, monkeypatch):
+    root, options = proc_mtab_guest
+    real_stat = os.stat
+
+    def named_stat(name, *args, **kwargs):
+        observed = real_stat(name, *args, **kwargs)
+        if name == "mtab" and kwargs.get("follow_symlinks") is False:
+            # Linux links have immutable 0777 permissions. This isolated
+            # observation fault checks refusal, not another accepted mode.
+            fields = list(observed)
+            fields[stat.ST_MODE] = stat.S_IFLNK | 0o700
+            return os.stat_result(fields)
+        return observed
+
+    monkeypatch.setattr(filesystem.os, "stat", named_stat)
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+@pytest.mark.parametrize("capability", [None, 0, True], ids=["missing", "zero", "bool"])
+def test_present_runtime_link_refuses_without_actual_path_fd_capability(guest, monkeypatch, capability):
+    root, options = guest
+    options["kernel_mounts"] = [{"destination": "/proc", "type": "proc"}]
+    (root / "etc/mtab").symlink_to("/proc/mounts")
+    if capability is None:
+        monkeypatch.delattr(filesystem.os, "O_PATH", raising=False)
+    else:
+        monkeypatch.setattr(filesystem.os, "O_PATH", capability, raising=False)
+    monkeypatch.setattr(filesystem.os, "readlink", lambda *_args, **_kwargs: pytest.fail("read unheld link"))
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+
+
+def test_runtime_link_replacement_between_named_stat_and_first_open_refuses(proc_mtab_guest, monkeypatch):
+    root, options = proc_mtab_guest
+    path, real_open, replaced = root / "etc/mtab", os.open, False
+
+    def open_file(name, *args, **kwargs):
+        nonlocal replaced
+        if name == "mtab" and not replaced:
+            replaced = True
+            path.rename(root.parent / "old-runtime-link")
+            path.symlink_to("/proc/mounts")
+        return real_open(name, *args, **kwargs)
+
+    monkeypatch.setattr(filesystem.os, "open", open_file)
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+    assert replaced
+
+
+@pytest.mark.parametrize("change", ["replace-name", "held-metadata"])
+def test_runtime_link_name_and_held_identity_drift_refuse_and_close_fds(proc_mtab_guest, monkeypatch, change):
+    root, options = proc_mtab_guest
+    path = root / "etc/mtab"
+    real_open, real_close, real_readlink = os.open, os.close, os.readlink
+    active, changed = set(), False
+
+    def open_file(*args, **kwargs):
+        descriptor = real_open(*args, **kwargs)
+        active.add(descriptor)
+        return descriptor
+
+    def close_file(descriptor):
+        active.discard(descriptor)
+        return real_close(descriptor)
+
+    def readlink(name, **kwargs):
+        nonlocal changed
+        result = real_readlink(name, **kwargs)
+        if name == "" and not changed:
+            changed = True
+            if change == "replace-name":
+                path.rename(root.parent / "retained-held-link")
+                path.symlink_to("/proc/mounts")
+            else:
+                before = path.lstat()
+                os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000), follow_symlinks=False)
+        return result
+
+    with held_root(root) as descriptor:
+        monkeypatch.setattr(filesystem.os, "open", open_file)
+        monkeypatch.setattr(filesystem.os, "close", close_file)
+        monkeypatch.setattr(filesystem.os, "readlink", readlink)
+        with pytest.raises(_REFUSALS):
+            filesystem.verify_worker_filesystem(descriptor, **options, checkpoint=lambda: None)
+        os.fstat(descriptor)
+        assert changed and active == set()
+
+
+def test_runtime_link_replacement_at_second_nofollow_open_refuses(proc_mtab_guest, monkeypatch):
+    root, options = proc_mtab_guest
+    path, real_open, count = root / "etc/mtab", os.open, 0
+
+    def open_file(name, *args, **kwargs):
+        nonlocal count
+        if name == "mtab":
+            count += 1
+            if count == 2:
+                path.rename(root.parent / "retained-original-link")
+                path.symlink_to("/proc/mounts")
+        return real_open(name, *args, **kwargs)
+
+    monkeypatch.setattr(filesystem.os, "open", open_file)
+    with pytest.raises(_REFUSALS):
+        verify(root, options)
+    assert count == 2
+
+
+@pytest.mark.parametrize("signal", [RuntimeError("original link deadline"), KeyboardInterrupt()])
+def test_runtime_link_control_exceptions_close_held_fds_without_retry(proc_mtab_guest, monkeypatch, signal):
+    root, options = proc_mtab_guest
+    real_open, real_close = os.open, os.close
+    active, armed, checkpoints = set(), False, 0
+
+    def open_file(name, *args, **kwargs):
+        nonlocal armed
+        descriptor = real_open(name, *args, **kwargs)
+        active.add(descriptor)
+        if name == "mtab":
+            armed = True
+        return descriptor
+
+    def close_file(descriptor):
+        active.discard(descriptor)
+        return real_close(descriptor)
+
+    def checkpoint():
+        nonlocal checkpoints
+        if armed:
+            checkpoints += 1
+            raise signal
+
+    with held_root(root) as descriptor:
+        monkeypatch.setattr(filesystem.os, "open", open_file)
+        monkeypatch.setattr(filesystem.os, "close", close_file)
+        with pytest.raises(type(signal)) as failure:
+            filesystem.verify_worker_filesystem(descriptor, **options, checkpoint=checkpoint)
+        os.fstat(descriptor)
+        assert failure.value is signal and checkpoints == 1 and active == set()

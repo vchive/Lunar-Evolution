@@ -586,8 +586,12 @@ worker-input-view runner; it does not confer a new authority or wire schema.
   vocabulary; refuse extra guest data/config/helper paths before dispatch.
 - [x] Compare the entire held original output role against frozen copied pins
   before completing readback; refuse pin-vector drift across checkpoints.
-- [ ] Finish independent static review and one frozen complete-affected-file
-  regression, Ruff, compileall and diff checks; preserve actual failures.
+- [x] Finish independent static review and one frozen complete-affected-file
+  regression: 51files/2,216pass,159new,84.630742s,zero fail/error/skip/retry;
+  2,795source records unchanged, independent receipt34458982…. Ruff,
+  compileall and diff checks pass; no test retries.
+- [ ] Independently review and perform the fresh finite six-command Podman
+  compatibility observation. It cannot provide protected-build/runtime authority.
 - [ ] Complete PR203's original CI/source/evidence review and verified merge;
   then the final-source integration gate for this successor.
 - [ ] Complete actual driver input closure and immutable backing/protected

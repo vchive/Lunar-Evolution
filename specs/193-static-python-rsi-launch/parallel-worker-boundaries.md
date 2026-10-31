@@ -20,6 +20,10 @@ main integration. It can proceed independently of the following P1 work:
    ancillary metadata. Reject extra data/config/helper entries; scratch must
    be initially empty and output must contain only declared parent directories.
    Source/toolchain/prior role inventories retain their independent full walk.
+   The sole optional runtime link is `/etc/mtab` to exactly `/proc/mounts`, and
+   only when the original checked OCI selection includes `/proc` of type proc.
+   Its original no-follow O_PATH FD, inode, single-link count, exact size/target
+   and repeated name identity must agree. Every other link remains refused.
 3. After copying outputs, verify the complete original output role through its
    held FD against the copied pins, sizes and execution bits. Refuse missing,
    extra, linked or changed files, and replacements during the verification
@@ -48,6 +52,16 @@ the namespace object. Namespace disappearance and general descendant cleanup
 claims remain false; hostile-host writers, foreign same-credential processes
 and inherited input capabilities are still separate boundaries.
 
+The Python build used for actual acquisition must export callable
+`os.pidfd_open`; a matching Python minor release or software-fixture pass does
+not establish that capability. The concentrated3.11.15 environment lacks that
+export. Its separately attempted six-command observation failed at original
+service acquisition before any target start or new gate. The original
+2.642591-second failure, source equality and stopped original container are
+retained; the software regression is unchanged. A separately reviewed fresh
+plan selects the independently observed3.12.3 interpreter that exports the API,
+with fresh output/scratch paths and no automatic fallback or retry.
+
 The filesystem gate closes a finite pre-start data-tree entry route. Kernel
 filesystems, inherited FDs, implicit driver behavior and interval-wide backing
 protection are not made complete by this walk. Output equality checks do not
@@ -69,3 +83,50 @@ Keep the production CLI refusal until then. No WebAgent, model, remote
 evaluator, company platform or real solver campaign belongs to this software
 regression; original benchmark content is read-only. Fixed-U/account/root/ACL/
 cgroup environment acceptance remains separately required.
+
+## Frozen concentrated regression
+
+Implementation566778de5891205950cfe6d6c3b646b25875759f, tree
+61c527d1694b4bb07560ae39d0900dd9524e8835, passed all2,216cases in51complete
+affected files on5090gpu Python3.11.15. All159new cases passed: original boundary
+integration27, filesystem51, namespace-init50 and output-FD31. The original
+child was reaped with zero exit in84.63074161065742seconds /600seconds,
+zero failures/errors/skips/retries. No product compiler, solver or image ran;
+existing tests may construct and execute their inert native helper fixtures.
+
+All2,795frozen source records match Git blobs, stored execution bits and archive
+contents; original source-before/source-after reports are unchanged. Independent
+review compared exact per-file counts and all new raw keys. One existing raw
+parameter differs by platform: frozen source uses errno.EDQUOT, which is69 on
+the collection's Darwin and122 on the original Linux interpreter. The other
+2,215raw keys match exactly. Neither original collection nor JUnit was changed,
+and no pytest run was repeated. Ruff, compileall and diff checks passed.
+
+Original evidence is under primary ignored
+`validation/worker-boundaries-20261031/`. Independent review SHA256:
+3445898233a78393a2bdd2f862d412b96421a4ff3a2f100a4c221b11ff93aecf.
+Original batch-result SHA256:
+3d7a5d4dc21e42d28fe2038c7841dee02f82735ff2ec9b284f4b4e3d85bdc15f.
+JUnit SHA256:
+15b11e09273f767f131a53cccf1c69bda5880bba17d35f279e82bfef197e78fe.
+
+The first dependent extraction was mistakenly requested while SCP was still
+running; the archive hash refused before extraction, and the harness file was
+absent at that initial Python invocation. No pytest import, collection or run
+occurred there. The original SCP then completed successfully, the complete
+archive hash was verified, and the single batch above executed. The original
+transport pre-execution record is retained separately.
+
+The later result-documentation changes do not modify product or test bytes.
+Fresh finite Podman compatibility and this successor's final CI/source/main
+integration remain pending and must retain their own actual outcomes.
+
+The distinct3.12.3 six-command observation failed in3.531581seconds before
+target start, after the original initialized lifetime phase. The report retains
+ValueError and confirmed original container exit137. A separately recorded
+post-exit host-image observation found the runtime's `/etc/mtab` link, which the
+initial fixed vocabulary does not admit. This observation is not a read of the
+earlier live worker. It motivates the narrow fixed-link successor above; it
+does not rewrite the original failure, prove its lost inner error text or
+establish compatibility. The successor needs its own affected regression and
+separately reviewed fresh observation.
