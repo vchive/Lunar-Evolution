@@ -21,7 +21,14 @@ review passed (ad075f62…). No production admission follows from either result.
 
 The missing integration is a fixed loader that acquires the **first**
 `PythonRSISchedulerInputContext` from the actual accepted static image and its
-original, still-live runtime owner, then connects that context to the CLI.
+original, still-held image/material owner, then connects that context to the CLI.
+This is distinct from the per-attempt producer process owner: the existing
+sequence is context, plan/claim, attestation consumption, sealed executable pair,
+then spawn/register/target gate. That process owner is created within the native
+attempt. Requiring it before the first context would create a causal cycle;
+pre-running a producer cannot fill the acquisition gap or preserve once-only
+semantics. The fixed late native handoff carries original execution evidence,
+not authority to acquire or approve an image.
 Existing staging, scheduler, gateway and recovery code should be reused:
 
 | Existing module | Reusable implementation |

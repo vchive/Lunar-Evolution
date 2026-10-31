@@ -15,6 +15,7 @@ import pytest
 from tests import test_static_python_rsi_vfs_lifetime as lifetime_tests
 from tests import test_static_python_worker_input_view as worker_tests
 from tests.test_static_python_link_objects import archive_bytes, object_bytes
+from tests.test_static_python_worker_filesystem import populate_guest
 from tools.static_python_rsi_fixture import podman_vfs_lifetime as lifetime
 from tools.static_python_rsi_fixture import podman_vfs_snapshots as retained
 from tools.static_python_rsi_fixture.execution_backend import BuildExecutionError
@@ -306,6 +307,7 @@ def test_original_owner_freezes_argv_and_keeps_existing_wire_summary(worker_owne
     prior = [*inventories["work"], row("objects/unused.o", opaque)]
     owner = vector.create()
     owner._bind_worker_inputs(inputs, prior, argv=argv)
+    owner._bind_worker_filesystem(**populate_guest(vector.root))
     expected = lifetime._worker_input_summary(owner.owner, {**inputs, "work": prior})
     parsed = []
     original_parser = lifetime.inspect_static_python_relocatable_elf
@@ -331,6 +333,7 @@ def test_original_owner_refuses_resigned_invalid_selected_bytes_before_start_bou
     owner = vector.create()
     owner._bind_worker_inputs({"source": [], "toolchain": []}, [row("objects/autolink.o", raw)],
                               argv=ar_argv("@work/objects/autolink.o"))
+    owner._bind_worker_filesystem(**populate_guest(vector.root))
     with pytest.raises(ValueError, match="^podman_vfs_lifetime$"):
         owner.before_start()
     assert owner.phase == 1 and vector.capture.input_view is None

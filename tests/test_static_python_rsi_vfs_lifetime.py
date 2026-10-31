@@ -129,7 +129,9 @@ def owner_vector(tmp_path, monkeypatch):
             raise state.proc_error
         if not state.worker_visible:
             pytest.fail("exited worker was queried by numeric PID")
-        raw = proc_stat() if name == "stat" else MOUNTINFO
+        raw = (proc_stat() if name == "stat" else
+               f"Pid:\t{PID}\nTgid:\t{PID}\nNSpid:\t{PID}\t1\nNStgid:\t{PID}\t1\n".encode()
+               if name == "status" else MOUNTINFO)
         assert len(raw) <= maximum
         return raw
 
@@ -190,6 +192,9 @@ def complete(vector, *, status="stopped"):
                          control(vector, "wait", b"0\n"), control(vector, "state", terminal)]
     vector.outputs = [{"path": "result.o", "size": 3, "sha256": retained._sha(b"obj"), "executable": False}]
     owner.before_start()
+    if vector.capture.worker_input_view:
+        # Inert original output, now independently checked through the held FD.
+        (vector.root / "out/result.o").write_bytes(b"obj")
     vector.state.exited, vector.state.worker_visible = True, False
     owner.observe_original_exit(attach, b"0\n", terminal)
     owner.before_readback()

@@ -183,9 +183,13 @@
         "tests/test_static_python_worker_input_view_installation.py",
         "tests/test_static_python_link_objects.py",
         "tests/test_static_python_link_command_tail.py",
-        "tests/test_static_python_worker_link_inputs.py"
+        "tests/test_static_python_worker_link_inputs.py",
+        "tests/test_static_python_worker_boundaries.py",
+        "tests/test_static_python_worker_filesystem.py",
+        "tests/test_static_python_worker_init.py",
+        "tests/test_static_python_worker_outputs.py"
       ],
-      "expected_tests": 1617,
+      "expected_tests": 1838,
       "zero_skips": true
     },
     {

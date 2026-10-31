@@ -574,3 +574,33 @@ Strict whole-history observation completed156.101037s /300s,zero retry;
 independent original/canonical review passed38checks (ad075f62…). Its53,563-byte
 candidate matches the existing reader inside the pinned harness; no separate
 legacy wire was saved and the auditor did not rerun either reader.
+
+## Parallel original-worker boundary batch — 2026-10-31
+
+See `parallel-worker-boundaries.md`. This is enforcement on the existing opt-in
+worker-input-view runner; it does not confer a new authority or wire schema.
+
+- [x] Implement bounded original namespace-init status verification, bracketed
+  by the original live owner checks at initialized and before-start boundaries.
+- [x] Freeze and privately transfer the original checked OCI metadata/kernel
+  vocabulary; refuse extra guest data/config/helper paths before dispatch.
+- [x] Compare the entire held original output role against frozen copied pins
+  before completing readback; refuse pin-vector drift across checkpoints.
+- [x] Finish independent static review and one frozen complete-affected-file
+  regression: 51files/2,216pass,159new,84.630742s,zero fail/error/skip/retry;
+  2,795source records unchanged, independent receipt34458982…. Ruff,
+  compileall and diff checks pass; no test retries.
+- [x] Complete narrow fixed-mtab and fixed-empty-scratch compatibility fixes;
+  retain separate frozen222/253-case all-pass supplements and independent
+  original reviews2695afd0…/302b07fb…. Preserve all actual earlier failures.
+- [x] Complete independent original-record review of the successful fresh V4
+  six-command Podman observation (14.511079s/600s, zero retry/timeout),
+  receiptc005543b…. All507payload files,210raw records,30phases,61operations/
+  122logs and22current/work outputs agree. It cannot provide runtime authority.
+- [x] Complete PR203's original CI/source/evidence review and verified merge:
+  45/45 original jobs, audit aa7503c2…, main da251e3e/tree708b3af3 exactly tested.
+  Preserve the original download timeout and reuse its20complete ZIPs.
+- [ ] Complete this successor's own final-source CI/source integration gate.
+- [ ] Complete actual driver input closure and immutable backing/protected
+  output consumption before accepted image/material acquisition, first context,
+  production CLI and real copied-case acceptance. No fixture closes that gate.

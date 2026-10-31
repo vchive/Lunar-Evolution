@@ -1,3 +1,44 @@
+<!-- parallel-worker-boundaries-current:start -->
+## 当前批量开发：原 worker 三条边界（2026-10-31）
+
+当前开发区 `/Users/liminghan/.codex/worktrees/support-object-format/lunar_agent`，
+分支 `codex/parallel-build-closure`，从 PR203/head `cb2c7016` 继续。
+P0：PR203 原 run41174217694/attempt1 已45/45成功；独立原件/source审计aa7503c2…
+核45ZIP及三版各27480keys（27346pass+134原skip）通过。一次原下载超时保留，20原ZIP
+复用、25缺失原件三路只读补齐，无CI重跑。已合main da251e3e1bda9f8aea5c08087acb522951a90b16，
+受测tree708b3af3精确相等，parents为d2cc0205/cb2c7016；后继自身CI另算。
+
+P1：原 namespace-init status、固定guest非输入数据树、原output FD完整组核对三个
+模块已实现，接回同一custody/lifetime；旧默认和成功wire/claims保持。冻结566778de的
+51完整文件2,216例集中回归全过，159新增，84.630742秒，零fail/error/skip/retry。
+2795源码/Gitblob/mode/归档前后相等，独审34458982…；唯一旧参数errno.EDQUOT
+Darwin69/Linux122差异保留，其他2215及全部159新rawkeys一致。原集中批次未重跑。
+
+两次必要兼容修复各做窄补验，不能相加称一次全量：3c34d9ae的4完整文件222pass、
+真实新增31（固定mtab）、6.177187秒、独审2695afd0…；faf3c2f9的4完整文件253pass、
+真实新增31（固定空scratch目录）、3.972090秒、独审302b07fb…。均零fail/error/skip/
+retry、原childreaped、2795源码前后相同，Ruff/compileall/diff通过。新拒绝只附固定code，
+不包装OS/control异常；mtab只准精确/proc/mounts，scratch只准3个固定可选空0755目录。
+
+v1缺pidfd API、v2/v3启动前ValueError的实际失败均保留。退出后host-image观察和静态
+image契约只能支持兼容修复，不能回填成旧live worker唯一根因。新的V4独立计划审查
+通过（ae61916d…），同faf3源fresh六命令真实Podman观察全部完成，14.511079秒/600秒，
+零retry/timeout，transport rc0/reaped，source前后相等。完整原件独审c005543b…通过：
+507payload+1manifest/157dirs、210VFS/lifetime records、30phases、61operations/
+122原logs、22current+work输出pins及11final outputs全核。后继最终来源完整CI/source
+和main集成仍待完成。后继CI expected-only清单27701keys已准备，不能称CI已通过。源码已push。
+证据在主区ignored `validation/worker-boundaries-20261031/`，详见Feature193
+`parallel-worker-boundaries.md`。
+
+后续必要P1依赖：完整configured driver输入闭包和原始不可变输入/输出保护、外部writer
+排除 → accepted image/material owner与sealed startup → 首个scheduler context →
+原claim/attestation内的producer spawn/register/gateway → 生产CLI和复制本地case。
+不能先跑producer填首个context；既有stager/resolver/gateway/recovery/BRS不重做。
+fixed-U/root/account/ACL/cgroup仍需真实环境前提。全部custody/installation/runtime/
+admission/publication claims保留false。不跑模型/WebAgent/远程evaluator/真实solver，
+不改原benchmark、不读密钥。多机/服务化/训练不扩入本轮。
+<!-- parallel-worker-boundaries-current:end -->
+
 <!-- link-object-format-current:start -->
 ## 当前开发点：原 worker 链接输入前置校验（2026-10-31）
 
