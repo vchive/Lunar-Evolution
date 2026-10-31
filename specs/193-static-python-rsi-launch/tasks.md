@@ -1,9 +1,20 @@
 # Feature 193 tasks
 
+## Current finite compiler inputs — 2026-11-01
+
+See `finite-driver-language-inputs.md`. Both existing-path preflights are
+implemented: declared `.c` compilation and finite v2 literal include operands.
+Frozen7873dbe5 passed one11-complete-file Linux3.12.3 batch,612pass/75new,
+29.182472s/600s,zero fail/error/skip/retry/timeout,rc0/reaped. All2,802 source
+files,308directories and290 actual module origins match; independent original
+review8806d9dc… passes. Ruff/compileall/diff pass. The old210-case leaf batch
+was not rerun. Final-source CI/main remains open;27,904 keys are expected-only.
+
 ## Current sealed leaf export continuation — 2026-10-31
 
 See `sealed-prior-leaf-export.md`; older pending entries retain their original
-scope. PR205's frozen final-source CI/main gate remains separate.
+scope. PR205's original final-source CI/main gate is now closed; the current
+successor's own gate remains separate.
 
 - [x] Implement original-bank per-record sealed leaf export, exact held-inode
   verification and combined bank/export budgets, keeping legacy behavior.
@@ -665,4 +676,8 @@ See `sealed-prior-transition.md`; the final guest bind backing remains separate.
   separately validate de066089 in2completefiles:110pass/2new,3.671546s,zero
   fail/error/skip/retry/timeout,source2799unchanged,independent audit0347ed86….
   Do not combine the batches or relabel634smoke as de066execution.
-- [ ] Complete this successor's final-source CI/source review and integration.
+- [x] Complete PR205's original final-source CI/source review and integration:
+  run41214678677/attempt1 all45jobs successful,45ZIPs/2799source verified;
+  each Python27788keys=27654pass+same134skip,all87additions pass. Audit
+  e1ae0b15… and root merge1c799385… confirm maina094d387/tree d5601594
+  and parents49acb921/00bdde95. No CI rerun; newer successor gate is separate.

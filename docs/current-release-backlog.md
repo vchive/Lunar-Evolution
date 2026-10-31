@@ -3,16 +3,27 @@
 The successor adds two existing-path preflights: declared `.c` compilation
 inputs and complete canonical relative literal includes in configuration-review
 v2, including non-LF lexical boundaries. The v1 reader, generic capture,
-successful wire and runner remain unchanged. Seventy-five new nodes are
-collected; one combined eleven-complete-file Linux batch is pending. Ruff,
-compileall and diff checks pass. The earlier210-case leaf batch is not rerun.
+successful wire and runner remain unchanged. Frozen7873dbe5/tree65bf13c0 passed
+one eleven-complete-file Linux3.12.3 batch:612pass, including75new,29.182472s/
+600s,zero failure/error/skip/retry/timeout,original pytest and SSH rc0/reaped.
+All2,802 source files/308directories,Git blobs/modes and290 actual module
+origins match. Independent original review8806d9dc… verified12 archive members,
+all612JUnit keys and75 additions by static AST. Ruff/compileall/diff pass.
+The earlier210-case leaf batch is not rerun. The27,904-key successor inventory
+is expected-only; final-source CI/main remains pending. Originals are under
+primary ignored `validation/finite-driver-inputs-20261101/`.
 See [the contract](../specs/193-static-python-rsi-launch/finite-driver-language-inputs.md).
-PR205's original CI/main gate stays separate; all authority claims stay false.
+PR205's original CI/main gate is closed below; this successor's gate remains
+separate. All authority claims stay false.
 
 ## Current batch — sealed per-file export owner, 2026-10-31
 
-PR205/head00bdde95 remains frozen under original run41214678677/attempt1.
-Its full original/source CI gate and main merge are pending. The successor
+PR205/head00bdde95 passed original run41214678677/attempt1,45/45jobs, and
+independent original/source reviewe1ae0b15… over45ZIPs/2,799source files. Each
+Python retains27,788keys (27,654pass and the same134skip),all87 additions pass.
+It merged asmain a094d387,exact tested treed5601594,parents49acb921/00bdde95;
+root verified-merge receipt1c799385… passes. The successor
+same-tree main push run41222961732 is completed/cancelled,not passed. The
 branch `codex/sealed-prior-leaf-backing` adds a private per-file memfd lease to
 the existing sealed bank, preserving original checkpoints, combined byte/handle
 budgets, exact inode/record ownership, all-or-none acquisition and cleanup.
@@ -99,7 +110,10 @@ zero failures/errors/skips/retries/timeouts, unchanged 2,799 source files and
 original child reaped; independent review `0347ed86…` passed. These batches
 are not combined into one full-run claim, and the 634 smoke remains scoped to
 634. Final-source CI/source review and this branch's main integration are
-pending; the 27,788-key successor inventory remains expected-only.
+closed by PR205's original45/45CI/source review and exact-tree main merge
+a094d387. Its27,788keys per Python are now observed original results, with
+27,654passes and the same134skips; all87additions explicitly pass. Newer
+successor inventories retain their own separate gates.
 See [the contract](../specs/193-static-python-rsi-launch/sealed-prior-transition.md).
 
 Necessary P1 remains protection of the actual later worker backing and complete

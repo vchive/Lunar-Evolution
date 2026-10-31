@@ -3,19 +3,27 @@
 当前分支 `codex/sealed-prior-leaf-backing` 在逐文件 lease 上继续补齐两个实际
 preflight：原 dependency graph 只准声明的 `.c` 编译输入；configuration-review v2
 只准完整的 canonical relative literal include，并保留非 LF 控制符边界。v1、通用
-capture、有效 wire 与原 runner 不变。两文件新增75节点已收集，尚待一次11完整文件
-集中 Linux 回归，不重跑旧210例。Ruff、compileall、diff已通过。见
+capture、有效 wire 与原 runner 不变。冻结7873dbe5/tree65bf13c0的一次11完整文件
+Linux3.12.3回归612pass，75新增全过，29.182472秒/600秒，零fail/error/skip/retry/
+timeout，原pytest与SSH均rc0/reaped；未重跑旧210例。2802源码/308目录前后及Gitblob/
+mode相等，290实际加载模块来源匹配；12原归档成员及75新增静态AST键独审8806d9dc…
+通过。Ruff、compileall、diff已通过。新CI27904键仍为expected-only；完整CI/main
+集成仍待完成。原件在主区ignored `validation/finite-driver-inputs-20261101/`。见
 `specs/193-static-python-rsi-launch/finite-driver-language-inputs.md`。
 
-PR205/head00bdde95及原CI保持冻结；新批次不改变它。实际sealed worker消费仍开放，
-全部runtime/admission/publication claims保持false。
+PR205已合main为a094d3872fa0aaafae4702b3066b0e3bcfc5e9ba，tree d5601594…
+精确等于受测树；原run41214678677/attempt1全45成功，45ZIP/2799source及三版每版
+27788原键（27654pass+原134skip）独审e1ae0b15…通过，87新增显式pass。
+root合并核验1c799385…确认原parents49acb921/00bdde95。新批次完整CI另算。
+同树main push41222961732已completed/cancelled，不记为通过。
+实际sealed worker消费仍开放，全部runtime/admission/publication claims保持false。
 
 <!-- sealed-prior-leaf-export-current:start -->
 ## 当前开发：逐文件封存导出（2026-10-31）
 
-本节覆盖下方旧进行中状态。PR205/head00bdde95保持冻结，原CI
-run41214678677/attempt1运行中；终态后按已审查计划核45原ZIP、完整来源和精确键，
-再决定合入main，不重跑CI。当前开发分支为 `codex/sealed-prior-leaf-backing`。
+本节覆盖下方旧进行中状态。PR205/head00bdde95已完成原CI及45原ZIP/source审查，
+合main为a094d387，精确受测tree d5601594；未重跑原CI。
+当前开发分支为 `codex/sealed-prior-leaf-backing`，后继自身CI/main仍待完成。
 
 已在原sealed bank新增command-owned逐文件memfd lease，保留同源bytes、四seal、
 exec/data模式、原checkpoint和bank+export总预算，整批发布、close-once及foreign FD
@@ -90,8 +98,9 @@ prepare/dispatch，不能称烟测重试。
 后继de066089/tree2c628437仅补齐begin/snapshot获取失败时的cleanup-unknown记录，
 另做两个完整文件110pass（2新增），3.671546秒，零fail/error/skip/retry/timeout，
 原childreaped、2799源码前后相同，独审0347ed86…通过。此批与2363例分别报告；
-634六命令结果不改写成de066实跑。最终来源CI/source审查及本分支main集成待完成，
-27788-key后继清单仍只是expected-only。原件在主区ignored
+634六命令结果不改写成de066实跑。PR205原45job CI与source/ZIP独审e1ae0b15…现已
+通过，实际每版27788keys（27654pass+原134skip），87新增显式pass；合main a094d387，
+tree d5601594精确。后继新批次CI另算。原件在主区ignored
 `validation/sealed-prior-transition-20261031/`。
 规格为 `specs/193-static-python-rsi-launch/sealed-prior-transition.md`。
 

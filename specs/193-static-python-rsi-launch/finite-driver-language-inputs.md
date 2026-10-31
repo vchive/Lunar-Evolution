@@ -33,9 +33,9 @@ manifest's complete argv/order binding is absent.
   plus non-C language refusals before execution.
 - [x] Review retained real header include spelling, implement the finite v2
   operand gate and test literal, conditional and malformed input boundaries.
-- [ ] Review both changes together, then run the complete affected files once
+- [x] Review both changes together, then run the complete affected files once
   on frozen Linux source, preserving source/module origins and original results.
-- [ ] Update focused inventory as needed; run Ruff, compileall and diff checks.
+- [x] Update focused inventory as needed; run Ruff, compileall and diff checks.
 - [ ] Complete final-source CI/source review and main integration separately.
 
 No compiler campaign, target interpreter, model or remote evaluator is part of
@@ -44,6 +44,29 @@ Immutable input consumption, directory stability, external-writer exclusion,
 accepted image/material ownership, sealed startup and production CLI/local-case
 acceptance remain open; every existing custody/runtime/admission/publication
 claim remains false.
+
+## Frozen combined result
+
+Frozen commit7873dbe52376cf7908f6e44893473d964bd030fe,tree
+65bf13c072bd7e66cd62bb32337d1effda77595d passed all612 cases in the eleven
+complete affected Linux3.12.3 files,including75 additions (12 compiler-language
+and63 header-literal cases). The single original pytest child completed in
+29.182472060s under600s,rc0/reaped,zero failure/error/skip/retry/timeout. Original
+SSH was also rc0/reaped. The old210-case leaf batch was not rerun.
+
+All2,802 source files/308directories matched before/after and their Git/archive
+blobs/modes. All290 actual child module-origin entries match the frozen source.
+Independent review8806d9dc293c006a099f20e6d836c0499eb08c16cce6a3a36300d054d41b908b
+verified all12 archived originals,612 exact JUnit keys and all75 additions by
+static AST expansion. Original archive SHA256 is
+36352f1432876df9a4f3119f98274c0b3ee2cc6d29450f9ecbd0adca2cf499c7.
+Ruff,compileall and diff checks passed. Evidence is under primary ignored
+`validation/finite-driver-inputs-20261101/`.
+
+The existing83 focused groups and65 zero-skip gates remain; the source group
+now covers2,068 keys and the configured sum is8,884. The27,904-key successor
+inventory remains expected-only. Full final-source CI/source review and main
+integration are required separately; no build/runtime/admission claim changes.
 
 ## Retained header spelling and include-order decision
 
