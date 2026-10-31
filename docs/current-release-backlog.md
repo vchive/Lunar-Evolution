@@ -1,3 +1,34 @@
+## Current closeout — worker views, link formats and CI patch drift, 2026-10-31
+
+PR200 passed all 45 original jobs and independent source/artifact review, then
+merged as `dd46fe0b`, exact tested tree `42b43430`. PR201's original attempt
+41142583935 failed: all 42 test jobs passed, but the 3.13 focused aggregation
+correctly refused mixed 3.13.16/3.13.17 provenance. The independent failed-run
+audit (`1d5e7523…`) preserves all 45 ZIPs, 44 normal receipts and that failure.
+PR201 must be superseded rather than merged or relabeled successful.
+
+The successor combines original worker-input-view validation, explicit bounded
+GNU ar/x86_64 ET_REL consumption and exact Python release pins shared by test
+and focused jobs. Existing 42+3 roles, artifact names and strict provenance
+comparison remain. The 102-node corrected format file and seven-real-material
+read-only observation passed; the initial three fixture failures remain recorded.
+The same frozen worker-view build completed all 318 commands and 212 compiler/
+two linker comparisons in 2531.604313s / 3000s, zero retry. All 22,397 retained
+originals passed independent review (`4c94cdc0…`); no final image was executed.
+
+The strict whole-history reader observation also passed in156.101037s /300s,
+zero retry;38 independent checks reconstructed its53,563-byte canonical candidate
+(ad075f62…). Both-reader equality is the pinned harness result; no separate
+legacy wire was saved or rerun by the auditor. P0 is now this successor's
+final-source CI, independent review and verified main integration.
+P1 remains complete configured driver inputs, original immutable consumption,
+protected output transitions and descendant drainage, followed by accepted
+image/live ownership, the first scheduler context loader, production RSI CLI
+and copied local cases. Fixed-U/external-writer/account/root/ACL/cgroup
+prerequisites remain separate. These results grant no installation/runtime,
+production admission or publication authority. Older observations below retain
+their original sources, outcomes and scope.
+
 ## Current closeout — original worker input view, 2026-10-31
 
 This entry supersedes the older in-progress observations below. The original

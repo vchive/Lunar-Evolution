@@ -13,9 +13,9 @@ real retained materials pass; see `link-object-format.md`. This closes the
 finite format implementation gap only. Complete configured driver input
 routes, immutable original consumption, protected-output transitions and full
 original descendant drain remain open before accepted-image/live-owner and
-first-scheduler-context acquisition. The strict reader's complete original
-worker-view history still needs its separate reviewed observation; no rebuild
-or production admission follows from parser success.
+first-scheduler-context acquisition. The strict reader's separately reviewed whole-history observation completed
+without rebuilding or executing the image; collected-original independent
+review passed (ad075f62…). No production admission follows from either result.
 
 ## Accepted runtime and first scheduler context
 

@@ -5,9 +5,15 @@
 `/Users/liminghan/.codex/worktrees/support-object-format/lunar_agent`，分支
 `codex/support-object-format`。PR200 已通过原45/45 CI和独立原件审查，合 main 为
 `dd46fe0ba2af7c8ce01ea50194e9cfa818326b8c`，受测 tree `42b43430` 精确相等。
-PR201/head `0d9844d5` 及原 run41142583935/attempt1 继续等待终态，尚不称已合入。
-其原 CI base 保持 `3de1e92d`，不能因 main 推进改写。完整 worker-input-view Shinka
-构建仍按原3000秒/零retry运行；终态、原件收集及独审完成前不称成功。
+PR201/head `0d9844d5` 的原 run41142583935/attempt1 已失败：44 success /1 failure，
+42个测试任务全部成功，唯一失败为3.13 focused汇总。原3.13任务混用3.13.16/3.13.17，
+严格provenance门正确拒绝；原失败和独审receipt `1d5e7523…` 保留，不合旧PR。
+后继整合PR包含worker-input-view、link-object格式和三版精确Python补丁版本固定，
+保留原42+3任务、名称与严格汇总门。原CI base `3de1e92d` 不因main推进改写。
+
+同0d9844d5源码的完整worker-input-view Shinka构建已成功：318命令、212compiler/
+2linker比较，2531.604313秒/原3000秒/零retry；22,397原件独审通过（`4c94cdc0…`）。
+静态ELF只检查未执行；它不提供不可变输入、accepted安装或runtime权威。
 
 本分支新增 bounded GNU ar/x86_64 ET_REL reader，显式接入原 support staging 和
 worker-view retained candidate 路径；旧 API/default/profile/candidate bytes 保持。
@@ -26,9 +32,12 @@ section，不打开或解包成员名称。它是有限格式检查，不是完�
 `validation/support-object-format-20261031/`。后继仅调整test import排序；Ruff、compileall、
 diff通过。最终完整CI与新PR尚待冻结文档后启动。
 
-下一步先完成PR201原CI/source独审并合main，收完整worker-view构建终态与原件，再按精确
-只读计划验证严格retained reader的完整历史消费。后者无需重建CPython，当前7材料parser
-观察不能代替它。完整configured driver输入闭包、原始不可变消费、输出保护过渡及完整
+严格retained reader完整历史观察已完成：156.101037秒/300秒/零retry，53,563B
+候选与旧reader一致；38项原件/canonical独审通过（ad075f62…）。旧reader字节只在
+原harness内比较，没有单独保存legacy wire；审计未重跑reader。下一步冻结后继整合PR，完成
+自身完整CI/source独审后合main，再将失败PR201关闭为superseded。不重建CPython，
+不重跑原失败CI，也不以7材料parser观察替代严格reader完整历史验证。
+完整configured driver输入闭包、原始不可变消费、输出保护过渡及完整
 后代drain，accepted image/live owner、首个scheduler loader、生产RSI CLI和复制case仍开放。
 不重复实现已有episode stager/resolver/gateway/recovery和reserved BRS serial。
 fixed-U/root/account/ACL/cgroup环境前提仍缺；不跑模型/WebAgent/远程evaluator/真实solver，

@@ -36,7 +36,15 @@ retain their historical scope and do not undo these narrower completions.
   the explicit installation candidate reader's frozen40a4fc23 focused regression:
   211pass in4completefiles including21new,0fail/error/skip/retry, source2781
   and all13originals independently verified (7869bbd3…); Ruff/compileall/diff pass.
-- [ ] Complete each successor's final-source CI/source gate and main merge.
+- [x] Complete the frozen0d9844d5 worker-view Shinka build:318 commands,
+  212compiler/2linker comparisons,2531.604313s /3000s,zero retry; independently
+  review all22,397 original files (4c94cdc0…). The static ELF was not executed.
+- [x] Preserve PR201's failed original CI:42test jobs pass, one3.13 focused
+  gate refuses mixed3.13.16/3.13.17; audit45ZIP/44receipts (1d5e7523…). Pin
+  identical exact releases in both successor matrices without weakening provenance.
+- [x] Complete PR200's45-job CI/source gate and exact-tree main merge dd46fe0b.
+- [ ] Complete the combined successor's own final-source CI/source gate and main
+  merge, then close failed PR201 as superseded.
 - [ ] Complete configured driver input closure, original immutable consumption,
   protected output transitions and complete original descendant drainage.
 - [ ] Establish an accepted static image/live owner, then the first production
@@ -535,7 +543,12 @@ not an approval of the previously retained real configure observation.
   seven retained real materials: 1281 inline objects and two CRT objects pass
   the present-format checks. No extraction, rebuild or image execution occurs.
 - [ ] Verify final-source complete CI and original source/artifacts, then merge.
-- [ ] Exercise the explicit strict retained-candidate reader against the complete
+- [x] Exercise the explicit strict retained-candidate reader against the complete
   original worker-view build history under its own exact reviewed read-only
   plan. Present-format success does not complete this integration gate or
   establish complete driver closure, immutable custody or runtime authority.
+
+Strict whole-history observation completed156.101037s /300s,zero retry;
+independent original/canonical review passed38checks (ad075f62…). Its53,563-byte
+candidate matches the existing reader inside the pinned harness; no separate
+legacy wire was saved and the auditor did not rerun either reader.

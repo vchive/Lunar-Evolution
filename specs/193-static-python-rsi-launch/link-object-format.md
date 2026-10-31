@@ -108,3 +108,29 @@ real-byte observation audit SHA256:
 The subsequent test-only import sort does not change assertions or product
 bytes. Ruff, compileall and diff checks pass. Complete driver/configured
 closure, immutable custody and runtime/installation authority remain false.
+
+## Final-source CI integration
+
+The successor also includes worker-input-view software and pins the same exact
+Python release in both CI matrices (3.11.17/3.12.15/3.13.17). This fixes the
+observed PR201 patch drift; all42 test jobs succeeded, but the original3.13
+focused gate correctly refused3.13.16/3.13.17. That failed run remains failed.
+Job/artifact names,42+3 layout and the strict provenance comparison are preserved.
+Ten selected existing workflow/provenance tests passed; complete successor CI
+and independent source/artifact review are still separate merge requirements.
+
+## Complete original-history observation
+
+The once-only strict retained-reader observation on frozen9103b3fe completed
+in156.10103662591428s within one original300-second deadline, zero retries.
+The existing worker-view reader ran under that same deadline and installation
+version; both returned the identical53,563-byte canonical candidate, SHA256
+`ddf370834d5a92aac735472c89a9c4a7cc3717a4d21b484daa1a57a10f21c50a`.
+All2784 reader-source files matched before/after. The unchanged original build
+history was from0d9844d5, already independently audited. No image, solver or
+build was executed by the observation. Collected-original independent review passed38checks and reconstructed the
+complete candidate from original pins; receipt SHA256
+`ad075f62a6a2300d95781b65187a7e033eccce65c89377f26a20271600ddec90`.
+The pinned harness compared both readers; no separate legacy wire was saved
+and the auditor reran neither reader. Final-source CI remains a separate gate. See
+`full-build-observation-20261031.md` for source identities, transport and limits.

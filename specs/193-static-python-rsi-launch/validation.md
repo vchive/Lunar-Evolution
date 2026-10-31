@@ -29,6 +29,33 @@ passing test bodies. Final-source complete CI/source review remains required.
 All complete closure, custody, installation/runtime and admission/publication
 authority claims remain false.
 
+The separate strict reader on frozen9103b3fe subsequently completed its actual
+whole-history observation in156.10103662591428s /300s,zero retry. Its53,563-byte
+canonical candidate exactly equals the existing worker-view reader's output;
+103frozen/43native bindings and all false claims remain. The harness recorded
+all2784 frozen source files equal before/after. Collected-original independent
+review passed38checks (ad075f62…); the complete candidate was reconstructed from
+original pins. Both-reader equality is recorded by the pinned harness, without
+a separately saved legacy wire or auditor rerun. This is distinct from the
+seven-material parser evidence.
+
+## Original CI patch drift and successor — 2026-10-31
+
+PR201 run41142583935/attempt1 has44 successful jobs and one failed focused3.13
+job; all42 test jobs succeeded. One3.13 role used3.13.16 and the other13 used
+3.13.17. The unchanged strict Python provenance comparison correctly refused.
+All45 original ZIPs,44 normal receipts, failed logs and local collection failures
+remain preserved. Independent failed-run receipt SHA256:
+`1d5e7523ae90ee7c29c28244ffd9784ed0aad8a962d3c9bad9d581ee3e44b333`.
+It explicitly reports `final_ci_passed=false` and `merge_eligible=false`.
+
+The combined successor fixes both matrices to3.11.17/3.12.15/3.13.17 and keeps
+42test+3focused jobs, original names/artifacts/commands and the strict aggregate
+comparison. The10 selected existing CI structure/provenance cases passed,
+72 deselected, with no test-body change. A first interpreter lacked pytest and
+refused before collection; the subsequent actual run used local Python3.13.
+The complete successor CI and independent source/original audit remain required.
+
 ## Source-data execution view v4 — 2026-10-29
 
 The explicit v4 API and capture/consumer path have completed affected software
