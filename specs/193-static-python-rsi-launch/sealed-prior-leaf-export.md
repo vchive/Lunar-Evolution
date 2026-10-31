@@ -105,3 +105,61 @@ other possible paths remain unproved; there was no fallback or second probe.
 Resolve original service/source visibility before runner integration. The
 27,829-key inventory is expected-only; final-source CI/main integration remains
 required separately.
+
+## Later bounded process metadata — 2026-11-01
+
+The first separately scoped metadata sample failed at the original fixed
+systemctl MainPID gate: rc0, exact stdout `0\n`, empty stderr. No ServiceRoot
+or process metadata was acquired. The original failure remains preserved and
+was not retried; its receipt is7535efe3….
+
+Fresh metadata-v2 adds exactly one read-only
+`info --format '{{json .Store.GraphDriverName}}'` through the existing frozen
+`preflight_podman_custody()` remote prefix before that same systemctl selection.
+It returned exactly `"vfs"\n`, activating the existing own socket service.
+No systemctl start, new service/backend, container or image was used. The
+original120s deadline covers the complete sample, zero automatic retries.
+Script38740b7b…/plan6fd9abef… completed rc0 in1.394622736s; original transport
+rc0/reaped, stderr empty. Receipt07632905… and all24 original files are retained.
+
+The original ServiceRoot service pidfd/start/root/mount-namespace/socket owner
+checks passed before/after for service1773405/start243158031. The sample also
+held controller1773386/start243158003 through its own pidfd/proc identity checks.
+Namespace descriptors remained held across the observation:
+
+| Selected field | Controller | Exact selected service |
+| --- | --- | --- |
+| User namespace, device5 | inode4026531837 | inode4026538348 |
+| Mount namespace, device5 | inode4026531832 | inode4026538362 |
+| PID namespace, device5 | inode4026531836 | inode4026531836 |
+| uid_map | 0→0, count4294967295 | 0→2110, count1;1→1083040, count65536 |
+| gid_map | 0→0, count4294967295 | 0→2100, count1;1→1083040, count65536 |
+| Host-view real/effective/saved/filesystem UID | all2110 | all2110 |
+| Host-view real/effective/saved/filesystem GID | all2100 | all2100 |
+| CapEff/CapPrm | 0000000000000000 | 000001ffffffffff |
+| NoNewPrivs | 0 | 0 |
+| Calling controller PR_GET_DUMPABLE | 1 before/after | unknown; intentionally not read |
+
+Every selected before/after field was equal within its own process. Optional
+read and cleanup unknown lists were empty; service dumpability remains an
+explicit unobserved field. All2,801 frozen source files matched original bytes
+and executable bits; the full actual-mode/byte projection was equal before/
+after, SHA10633db4…. All eight loaded product modules originated in the frozen
+checkout and matched the manifest before/after. Original manifest20070f8f… and
+the detailed later-observation report are under primary ignored
+`validation/sealed-leaf-probe-20261031/`.
+
+This establishes the current difference in user/mount contexts despite matching
+host-view filesystem IDs. Capability masks apply in their namespace context.
+It does not reconstruct the exited original probe controller, identify the
+historical failing syscall actor or prove that namespace differences caused the
+old refusal. Reverse service-to-controller proc-FD access was not attempted.
+Sequential source readback does not establish immutable whole-interval custody.
+
+The namespace-holder direction reached literature/design preparation only.
+Automatic safety review stopped its agent for `possible cybersecurity risk`;
+no v3 was written or executed, no permission was relaxed and no alternate
+mechanism was attempted. Original-worker lease integration, exact guest inode
+consumption and runtime acceptance remain open. No product/test/source record
+or frozen PR205 changed; the earlier210-case batch was not rerun. All existing
+custody/runtime/admission/publication claims remain false.

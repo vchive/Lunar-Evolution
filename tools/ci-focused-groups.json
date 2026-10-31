@@ -162,6 +162,7 @@
         "tests/test_static_python_configuration_generation.py",
         "tests/test_static_python_configuration_review.py",
         "tests/test_static_python_configuration_review_v2.py",
+        "tests/test_static_python_build_command_input_graph.py",
         "tests/test_static_python_source_data_backend.py",
         "tests/test_static_python_source_data_graph.py",
         "tests/test_static_python_source_data_consumer.py",
@@ -192,7 +193,7 @@
         "tests/test_static_python_sealed_prior_integration.py",
         "tests/test_static_python_sealed_prior_leaf_export.py"
       ],
-      "expected_tests": 1966,
+      "expected_tests": 2068,
       "zero_skips": true
     },
     {

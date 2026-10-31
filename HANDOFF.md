@@ -1,3 +1,15 @@
+## 当前批次：有限编译语言与配置 include（2026-11-01）
+
+当前分支 `codex/sealed-prior-leaf-backing` 在逐文件 lease 上继续补齐两个实际
+preflight：原 dependency graph 只准声明的 `.c` 编译输入；configuration-review v2
+只准完整的 canonical relative literal include，并保留非 LF 控制符边界。v1、通用
+capture、有效 wire 与原 runner 不变。两文件新增75节点已收集，尚待一次11完整文件
+集中 Linux 回归，不重跑旧210例。Ruff、compileall、diff已通过。见
+`specs/193-static-python-rsi-launch/finite-driver-language-inputs.md`。
+
+PR205/head00bdde95及原CI保持冻结；新批次不改变它。实际sealed worker消费仍开放，
+全部runtime/admission/publication claims保持false。
+
 <!-- sealed-prior-leaf-export-current:start -->
 ## 当前开发：逐文件封存导出（2026-10-31）
 
@@ -26,6 +38,29 @@ sealed source的可见性，再做OCI/worker inventory/retained-history的精确
 publication权威保持false，不跑模型或远程评测。
 原件在主区ignored `validation/sealed-prior-leaf-export-20261031/` 与
 `validation/sealed-leaf-probe-20261031/`；27829后继键清单仍只是expected-only。
+
+### 后续只读身份观察（2026-11-01）
+
+独立metadata-v1原失败保留：同一固定systemctl命令rc0、stdout精确`0\n`、
+stderr空，在MainPID门拒绝，未获取ServiceRoot或进程元数据；不重跑v1。
+另审fresh metadata-v2，仅先通过原existing remote prefix调用一次只读info
+单字段唤起已有own socket服务，再走原systemctl和ServiceRoot。原120秒、零retry，
+rc0，1.394623秒，原child/SSH均reaped；receipt为07632905…。
+
+该次controller/service的held身份前后通过；user namespace不同
+（4026531837/4026538348），mount namespace不同（4026531832/4026538362），
+PID namespace相同（4026531836）。两者在controller视角的real/effective/saved/fs
+UID均2110、GID均2100；service uid_map为0→2110及1→1083040×65536，controller
+为全映射。controller CapEff/Prm为0，service为000001ffffffffff；两者NoNewPrivs0。
+controller自身PR_GET_DUMPABLE前后1，service dumpability未读取、仍unknown。
+2801源码bytes/exec bits及完整实际mode投影前后一致，8模块来源精确；
+source投影10633db4…、24原件清单20070f8f…。这些只说明此次不同user/mount上下文，
+不能回填旧probe根因或证明反向proc-FD可见性；claims全部保持false。
+
+namespace holder方向只到文献/设计准备；对应agent被自动安全审查以
+`possible cybersecurity risk`中止，未写入或执行v3，也未放宽权限或尝试替代机制。
+原worker实际接线、同inode消费及runtime验收仍未完成。这里只追加观察记录，
+冻结PR205、来源记录、代码/tests和旧210例回归均未改变或重跑。
 <!-- sealed-prior-leaf-export-current:end -->
 
 <!-- sealed-prior-transition-current:start -->

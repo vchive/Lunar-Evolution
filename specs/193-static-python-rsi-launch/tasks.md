@@ -18,6 +18,20 @@ scope. PR205's frozen final-source CI/main gate remains separate.
   its actual create125/proc-FD permission refusal. No guest/helper execution or
   backing-write probe followed. Review35 original members and retain unknown
   container creation; no ordinary-copy substitution, retry or guessed cleanup.
+- [x] Preserve the later metadata-v1 MainPID0 failure before ServiceRoot
+  acquisition; original systemctl rc0/stdout0-newline/stderr empty, no retry.
+- [x] Complete the separately reviewed fresh metadata-v2 sample: one original
+  existing-prefix read-only info request, then exact systemctl/ServiceRoot
+  before/after identity checks;1.394623s/120s,zero retry,rc0/reaped. Different
+  user/mount and same PID namespaces, equal host-view fsUID/GID, controller
+  dumpable1 and unobserved service dumpability are recorded; all2,801 source
+  bytes/exec/full modes and eight module origins remain unchanged. Preserve
+  receipt07632905…/24-original manifest20070f8f… without inferring old-probe
+  cause, reverse proc-FD access, custody or runtime authority.
+- [x] Record that the namespace-holder direction remained literature/design
+  preparation only: automatic safety review stopped its agent for
+  `possible cybersecurity risk`; no v3 written/executed, permission change or
+  alternate mechanism. Do not recast it as implemented worker integration.
 - [ ] Establish compatible original service access to the sealed source objects
   and verify actual guest consumption; the retained failure does not pass it.
 - [ ] Integrate the lease with the original runner's exact OCI, worker inventory,

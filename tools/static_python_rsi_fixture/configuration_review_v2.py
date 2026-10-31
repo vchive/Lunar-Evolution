@@ -132,11 +132,22 @@ def _text(raw: bytes) -> str:
     return text
 
 
+def _header_include(body: str) -> None:
+    """Accept one literal relative operand, without preprocessing or resolving it."""
+    body = body.strip(" \t")
+    if not body or (body[0], body[-1]) not in {("<", ">"), ('"', '"')}:
+        _fail("header_include")
+    relative = body[1:-1]
+    if (re.fullmatch(r"[A-Za-z0-9_./+-]+", relative) is None
+            or any(part in {"", ".", ".."} for part in relative.split("/"))):
+        _fail("header_include")
+
+
 def _header(raw: bytes) -> list[str]:
     text = _text(raw)
     # Preserve every directive, including conditional feature context, in the
     # independently reviewed inventory. Never evaluate a C preprocessor here.
-    lines = text.replace("\\\n", " ").splitlines()
+    lines = text.replace("\\\n", " ").split("\n")
     directives, features = [], {}
     conditions = []
     guard_started = guard_defined = guard_closed = False
@@ -150,6 +161,10 @@ def _header(raw: bytes) -> list[str]:
             operation, body = directive[1], directive[2].strip()
             if operation not in {"define", "undef", "if", "ifdef", "ifndef", "elif", "else", "endif", "include", "error"}:
                 _fail("header_directive")
+            if operation == "include":
+                # No trailing text or comments: the real reviewed header has
+                # no include directive needing a lexical comment exception.
+                _header_include(directive[2])
             directives.append("#" + operation + (" " + body if body else ""))
             if operation in {"if", "ifdef", "ifndef"}:
                 guard = operation == "ifndef" and body == "Py_PYCONFIG_H" and not conditions

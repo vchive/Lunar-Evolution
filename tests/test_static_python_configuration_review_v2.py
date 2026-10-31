@@ -799,3 +799,133 @@ def test_unknown_review_schema_has_no_v1_or_v2_fallback(review_v2_case):
     facts["schema"] = "lunar-unknown-review"
     with pytest.raises(v1.ConfigurationReviewError):
         concrete.prepare_cpython_build_recipe(review_v2_case[0], **_arguments(review_v2_case, facts=facts))
+
+
+@pytest.mark.parametrize("operand", [
+    pytest.param(b"<stddef.h>", id="angle-basename"),
+    pytest.param(b'"relative.h"', id="quoted-basename"),
+    pytest.param(b"<sys/types.h>", id="angle-relative"),
+    pytest.param(b'"internal/pycore_runtime.h"', id="quoted-relative"),
+    pytest.param(b"<config>", id="no-header-suffix"),
+    pytest.param(b'"vendor-1/build+config.inc"', id="finite-punctuation"),
+    pytest.param(b'"v1.2/settings"', id="dotted-directory"),
+    pytest.param(b'".private/header"', id="non-dot-hidden-segment"),
+    pytest.param(b"<0compat>", id="numeric-prefix"),
+])
+def test_v2_literal_include_preserves_the_complete_supported_operand(review_v2_case, operand):
+    original = review_v2_case[1]["configuration_header"]
+    line = b" \t# \tinclude\t" + operand + b" \t\n"
+    header = original.replace(b"#endif /*Py_PYCONFIG_H*/\n", line + b"#endif /*Py_PYCONFIG_H*/\n")
+    directives = v2._header(header)
+    previous = review_v2_case[3]["header_directives"]
+    assert directives == [*previous[:-1], "#include " + operand.decode("ascii"), previous[-1]]
+
+
+@pytest.mark.parametrize("operand", [
+    pytest.param(b"", id="missing-operand"),
+    pytest.param(b"<>", id="empty-angle"),
+    pytest.param(b'""', id="empty-quoted"),
+    pytest.param(b"HEADER_FILE", id="macro-name"),
+    pytest.param(b"HEADER(header.h)", id="macro-call"),
+    pytest.param(b"header.h", id="bare-name"),
+    pytest.param(b"<header.h", id="missing-angle-close"),
+    pytest.param(b'"header.h', id="missing-quote-close"),
+    pytest.param(b'<header.h"', id="mixed-delimiters"),
+    pytest.param(b"</absolute.h>", id="absolute-angle"),
+    pytest.param(b'"/absolute.h"', id="absolute-quoted"),
+    pytest.param(b'"C:/absolute.h"', id="drive-path"),
+    pytest.param(b"<../outside.h>", id="parent-prefix"),
+    pytest.param(b'"internal/../outside.h"', id="parent-middle"),
+    pytest.param(b'"internal/.."', id="parent-final"),
+    pytest.param(b"<./header.h>", id="dot-prefix"),
+    pytest.param(b'"internal/./header.h"', id="dot-middle"),
+    pytest.param(b'"internal/."', id="dot-final"),
+    pytest.param(b"<internal//header.h>", id="empty-middle"),
+    pytest.param(b'"internal/"', id="empty-final"),
+    pytest.param(b'"internal\\header.h"', id="backslash"),
+    pytest.param(b'"internal/header name.h"', id="inner-space"),
+    pytest.param(b'"internal/header\tname.h"', id="inner-tab"),
+    pytest.param(b'"header\x07.h"', id="control"),
+    pytest.param(b'"\xc3\xa9.h"', id="non-ascii"),
+    pytest.param(b'"header$NAME.h"', id="substitution-token"),
+    pytest.param(b'"header:variant.h"', id="unsupported-punctuation"),
+    pytest.param(b"<header.h> EXTRA", id="angle-trailing-expression"),
+    pytest.param(b'"header.h" EXTRA', id="quote-trailing-expression"),
+    pytest.param(b'"first.h" "second.h"', id="adjacent-strings"),
+    pytest.param(b"<first.h><second.h>", id="adjacent-angle-operands"),
+    pytest.param(b"<header.h> /* unsupported comment */", id="trailing-block-comment"),
+    pytest.param(b'"header.h" // unsupported comment', id="trailing-line-comment"),
+    pytest.param(b'/* unsupported prefix */ "header.h"', id="prefix-comment"),
+])
+def test_v2_literal_include_refuses_nonliteral_or_noncanonical_operands(review_v2_case, operand):
+    original = review_v2_case[1]["configuration_header"]
+    header = original.replace(b"#endif /*Py_PYCONFIG_H*/\n",
+                              b"#include " + operand + b"\n#endif /*Py_PYCONFIG_H*/\n")
+    with pytest.raises(v1.ConfigurationReviewError, match="header_include$"):
+        v2._header(header)
+
+
+def test_v2_literal_include_does_not_evaluate_an_inactive_condition(review_v2_case):
+    original = review_v2_case[1]["configuration_header"]
+    header = original.replace(b"#endif /*Py_PYCONFIG_H*/\n",
+                              b"#if 0\n#include HEADER_MACRO\n#endif\n#endif /*Py_PYCONFIG_H*/\n")
+    with pytest.raises(v1.ConfigurationReviewError, match="header_include$"):
+        v2._header(header)
+
+
+@pytest.mark.parametrize("operand", [
+    pytest.param(b"<header.h>\vEXTRA", id="vertical-tab-tail"),
+    pytest.param(b"<header.h>\fEXTRA", id="form-feed-tail"),
+    pytest.param(b"<header.h>\x1cEXTRA", id="file-separator-tail"),
+    pytest.param(b"<header.h>\x1dEXTRA", id="group-separator-tail"),
+    pytest.param(b"<header.h>\x1eEXTRA", id="record-separator-tail"),
+    pytest.param(b"<header.h>\x1f", id="unit-separator-trim"),
+    pytest.param(b"\v<header.h>", id="vertical-tab-leading"),
+    pytest.param(b"\f<header.h>", id="form-feed-leading"),
+    pytest.param(b"<header.h>\xc2\x85EXTRA", id="unicode-next-line-tail"),
+    pytest.param(b"<header.h>\xe2\x80\xa8EXTRA", id="unicode-line-separator-tail"),
+    pytest.param(b"<header.h>\xe2\x80\xa9EXTRA", id="unicode-paragraph-separator-tail"),
+    pytest.param(b"\xc2\xa0<header.h>", id="nonbreaking-space-leading"),
+    pytest.param(b"<header.h>\xc2\xa0", id="nonbreaking-space-trailing"),
+    pytest.param(b"\xe3\x80\x80<header.h>", id="ideographic-space-leading"),
+    pytest.param(b"<header.h>\xe3\x80\x80", id="ideographic-space-trailing"),
+])
+def test_v2_literal_include_preserves_non_lf_lexical_boundaries(review_v2_case, operand):
+    original = review_v2_case[1]["configuration_header"]
+    header = original.replace(b"#endif /*Py_PYCONFIG_H*/\n",
+                              b"#include " + operand + b"\n#endif /*Py_PYCONFIG_H*/\n")
+    with pytest.raises(v1.ConfigurationReviewError, match="header_include$"):
+        v2._header(header)
+
+
+@pytest.mark.parametrize("operand", [b"HEADER_MACRO", b'"../outside.h"', b"<header.h> EXTRA"],
+                         ids=["macro", "parent-path", "trailing-expression"])
+def test_v2_literal_include_gate_cannot_be_replaced_by_re_signed_facts(review_v2_case, operand):
+    original = review_v2_case[1]["configuration_header"]
+    header = original.replace(b"#endif /*Py_PYCONFIG_H*/\n",
+                              b"#include " + operand + b"\n#endif /*Py_PYCONFIG_H*/\n")
+    arguments = {**review_v2_case[1], "configuration_header": header, "expected_configuration_sha256": sha(header)}
+    outputs = _changed_outputs(review_v2_case, "pyconfig.h", header)
+    facts = copy.deepcopy(review_v2_case[3])
+    facts["outputs"] = [{"path": name, "size": len(raw), "sha256": sha(raw)} for name, raw in outputs]
+    facts["header_directives"].insert(-1, "#include " + operand.decode("ascii"))
+    case = (review_v2_case[0], arguments, outputs, facts, *review_v2_case[4:])
+    with pytest.raises(v1.ConfigurationReviewError, match="header_include$"):
+        _bind(case)
+
+
+def test_v2_literal_include_binding_keeps_original_bytes_and_exact_review_wire(review_v2_case):
+    original = review_v2_case[1]["configuration_header"]
+    header = original.replace(b"#endif /*Py_PYCONFIG_H*/\n",
+                              b'#include "internal/config.inc"\n#endif /*Py_PYCONFIG_H*/\n')
+    arguments = {**review_v2_case[1], "configuration_header": header, "expected_configuration_sha256": sha(header)}
+    outputs = _changed_outputs(review_v2_case, "pyconfig.h", header)
+    facts = copy.deepcopy(review_v2_case[3])
+    facts["outputs"] = [{"path": name, "size": len(raw), "sha256": sha(raw)} for name, raw in outputs]
+    facts["header_directives"].insert(-1, '#include "internal/config.inc"')
+    case = (review_v2_case[0], arguments, outputs, facts, *review_v2_case[4:])
+    binding = _bind(case)
+    assert binding.sources == (*(("configuration/original/" + name, raw) for name, raw in outputs),
+                               ("configuration/review.json", canonical(facts)))
+    assert binding.manifest_sha256 == sha(canonical(facts))
+    assert binding.concrete_stages_sha256 == review_v2_case[3]["concrete_stages_sha256"]
