@@ -690,7 +690,12 @@ class PodmanCustody:
     def _runtime_policy(self, container: str, image: str, executed: list[str],
                         environment: dict[str, str], current: Path, root: Path,
                         operations: list[dict], readonly: dict[str, Path] | None = None,
-                        *, expected_view: dict | None = None, snapshots=None, _lifetime_services=None) -> dict:
+                        *, expected_view: dict | None = None, snapshots=None, _lifetime_services=None,
+                        _worker_filesystems=None) -> dict:
+        if _worker_filesystems is not None and (
+                not self.vfs_worker_input_view or type(_worker_filesystems) is not list
+                or _worker_filesystems):
+            _fail("custody_vfs_worker_filesystem")
         template = ('{"image":{{json .Image}},"oci":{{json .OCIConfigPath}},'
                     '"resolver":{{json .ResolvConfPath}},"hostname":{{json .HostnamePath}},'
                     '"hosts":{{json .HostsPath}}}')
@@ -831,6 +836,15 @@ class PodmanCustody:
             if not _vfs_metadata_matches(vfs_proof, metadata):
                 _fail("custody_vfs_namespace_view")
             result.update(root_acquisition=vfs_proof, root_acquisition_sha256=_pin(_json(vfs_proof)))
+        if _worker_filesystems is not None:
+            # Private original-policy transfer; the detached report schema and
+            # authority remain unchanged. No caller supplies mount exceptions.
+            _worker_filesystems.append({
+                "runtime_metadata": metadata,
+                "kernel_mounts": [{"destination": row["destination"], "type": row["type"]}
+                                  for row in spec["mounts"]
+                                  if row["destination"] in {*kernel, "/dev/shm"}],
+            })
         return result
 
     def _prepare_image(self, *, root: Path, inputs: dict[str, list[dict]],
@@ -951,7 +965,7 @@ class PodmanCustody:
                         descendant_cleanup_verified=False, custody=observation)
         operations = observation["operations"]
         container = None
-        lifetime, lifetime_services = None, []
+        lifetime, lifetime_services, worker_filesystems = None, [], []
         try:
             capture = self.snapshot_store.command(stage, index) if self.vfs_retained else None
             image, readonly = self._prepare_image(root=root, inputs=inputs, snapshots=snapshots,
@@ -1005,6 +1019,8 @@ class PodmanCustody:
                 runtime_options["snapshots"] = capture
             if self.vfs_lifetime:
                 runtime_options["_lifetime_services"] = lifetime_services
+            if self.vfs_worker_input_view:
+                runtime_options["_worker_filesystems"] = worker_filesystems
             observation["runtime_policy"] = self._runtime_policy(
                 container, image, executed, guest_environment, current, root, operations,
                 readonly, **runtime_options,
@@ -1029,6 +1045,9 @@ class PodmanCustody:
                 )
                 if self.vfs_worker_input_view:
                     lifetime._bind_worker_inputs(inputs, prior, argv=argv)
+                    if len(worker_filesystems) != 1:
+                        _fail("custody_vfs_worker_filesystem")
+                    lifetime._bind_worker_filesystem(outputs, **worker_filesystems[0])
             if capture is not None:
                 observation["vfs_snapshots"] = capture.complete({
                     "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,

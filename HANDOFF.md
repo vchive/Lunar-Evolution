@@ -1,3 +1,24 @@
+<!-- parallel-worker-boundaries-current:start -->
+## 当前批量开发：原 worker 三条边界（2026-10-31）
+
+当前开发区仍为
+`/Users/liminghan/.codex/worktrees/support-object-format/lunar_agent`，分支
+`codex/parallel-build-closure`，从冻结 PR203/head `cb2c7016` 继续。
+PR203 的原 run41174217694/attempt1 仍在运行，尚未合 main；不要重试或取消。
+用户要求先并行完成 P0/P1 可开发代码，再统一回归。本批三个独立模块为原
+namespace-init status 校验、固定 guest 非输入数据树检查、原 output FD 完整组核对；
+root 负责接回原 custody/lifetime，旧默认和 wire/claims 保持。
+当前已实现、尚待统一测试，不能标记验收通过。执行范围和后续依赖见
+Feature193 `parallel-worker-boundaries.md`。
+
+完整 configured driver 闭包、原始不可变输入/输出保护和外部 writer 排除仍开放。
+后续先 acquire accepted image/material owner，再建首个 scheduler context；该次
+producer process owner 在 claim/attestation 后的原 native attempt 内创建，不能
+预跑 producer 填补首次 context。既有 stager/resolver/gateway/recovery/BRS 不重做。
+生产 CLI 门和全部 custody/installation/runtime/admission/publication false 保留。
+不跑模型/WebAgent/远程 evaluator/真实 solver，不改原 benchmark、不读密钥。
+<!-- parallel-worker-boundaries-current:end -->
+
 <!-- link-object-format-current:start -->
 ## 当前开发点：原 worker 链接输入前置校验（2026-10-31）
 

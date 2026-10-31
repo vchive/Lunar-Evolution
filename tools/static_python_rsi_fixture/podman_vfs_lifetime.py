@@ -116,6 +116,11 @@ def _worker_link_inputs(argv, inventories, checkpoint=lambda: None):
     if len(references) != len(set(references)):
         _refuse()
     selected = {role: [] for role in ("source", "toolchain", "work")}
+    if not references:
+        # The owner separately validates and walks every role inventory. A
+        # compile/freezer command has no selected link bodies to index again.
+        checkpoint()
+        return selected
     rows = {}
     for role, records in inventories.items():
         _inventory_tree(records, checkpoint)
@@ -136,14 +141,14 @@ def _worker_link_inputs(argv, inventories, checkpoint=lambda: None):
     return {role: sorted(paths) for role, paths in selected.items()}
 
 
-def _observe_worker_inventory(role_fd, records, checkpoint, *, link_inputs=None):
+def _observe_worker_inventory(role_fd, records, checkpoint, *, link_inputs=None, maximum=None):
     """One exact member/hash walk through a borrowed original worker role FD.
 
     Finite equality is not writer exclusion. No descriptor number or caller
     summary is accepted as persistent authority, and this function owns only
     its nested opened descriptors.
     """
-    tree, summary = _inventory_tree(records, checkpoint)
+    tree, summary = _inventory_tree(records, checkpoint, maximum=maximum)
     selected = set()
     if link_inputs is not None:
         if (type(link_inputs) is not list or any(type(path) is not str for path in link_inputs)
@@ -545,6 +550,15 @@ class _VfsExecutionLifetime:
             body = _proc_read(self.pid, "stat", 65536, self.checkpoint)
             if _ticks(body, self.pid) != self.ticks:
                 _refuse()
+            if self.capture.worker_input_view:
+                from tools.static_python_rsi_fixture.podman_worker_init import (
+                    verify_worker_namespace_init,
+                )
+
+                verify_worker_namespace_init(
+                    _proc_read(self.pid, "status", 65536, self.checkpoint), self.pid,
+                    checkpoint=self.checkpoint,
+                )
             self.capture.record("worker-stat", name, body)
             self.capture.record("worker-mountinfo", name, _proc_read(self.pid, "mountinfo", 1024**2, self.checkpoint))
         protected = [Path(self.proof["graph_root"]), Path(self.proof["run_root"]),
@@ -571,12 +585,32 @@ class _VfsExecutionLifetime:
         self._worker_inputs = raw_store._json(inventories)
         self.checkpoint()
 
+    def _bind_worker_filesystem(self, outputs, *, runtime_metadata, kernel_mounts):
+        """Freeze the original checked policy and output graph, without a wire claim."""
+        if (self.closed or self.phase != 1 or not self.capture.worker_input_view
+                or not hasattr(self, "_worker_inputs") or hasattr(self, "_worker_filesystem")):
+            _refuse()
+        self._check(live=True)
+        self._worker_filesystem = raw_store._json({
+            "outputs": outputs, "runtime_metadata": runtime_metadata, "kernel_mounts": kernel_mounts,
+        })
+        self.checkpoint()
+
     def before_start(self):
         links = {}
         if self.capture.worker_input_view:
             if self.closed or self.phase != 1 or not hasattr(self, "_worker_inputs"):
                 _refuse()
             self._check(live=True)
+            if hasattr(self, "_worker_argv"):
+                if not hasattr(self, "_worker_filesystem"):
+                    _refuse()
+                from tools.static_python_rsi_fixture.podman_worker_filesystem import (
+                    verify_worker_filesystem,
+                )
+
+                verify_worker_filesystem(self.root, checkpoint=self.checkpoint,
+                                         **raw_store._decode(self._worker_filesystem))
             inventories = raw_store._decode(self._worker_inputs)
             summary = _worker_input_summary(self.owner, inventories, self.checkpoint)
             link_inputs = (_worker_link_inputs(raw_store._decode(self._worker_argv), inventories, self.checkpoint)
@@ -610,7 +644,24 @@ class _VfsExecutionLifetime:
         self._phase("before-readback", {})
 
     def finish_readback(self, outputs, binding):
-        self._phase("after-readback", {"readback_outputs_sha256": raw_store._sha(raw_store._json(outputs))})
+        output_raw = raw_store._json(outputs)
+        if self.capture.worker_input_view:
+            from tools.static_python_rsi_fixture.podman_worker_outputs import verify_worker_outputs
+
+            if self.closed or self.phase != 4:
+                _refuse()
+            self._check(live=False)
+            original_outputs = raw_store._decode(output_raw)
+            summary = verify_worker_outputs(self.role_fds["current_output"], original_outputs, self.checkpoint)
+            if (summary["inventory_sha256"] != raw_store._sha(output_raw)
+                    or raw_store._json(original_outputs) != output_raw):
+                _refuse()
+            self._check(live=False)
+            if raw_store._json(outputs) != output_raw:
+                _refuse()
+        self._phase("after-readback", {"readback_outputs_sha256": raw_store._sha(output_raw)})
+        if self.capture.worker_input_view and raw_store._json(outputs) != output_raw:
+            _refuse()
         return self.capture.complete(binding)
 
     def close(self):

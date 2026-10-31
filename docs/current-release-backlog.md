@@ -1,3 +1,21 @@
+## Current batch — three original-worker boundaries, 2026-10-31
+
+The active branch is `codex/parallel-build-closure`, continuing frozen PR203/head
+`cb2c7016`. Its original run41174217694/attempt1 is still in progress; it is not
+merged or accepted yet. P0 CI/source/originals review and exact-tree integration
+proceed independently of three P1 modules: original namespace-init status,
+pre-start fixed guest data-tree closure and original output-FD group readback.
+The helpers and original custody/lifetime integration are implemented, with the
+single concentrated affected regression still pending. See the
+[batch contract](../specs/193-static-python-rsi-launch/parallel-worker-boundaries.md).
+
+This does not close complete driver input routes, immutable backing or external
+writer exclusion. Accepted image/material acquisition precedes the first
+scheduler context; the per-attempt process owner is created only after the
+original plan/claim and attestation. Production CLI remains gated. Existing
+stager/resolver/gateway/recovery/BRS code is reused. Root/account/ACL/cgroup and
+fixed-U acceptance remain separate. All authority claims stay false.
+
 ## Current closeout — PR202 merged; configured driver inputs next, 2026-10-31
 
 PR200 passed all 45 original jobs and independent source/artifact review, then

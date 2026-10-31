@@ -574,3 +574,22 @@ Strict whole-history observation completed156.101037s /300s,zero retry;
 independent original/canonical review passed38checks (ad075f62…). Its53,563-byte
 candidate matches the existing reader inside the pinned harness; no separate
 legacy wire was saved and the auditor did not rerun either reader.
+
+## Parallel original-worker boundary batch — 2026-10-31
+
+See `parallel-worker-boundaries.md`. This is enforcement on the existing opt-in
+worker-input-view runner; it does not confer a new authority or wire schema.
+
+- [x] Implement bounded original namespace-init status verification, bracketed
+  by the original live owner checks at initialized and before-start boundaries.
+- [x] Freeze and privately transfer the original checked OCI metadata/kernel
+  vocabulary; refuse extra guest data/config/helper paths before dispatch.
+- [x] Compare the entire held original output role against frozen copied pins
+  before completing readback; refuse pin-vector drift across checkpoints.
+- [ ] Finish independent static review and one frozen complete-affected-file
+  regression, Ruff, compileall and diff checks; preserve actual failures.
+- [ ] Complete PR203's original CI/source/evidence review and verified merge;
+  then the final-source integration gate for this successor.
+- [ ] Complete actual driver input closure and immutable backing/protected
+  output consumption before accepted image/material acquisition, first context,
+  production CLI and real copied-case acceptance. No fixture closes that gate.
