@@ -1,3 +1,47 @@
+## Current batch — sealed output-to-staging transition, 2026-10-31
+
+PR204 is merged as `49acb921`, exactly tested tree `83b83311`, with parents
+`da251e3e` / `7f5c5b51`. Its original run41181892998/attempt1 passed45/45jobs.
+Independent original/source audit f679fcaf… verified45ZIPs,2,795source files,
+27,701keys per Python (27,567pass and the same134skips), all221additions,
+83focused groups and historical originals. Root merge verification1c47918d…
+confirms the tree and parents. The redundant same-tree main push run41211325299
+is completed/cancelled, not successful. This supersedes the
+pending PR204 integration statements below.
+
+The active branch is `codex/sealed-prior-transition`. The existing worker-view
+runner now captures original output FDs into attempt-owned kernel-sealed frames
+and stages later prior inputs from those same frames. Publication waits for
+the entire output group and successful original lifetime release. Frozen `634ac185`
+passed 2,363 cases in 53 complete Linux 3.12.3 files, including 85 additions, in 51.672603s
+with zero failures/errors/skips/retries/timeouts and the original child reaped.
+Independent review `cb3fbaa6…` verified all 2,799 source Git/archive blobs/modes,
+before/after equality and the 85 new JUnit keys by static AST reconstruction.
+Ruff/compileall/diff passed. A separate fresh six-command inert Podman observation
+on the same `634ac185` source passed in 14.828435s under the original 600s budget,
+with one prepare/dispatch, zero retries/timeouts and original children reaped.
+Independent original audit `482eeb80…` passed 68 checks over all 663 archive
+members, 505 payload files, 210 raw VFS/lifetime records and unchanged source.
+The first 60s transfer timeout and partial archive remain preserved; execution
+began only after transfer recovery, so this was one actual smoke dispatch.
+
+The successor `de066089` only retains cleanup-unknown notes from failed
+begin/snapshot acquisition in the original observation. Its separate two-file
+Linux supplement passed 110 cases, including two additions, in 3.671546s with
+zero failures/errors/skips/retries/timeouts, unchanged 2,799 source files and
+original child reaped; independent review `0347ed86…` passed. These batches
+are not combined into one full-run claim, and the 634 smoke remains scoped to
+634. Final-source CI/source review and this branch's main integration are
+pending; the 27,788-key successor inventory remains expected-only.
+See [the contract](../specs/193-static-python-rsi-launch/sealed-prior-transition.md).
+
+Necessary P1 remains protection of the actual later worker backing and complete
+driver/source/toolchain inputs, then accepted static image/material ownership,
+the first scheduler context and production CLI/local copied-case acceptance.
+Fixed-U and external-writer/account/root/ACL/cgroup conditions remain real
+prerequisites. The sealed staging carrier alone does not close them. Remote
+evaluators, multi-host services and model training remain outside this batch.
+
 ## Current batch — original-worker boundaries, 2026-10-31
 
 The active branch is `codex/parallel-build-closure`, continuing PR203/head

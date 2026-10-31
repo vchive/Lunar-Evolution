@@ -600,7 +600,32 @@ worker-input-view runner; it does not confer a new authority or wire schema.
 - [x] Complete PR203's original CI/source/evidence review and verified merge:
   45/45 original jobs, audit aa7503c2…, main da251e3e/tree708b3af3 exactly tested.
   Preserve the original download timeout and reuse its20complete ZIPs.
-- [ ] Complete this successor's own final-source CI/source integration gate.
+- [x] Complete PR204's final-source CI/source integration: original45/45jobs,
+  independent auditf679fcaf…, exact tested tree83b83311 merged as49acb921.
 - [ ] Complete actual driver input closure and immutable backing/protected
   output consumption before accepted image/material acquisition, first context,
   production CLI and real copied-case acceptance. No fixture closes that gate.
+
+## Sealed output-to-staging carrier — 2026-10-31
+
+See `sealed-prior-transition.md`; the final guest bind backing remains separate.
+
+- [x] Specify and implement original-FD capture into bounded attempt-owned
+  sealed frames, complete-group publication after successful original release,
+  successor staging from that same bank, and final-attempt resource cleanup.
+- [x] Independently review the implementation and integrate focused kernel-seal,
+  group failure, source drift, original control and lifecycle cleanup tests.
+- [x] Complete the single concentrated affected Linux3.12.3 regression:
+  53files/2,363pass/85new,51.672603s, zero fail/error/skip/retry/timeout,
+  original child reaped;2,799source records unchanged and independent original
+  reviewcb3fbaa6… passed. Ruff, compileall and diff checks pass.
+- [x] Complete the separately reviewed fresh six-command Podman observation on
+  634ac185:14.828435s/600s, one prepare/dispatch, zero retry/timeout, rc0/reaped;
+  independent original audit482eeb80… passes68checks over663members,505files,
+  210raw records and unchanged2799source files. Preserve the first transfer-only
+  timeout/partial; no smoke ran until transport recovery completed.
+- [x] Retain private cleanup-unknown acquisition notes in the original report;
+  separately validate de066089 in2completefiles:110pass/2new,3.671546s,zero
+  fail/error/skip/retry/timeout,source2799unchanged,independent audit0347ed86….
+  Do not combine the batches or relabel634smoke as de066execution.
+- [ ] Complete this successor's final-source CI/source review and integration.

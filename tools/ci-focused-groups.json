@@ -187,9 +187,11 @@
         "tests/test_static_python_worker_boundaries.py",
         "tests/test_static_python_worker_filesystem.py",
         "tests/test_static_python_worker_init.py",
-        "tests/test_static_python_worker_outputs.py"
+        "tests/test_static_python_worker_outputs.py",
+        "tests/test_static_python_podman_sealed_prior.py",
+        "tests/test_static_python_sealed_prior_integration.py"
       ],
-      "expected_tests": 1838,
+      "expected_tests": 1925,
       "zero_skips": true
     },
     {
