@@ -189,9 +189,10 @@
         "tests/test_static_python_worker_init.py",
         "tests/test_static_python_worker_outputs.py",
         "tests/test_static_python_podman_sealed_prior.py",
-        "tests/test_static_python_sealed_prior_integration.py"
+        "tests/test_static_python_sealed_prior_integration.py",
+        "tests/test_static_python_sealed_prior_leaf_export.py"
       ],
-      "expected_tests": 1925,
+      "expected_tests": 1966,
       "zero_skips": true
     },
     {

@@ -1,3 +1,21 @@
+<!-- sealed-prior-leaf-export-current:start -->
+## 当前开发：逐文件封存导出（2026-10-31）
+
+本节覆盖下方旧进行中状态。PR205/head00bdde95保持冻结，原CI
+run41214678677/attempt1运行中；终态后按已审查计划核45原ZIP、完整来源和精确键，
+再决定合入main，不重跑CI。当前开发分支为 `codex/sealed-prior-leaf-backing`。
+
+已在原sealed bank新增command-owned逐文件memfd lease，保留同源bytes、四seal、
+exec/data模式、原checkpoint和bank+export总预算，整批发布、close-once及foreign FD
+reuse拒绝。新增41个Linux kernel边界测试；准备一次4完整文件/210例集中回归，
+不是已通过结果。规格见 `specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md`。
+
+本轮先验证原rootless Podman对精确sealed leaf bind的兼容性。lease尚未接入runner，
+不可据此称worker实际消费已受保护；OCI/worker inventory/retained-history的精确挂载
+接线、目录名称保护及完整driver/source/toolchain仍待完成。runtime/production/
+publication权威保持false，不跑模型或远程评测。
+<!-- sealed-prior-leaf-export-current:end -->
+
 <!-- sealed-prior-transition-current:start -->
 ## 当前开发：原输出封存与后继 staging（2026-10-31）
 

@@ -1,3 +1,18 @@
+## Current batch — sealed per-file export owner, 2026-10-31
+
+PR205/head00bdde95 remains frozen under original run41214678677/attempt1.
+Its full original/source CI gate and main merge are pending. The successor
+branch `codex/sealed-prior-leaf-backing` adds a private per-file memfd lease to
+the existing sealed bank, preserving original checkpoints, combined byte/handle
+budgets, exact inode/record ownership, all-or-none acquisition and cleanup.
+The 41 added Linux cases and four-file 210-case affected regression are prepared,
+not reported as passed. See [the contract](../specs/193-static-python-rsi-launch/sealed-prior-leaf-export.md).
+
+This owner is not wired into the worker yet. A separately reviewed finite
+rootless compatibility observation precedes exact original OCI/inventory/history
+integration. Leaf byte protection does not establish stable directory names or
+complete driver/source/toolchain protection. All authority claims stay false.
+
 ## Current batch — sealed output-to-staging transition, 2026-10-31
 
 PR204 is merged as `49acb921`, exactly tested tree `83b83311`, with parents

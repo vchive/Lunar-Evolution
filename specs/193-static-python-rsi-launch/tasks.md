@@ -1,5 +1,22 @@
 # Feature 193 tasks
 
+## Current sealed leaf export continuation — 2026-10-31
+
+See `sealed-prior-leaf-export.md`; older pending entries retain their original
+scope. PR205's frozen final-source CI/main gate remains separate.
+
+- [x] Implement original-bank per-record sealed leaf export, exact held-inode
+  verification and combined bank/export budgets, keeping legacy behavior.
+- [x] Preserve whole-group publication, original cancellation, close-once
+  ownership and complete resource release without closing reused foreign FDs.
+- [x] Add41 meaningful Linux cases and update the existing focused inventory.
+- [ ] Run one combined four-complete-file210-case Linux affected regression,
+  independently inspect its originals and retain Ruff/compileall/diff results.
+- [ ] Observe the separately reviewed finite rootless sealed exec/data binds;
+  preserve actual failures without ordinary-copy substitution or test retries.
+- [ ] Integrate the lease with the original runner's exact OCI, worker inventory,
+  lifetime and retained-history validators before claiming actual consumption.
+
 Stage 1 and the listed detached continuations are implemented and merged. Their
 verified final-source CI is recorded separately below. The seven-source historical
 raw/source/tree closeout is retained in
