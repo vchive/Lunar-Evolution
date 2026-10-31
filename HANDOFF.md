@@ -1,3 +1,41 @@
+<!-- link-object-format-current:start -->
+## 当前开发点：显式 link-object 格式检查（2026-10-31）
+
+本节覆盖下方历史工作区和运行中状态。当前开发区为
+`/Users/liminghan/.codex/worktrees/support-object-format/lunar_agent`，分支
+`codex/support-object-format`。PR200 已通过原45/45 CI和独立原件审查，合 main 为
+`dd46fe0ba2af7c8ce01ea50194e9cfa818326b8c`，受测 tree `42b43430` 精确相等。
+PR201/head `0d9844d5` 及原 run41142583935/attempt1 继续等待终态，尚不称已合入。
+其原 CI base 保持 `3de1e92d`，不能因 main 推进改写。完整 worker-input-view Shinka
+构建仍按原3000秒/零retry运行；终态、原件收集及独审完成前不称成功。
+
+本分支新增 bounded GNU ar/x86_64 ET_REL reader，显式接入原 support staging 和
+worker-view retained candidate 路径；旧 API/default/profile/candidate bytes 保持。
+拒绝 thin/BSD/script/external members、越界结构及可选择外部链接输入的 LLVM
+section，不打开或解包成员名称。它是有限格式检查，不是完整 driver closure。
+
+`ec4de6b6` 九完整文件516节点原结果513pass/3fixture PermissionError/0skip；原失败保留。
+`481a7430` 仅修复模拟只读工具覆盖时的临时权限，完整新增102节点全过，2.732732秒，
+零fail/error/skip/retry。两批2784源码均前后及Gitblob/mode相等，产品和测试body/参数AST
+不变。独审receipt `8594905e…`；不把两批相加称一次516全过。
+
+同481源码的单次真实材料只读观察通过，2.361669秒/原120秒/零retry/direct child reaped：
+7原member共25,465,768B，1281 inline archive objects及2 CRT，全部原pins和格式匹配。
+2原归档流读无extract，只精确加载2 parser模块、不执行package init；全2784源码/HEAD/ref
+前后相同。独审receipt `aaaf514f…`。证据在主区ignored
+`validation/support-object-format-20261031/`。后继仅调整test import排序；Ruff、compileall、
+diff通过。最终完整CI与新PR尚待冻结文档后启动。
+
+下一步先完成PR201原CI/source独审并合main，收完整worker-view构建终态与原件，再按精确
+只读计划验证严格retained reader的完整历史消费。后者无需重建CPython，当前7材料parser
+观察不能代替它。完整configured driver输入闭包、原始不可变消费、输出保护过渡及完整
+后代drain，accepted image/live owner、首个scheduler loader、生产RSI CLI和复制case仍开放。
+不重复实现已有episode stager/resolver/gateway/recovery和reserved BRS serial。
+fixed-U/root/account/ACL/cgroup环境前提仍缺；不跑模型/WebAgent/远程evaluator/真实solver，
+不读密钥或无关live argv/env，不改原benchmark。custody/installation/runtime/admission/
+publication权威全false。
+<!-- link-object-format-current:end -->
+
 <!-- worker-input-view-current:start -->
 ## 当前开发点：原 worker 输入视图与候选读取（2026-10-31）
 

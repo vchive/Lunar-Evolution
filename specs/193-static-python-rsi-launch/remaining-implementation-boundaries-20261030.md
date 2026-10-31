@@ -6,6 +6,17 @@ The current code and `HANDOFF.md` remain the implementation record. The native
 support-export successor is a build-input step; its export, hashes and fixture
 results do not establish an accepted Python runtime or production RSI launch.
 
+The 2026-10-31 explicit link-object successor now interprets bounded GNU ar and
+x86_64 ET_REL contents on the original support-staging and retained-candidate
+paths. Focused tests and a separately audited read-only observation of seven
+real retained materials pass; see `link-object-format.md`. This closes the
+finite format implementation gap only. Complete configured driver input
+routes, immutable original consumption, protected-output transitions and full
+original descendant drain remain open before accepted-image/live-owner and
+first-scheduler-context acquisition. The strict reader's complete original
+worker-view history still needs its separate reviewed observation; no rebuild
+or production admission follows from parser success.
+
 ## Accepted runtime and first scheduler context
 
 The missing integration is a fixed loader that acquires the **first**

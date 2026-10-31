@@ -1,5 +1,34 @@
 # Feature 193 validation
 
+## Explicit retained link-object format — 2026-10-31
+
+At `ec4de6b6`, nine complete focused files executed 516 exact nodes once:
+513 passed, three failed with fixture `PermissionError`, zero skips/errors.
+The failure was an attempted overwrite of the fixture's already read-only
+simulated Zig. At `481a7430`, only the fixture's temporary write permissions
+changed; the complete new 102-node file passed in 2.732732 seconds with no
+failures/errors/skips/retries. Product bytes and all test-body/parameter AST
+were identical. Independent original JUnit/key/source/Git-byte/mode review
+preserves both outcomes and does not label them one 516-pass invocation.
+
+The same 481 source passed a separately reviewed once-only real-byte parser
+observation in 2.361669 seconds, original budget 120 seconds, zero retries,
+stderr empty and direct child reaped. Seven original support/library/CRT
+members (25,465,768 bytes; 1281 inline objects plus two CRT objects) matched
+their original pins and finite format. Two exact parser source modules were
+loaded without package initialization; all 2784 source files and original
+HEAD/ref metadata matched before and after. Only streaming tar/gzip reads and
+in-memory parsing occurred. This is present-format evidence, not an execution
+of the strict retained-candidate consumer on the whole original build history.
+
+Originals and independent audits reside under the main workspace ignored
+`validation/support-object-format-20261031/`; exact receipt hashes and remaining
+limits are in `link-object-format.md`. The later import-order-only correction
+passes whole-source Ruff, compileall and diff checks without repeating already
+passing test bodies. Final-source complete CI/source review remains required.
+All complete closure, custody, installation/runtime and admission/publication
+authority claims remain false.
+
 ## Source-data execution view v4 — 2026-10-29
 
 The explicit v4 API and capture/consumer path have completed affected software

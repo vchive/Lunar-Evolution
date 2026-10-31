@@ -528,5 +528,14 @@ not an approval of the previously retained real configure observation.
   `link-object-format.md`.
 - [x] Implement bounded parsing and explicitly selected original support staging
   and worker-view retained-candidate consumption; preserve older APIs/bytes.
-- [ ] Complete the code/test batch, then collect focused regression, Ruff,
-  compileall and diff checks once. No full CPython rebuild is claimed here.
+- [x] Complete the code/test batch and concentrated focused regression; preserve
+  the original 513-pass/3-fixture-failure run and the corrected complete
+  102-node successor separately. Ruff, compileall and diff checks pass.
+- [x] Independently review and execute one bounded read-only observation of
+  seven retained real materials: 1281 inline objects and two CRT objects pass
+  the present-format checks. No extraction, rebuild or image execution occurs.
+- [ ] Verify final-source complete CI and original source/artifacts, then merge.
+- [ ] Exercise the explicit strict retained-candidate reader against the complete
+  original worker-view build history under its own exact reviewed read-only
+  plan. Present-format success does not complete this integration gate or
+  establish complete driver closure, immutable custody or runtime authority.

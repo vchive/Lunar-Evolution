@@ -1,6 +1,7 @@
 # Opt-in retained link-object format checks
 
-Status: software contract and implementation; focused regression pending. No
+Status: implemented; focused regression and retained real-byte observation
+complete, final-source full CI pending. No
 compiler, linker, generated image, solver or model execution is part of this slice.
 
 The existing direct-LLD profile pins support bytes but does not interpret archive
@@ -79,3 +80,31 @@ section overflows, checkpoints, and actual staging/retained consumption. Preserv
 old API behavior and candidate bytes. Run focused tests, Ruff, compileall and diff
 checks once after this code/test batch; no CPython rebuild is needed for parser
 regression. Any later real full-build acceptance remains a separate exact plan.
+
+The first frozen nine-file run at `ec4de6b6` retained 513 passes and three
+fixture `PermissionError` failures among 516 exact nodes, with no skips. The
+three failures occurred when repinning an already read-only simulated tool.
+Successor `481a7430` only made that fixture writable before rewriting it and
+restored the original final mode. Its complete 102-node new file passed;
+product bytes and test-body/parameter AST were unchanged. These are two
+executions, not one all-passing 516-node invocation. Both source inventories,
+JUnit identities and failure preservation were independently audited.
+
+A separately reviewed once-only read-only observation of seven retained real
+materials passed at `481a7430`: five ordinary archives containing 1281 inline
+objects and two CRT objects. It took 2.361669 seconds of its original 120-second
+budget, with zero retries and a reaped direct child. Both original archives
+were streamed without extraction; all 2784 source files were compared before
+and after. Only the two exact parser modules were loaded through an explicit
+empty namespace, without package initialization. This checks present formats;
+it does not exercise the stricter retained-candidate API on the complete
+original build history or prove original execution-time consumption.
+
+Evidence is under the main workspace ignored validation root
+`support-object-format-20261031/`. Focused originals audit SHA256:
+`8594905e1b394eec314540bf55df82e96a83b4e03bb496c32b73e8819795777a`;
+real-byte observation audit SHA256:
+`aaaf514ff21862159cdc43568ecba9032ef49ed501c2db0cf6c8fc2fd346eedd`.
+The subsequent test-only import sort does not change assertions or product
+bytes. Ruff, compileall and diff checks pass. Complete driver/configured
+closure, immutable custody and runtime/installation authority remain false.

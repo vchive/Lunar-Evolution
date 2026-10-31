@@ -19,7 +19,7 @@ from tools.static_python_rsi_fixture import retained_installation as candidate
 from tools.static_python_rsi_fixture import zig_support_selection as selected
 from tools.static_python_rsi_fixture.installation_profile import RSIProfilePreparation
 from tools.static_python_rsi_fixture.runtime_closure import canonical
-from tools.static_python_rsi_fixture.zig_lld_linker import PROFILE_SCHEMA, _PREFIX
+from tools.static_python_rsi_fixture.zig_lld_linker import _PREFIX, PROFILE_SCHEMA
 
 retained_history = retained_tests.history
 worker_history = worker_tests.worker_history
