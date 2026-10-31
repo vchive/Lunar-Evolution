@@ -929,3 +929,164 @@ def test_v2_literal_include_binding_keeps_original_bytes_and_exact_review_wire(r
                                ("configuration/review.json", canonical(facts)))
     assert binding.manifest_sha256 == sha(canonical(facts))
     assert binding.concrete_stages_sha256 == review_v2_case[3]["concrete_stages_sha256"]
+
+
+def _lexical_header(case, payload):
+    return case[1]["configuration_header"].replace(
+        b"#endif /*Py_PYCONFIG_H*/\n", payload + b"#endif /*Py_PYCONFIG_H*/\n",
+    )
+
+
+@pytest.mark.parametrize("payload", [
+    pytest.param(b'/* prefix */ #include "../outside.h"\n', id="comment-prefix"),
+    pytest.param(b'/* prefix\n*/ #include "../outside.h"\n', id="multiline-comment-prefix"),
+    pytest.param(b'/* one */ /* two */ #include "../outside.h"\n', id="two-comment-prefixes"),
+    pytest.param(b'/**/#include "../outside.h"\n', id="adjacent-comment-prefix"),
+    pytest.param(b'%:include "../outside.h"\n', id="digraph"),
+    pytest.param(b'%: include "../outside.h"\n', id="digraph-space"),
+    pytest.param(b'#/**/include "../outside.h"\n', id="comment-after-sharp"),
+    pytest.param(b'# /* gap */ include "../outside.h"\n', id="spaced-comment-after-sharp"),
+    pytest.param(b'/\\\n* prefix */ #include "../outside.h"\n', id="spliced-comment-prefix"),
+    pytest.param(b'%\\\n:include "../outside.h"\n', id="spliced-digraph"),
+    pytest.param(b'# /\\\n**/ include "../outside.h"\n', id="spliced-comment-after-sharp"),
+    pytest.param(b'# 123 "external.h"\n', id="line-marker"),
+    pytest.param(b"#\n", id="empty-directive"),
+    pytest.param(b'#@include "../outside.h"\n', id="punctuation-operation"),
+    pytest.param(b'\xc2\xa0#include "relative.h"\n', id="unicode-prefix-space"),
+    pytest.param(b'\v#include "relative.h"\n', id="control-prefix-space"),
+])
+def test_v2_header_lexical_refuses_noncanonical_directive_introducers(review_v2_case, payload):
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        v2._header(_lexical_header(review_v2_case, payload))
+
+
+@pytest.mark.parametrize("payload", [
+    pytest.param(b"int injected;\n", id="declaration"),
+    pytest.param(b"typedef int injected;\n", id="typedef"),
+    pytest.param(b"/\n", id="stray-slash"),
+    pytest.param(b"*/\n", id="stray-comment-close"),
+    pytest.param(b'"standalone token"\n', id="standalone-string"),
+    pytest.param(b"/* missing close\n", id="unterminated-block-comment"),
+    pytest.param(b"/* first\n * still open\n", id="unterminated-multiline-comment"),
+    pytest.param(b'#define LEXICAL_TEXT "unterminated\n', id="unterminated-string"),
+    pytest.param(b"#define LEXICAL_CHAR 'unterminated\n", id="unterminated-character"),
+    pytest.param(b'#define LEXICAL_TEXT "dangling\\\n', id="dangling-string-escape"),
+    pytest.param(b"#define LEXICAL_VALUE 1 /* missing close\n", id="directive-unclosed-comment"),
+    pytest.param(b"// harmless comment\ninjected\n", id="content-after-line-comment"),
+])
+def test_v2_header_lexical_refuses_free_content_and_unterminated_states(review_v2_case, payload):
+    # The outer guard's existing comment terminator must not close these fixtures.
+    unclosed_block = payload in {
+        b"/* missing close\n", b"/* first\n * still open\n",
+        b"#define LEXICAL_VALUE 1 /* missing close\n",
+    }
+    header = (review_v2_case[1]["configuration_header"] + payload if unclosed_block else
+              _lexical_header(review_v2_case, payload))
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        v2._header(header)
+
+
+@pytest.mark.parametrize("context", ["comment", "string"])
+@pytest.mark.parametrize("trigraph", [
+    b"??=", b"??/", b"??'", b"??(", b"??)", b"??!", b"??<", b"??>", b"??-",
+], ids=["sharp", "backslash", "caret", "left-bracket", "right-bracket", "bar", "left-brace", "right-brace", "tilde"])
+def test_v2_header_lexical_refuses_every_trigraph_even_inside_comments_or_quotes(
+    review_v2_case, context, trigraph,
+):
+    payload = (b"/* text " + trigraph + b" text */\n" if context == "comment" else
+               b'#define LEXICAL_TEXT "text ' + trigraph + b' text"\n')
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        v2._header(_lexical_header(review_v2_case, payload))
+
+
+@pytest.mark.parametrize("payload,extra", [
+    pytest.param(b"/* harmless #include HEADER and %:include text */\n", [], id="comment-markers"),
+    pytest.param(b"/* first\n * #include HEADER and %:include text\n */\n", [], id="multiline-comment-markers"),
+    pytest.param(b"// harmless #include HEADER %:include /* text\n", [], id="line-comment-markers"),
+    pytest.param(b'// continued comment\\\n%:include "../ignored.h"\n', [], id="spliced-line-comment"),
+    pytest.param(b'/\\\n* harmless # and %: *\\\n/\n', [], id="spliced-comment-delimiters"),
+    pytest.param(b'#define LEXICAL_TEXT "/* not comment */ // # %:"\n',
+                 ['#define LEXICAL_TEXT "/* not comment */ // # %:"'], id="quoted-markers"),
+    pytest.param(b'#define LEXICAL_TEXT "escaped \\" quote /* // # %:"\n',
+                 ['#define LEXICAL_TEXT "escaped \\" quote /* // # %:"'], id="escaped-quote"),
+    pytest.param(b"#define LEXICAL_CHAR '/'\n", ["#define LEXICAL_CHAR '/'"], id="character-slash"),
+    pytest.param(b"#define LEXICAL_CHAR '\\''\n", ["#define LEXICAL_CHAR '\\''"], id="escaped-character-quote"),
+    pytest.param(b"#define LEXICAL_CHAR '\\\\'\n", ["#define LEXICAL_CHAR '\\\\'"], id="escaped-backslash"),
+    pytest.param(b'#define LEXICAL_TEXT "first \\\nsecond /* // %: #"\n',
+                 ['#define LEXICAL_TEXT "first  second /* // %: #"'], id="spliced-string-inventory"),
+    pytest.param(b'#include \\\n\t"internal/config.inc"\n',
+                 ['#include "internal/config.inc"'], id="direct-literal-with-spliced-space"),
+])
+def test_v2_header_lexical_preserves_harmless_text_and_original_inventory(review_v2_case, payload, extra):
+    previous = review_v2_case[3]["header_directives"]
+    assert v2._header(_lexical_header(review_v2_case, payload)) == [*previous[:-1], *extra, previous[-1]]
+
+
+def test_v2_header_lexical_classification_does_not_replace_literal_inventory_splicing(review_v2_case):
+    header = _lexical_header(review_v2_case, b'#include "inter\\\nnal/config.inc"\n')
+    with pytest.raises(v1.ConfigurationReviewError, match="header_include$"):
+        v2._header(header)
+
+
+def test_v2_header_lexical_does_not_evaluate_an_inactive_branch(review_v2_case):
+    header = _lexical_header(review_v2_case, b'#if 0\n%:include "../outside.h"\n#endif\n')
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        v2._header(header)
+
+
+@pytest.mark.parametrize("payload", [
+    pytest.param(b'/* prefix */ #include "../outside.h"\n', id="comment-prefix"),
+    pytest.param(b'%:include "../outside.h"\n', id="digraph"),
+    pytest.param(b'#/**/include "../outside.h"\n', id="comment-after-sharp"),
+    pytest.param(b"int injected;\n", id="free-content"),
+    pytest.param(b'#define LEXICAL_TEXT "unterminated\n', id="unterminated-state"),
+])
+def test_v2_header_lexical_refusal_cannot_be_replaced_by_re_signed_public_facts(review_v2_case, payload):
+    header = _lexical_header(review_v2_case, payload)
+    arguments = {**review_v2_case[1], "configuration_header": header, "expected_configuration_sha256": sha(header)}
+    outputs = _changed_outputs(review_v2_case, "pyconfig.h", header)
+    facts = copy.deepcopy(review_v2_case[3])
+    facts["outputs"] = [{"path": name, "size": len(raw), "sha256": sha(raw)} for name, raw in outputs]
+    # Model the former silent-drop inventory while explicitly pinning every new original byte.
+    case = (review_v2_case[0], arguments, outputs, facts, *review_v2_case[4:])
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        _bind(case)
+
+
+def test_v2_header_lexical_refuses_a_critical_feature_hidden_in_a_block(review_v2_case):
+    header = review_v2_case[1]["configuration_header"].replace(
+        b"#define WITH_PYMALLOC 1\n", b"/* inactive feature\n#define WITH_PYMALLOC 1\n*/\n",
+    )
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        v2._header(header)
+
+
+def test_v2_commented_guard_and_features_cannot_be_re_signed_as_public_configuration(review_v2_case):
+    claimed = [*review_v2_case[3]["header_directives"][:-1], "#endif"]
+    body = ("\n".join(claimed) + "\n").encode("ascii")
+    assert b"*/" not in body
+    header = b"/* inactive configuration\n" + body + b"*/\n"
+    arguments = {**review_v2_case[1], "configuration_header": header, "expected_configuration_sha256": sha(header)}
+    outputs = _changed_outputs(review_v2_case, "pyconfig.h", header)
+    facts = copy.deepcopy(review_v2_case[3])
+    facts["header_directives"] = claimed
+    facts["outputs"] = [{"path": name, "size": len(raw), "sha256": sha(raw)} for name, raw in outputs]
+    # Every changed byte and the manifest are re-pinned, while the claimed
+    # guard/features still come from the original text inventory inside a block.
+    case = (review_v2_case[0], arguments, outputs, facts, *review_v2_case[4:])
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        _bind(case)
+
+
+def test_v2_header_lexical_refuses_a_legacy_disabled_row_inside_an_open_block(review_v2_case):
+    # The second line's terminator closes the original block; there is no stray close.
+    header = _lexical_header(review_v2_case, b"/* inactive row\n/* #undef LEXICAL_DISABLED */\n")
+    with pytest.raises(v1.ConfigurationReviewError, match="header_lexical$"):
+        v2._header(header)
+
+
+def test_v2_header_lexical_uses_the_legacy_splice_view_for_block_conflicts(review_v2_case):
+    # Deletion forms one identifier; the inventory's space convention forms two.
+    # Only the former matches the disabled-row spelling, so no inventory conflict exists.
+    header = _lexical_header(review_v2_case, b"/* inactive row\n/* #undef LEXICAL_\\\nDISABLED */\n")
+    assert v2._header(header) == review_v2_case[3]["header_directives"]

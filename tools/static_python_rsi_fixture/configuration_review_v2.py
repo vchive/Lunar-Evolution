@@ -50,6 +50,8 @@ _KEYS = {"schema", "profile", "target", "source_inventory_sha256", "zig_manifest
          "recipe_semantics", "concrete_stages_sha256", "make_absences",
          "make_absent_references", "stdlib_discovery_rows", "adaptations"}
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_HEADER_DISABLED = re.compile(r"\s*/\*\s*#\s*undef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\*/\s*")
+_HEADER_DIRECTIVE = re.compile(r"\s*#\s*([A-Za-z_][A-Za-z0-9_]*)(.*)$")
 _REFERENCE = re.compile(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)")
 _ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*([:+?]?=)\s*(.*?)\s*$")
 # Warning-only differences in the fixed direct-compile profile. Other warnings,
@@ -143,8 +145,77 @@ def _header_include(body: str) -> None:
         _fail("header_include")
 
 
+def _header_lexical(text: str) -> None:
+    """Refuse unsupported directive prefixes, without preprocessing the header."""
+    # Trigraph translation would precede line splicing, comments and quotes.
+    # Refuse its spellings everywhere rather than guessing compiler settings.
+    if re.search(r"\?\?[=/'()!<>-]", text):
+        _fail("header_lexical")
+    block = False
+    # This classification view is separate from the retained inventory's
+    # historical backslash-LF-to-space encoding below.
+    classification = text.replace("\\\n", "").split("\n")
+    inventory = text.replace("\\\n", " ").split("\n")
+    for line, legacy_line in zip(classification, inventory, strict=True):
+        if block and (_HEADER_DIRECTIVE.match(legacy_line) or _HEADER_DISABLED.fullmatch(legacy_line)):
+            # Do not let comment text satisfy the legacy directive/feature
+            # inventory. Its top-level complete-line undef convention stays.
+            _fail("header_lexical")
+        comment_prefix, directive, quote = block, False, None
+        cursor = 0
+        while cursor < len(line):
+            if block:
+                end = line.find("*/", cursor)
+                if end < 0:
+                    break
+                block, cursor = False, end + 2
+                continue
+            char = line[cursor]
+            if quote is not None:
+                if char == "\\":
+                    cursor += 2
+                    continue
+                if char == quote:
+                    quote = None
+            elif line.startswith("//", cursor):
+                break
+            elif line.startswith("/*", cursor):
+                block = True
+                comment_prefix = comment_prefix or not directive
+                cursor += 2
+                continue
+            elif not directive:
+                if char in " \t":
+                    cursor += 1
+                    continue
+                if char != "#" or comment_prefix:
+                    _fail("header_lexical")
+                cursor += 1
+                while cursor < len(line) and line[cursor] in " \t":
+                    cursor += 1
+                keyword = _NAME.match(line, cursor)
+                if keyword is None:
+                    _fail("header_lexical")
+                directive, cursor = True, keyword.end()
+                if keyword[0] == "include":
+                    # Delegate the complete operand to its existing finite
+                    # gate, preserving its refusal code for malformed inputs.
+                    # A valid literal has no comment or quote state to carry.
+                    _header_include(line[cursor:])
+                    break
+                continue
+            elif char in "\"'":
+                quote = char
+            cursor += 1
+        if quote is not None:
+            _fail("header_lexical")
+    if block:
+        _fail("header_lexical")
+
+
 def _header(raw: bytes) -> list[str]:
     text = _text(raw)
+    _header_lexical(text)
     # Preserve every directive, including conditional feature context, in the
     # independently reviewed inventory. Never evaluate a C preprocessor here.
     lines = text.replace("\\\n", " ").split("\n")
@@ -152,8 +223,8 @@ def _header(raw: bytes) -> list[str]:
     conditions = []
     guard_started = guard_defined = guard_closed = False
     for line in lines:
-        disabled = re.fullmatch(r"\s*/\*\s*#\s*undef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\*/\s*", line)
-        directive = re.match(r"\s*#\s*([A-Za-z_][A-Za-z0-9_]*)(.*)$", line)
+        disabled = _HEADER_DISABLED.fullmatch(line)
+        directive = _HEADER_DIRECTIVE.match(line)
         if disabled:
             name, value = disabled[1], None
             directives.append("#undef " + name)
