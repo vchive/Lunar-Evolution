@@ -19,13 +19,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lunar_evolution import static_python_fixed_profile as fixed
+from lunar_evolution.static_python_elf import inspect_static_python_relocatable_elf
 from lunar_evolution.static_python_installation import _CONFIG, _PRECONFIG
+from lunar_evolution.static_python_link_objects import (
+    MAX_LINK_ARCHIVE_BYTES,
+    inspect_static_python_link_archive,
+)
 from tools.static_python_rsi_fixture.build_dependency_consumer import (
     DependencyCheckedBuild,
     _read_pin,
     _report_outputs,
     _signature,
 )
+from tools.static_python_rsi_fixture.command_input_graph import _archive
 from tools.static_python_rsi_fixture.dependency_capture import SOURCE_DIRECTORY_PROFILE
 from tools.static_python_rsi_fixture.execution_backend import (
     INPUT_PROJECTION_V4,
@@ -34,9 +40,11 @@ from tools.static_python_rsi_fixture.execution_backend import (
     _recipe,
 )
 from tools.static_python_rsi_fixture.runtime_closure import canonical
+from tools.static_python_rsi_fixture.zig_lld_linker import validate_zig_lld_recipe_profile
 
 _BACKEND = "podman-snapshots-source-data-vfs-retained-v1"
 _LIFETIME_BACKEND = "podman-snapshots-source-data-vfs-lifetime-v1"
+_WORKER_INPUT_BACKEND = "podman-snapshots-source-data-vfs-worker-input-view-v1"
 _MAX_WIRE = 16 * 1024 * 1024
 _FALSE = (
     "immutable_custody_verified", "driver_inputs_verified", "implicit_link_inputs_verified",
@@ -148,6 +156,24 @@ def _record(row: dict) -> dict:
     return {key: row[key] for key in ("path", "size", "sha256")}
 
 
+def _link_object_profile(recipe: dict, raw: bytes, pin: str, checkpoint: Callable[[], None]) -> list[dict]:
+    """Bind strict formats to the same original direct links and ar output."""
+    profile = validate_zig_lld_recipe_profile(recipe, profile_bytes=raw, expected_profile_sha256=pin)
+    available, archives = {}, 0
+    for stage in recipe["stages"]:
+        for command in stage["commands"]:
+            checkpoint()
+            if command["argv"][:2] == ["@toolchain/zig", "ar"]:
+                _archive(command, available)
+                if command["argv"][3] != "@work/libraries/liblunarpython.a":
+                    _fail("link_object_graph")
+                archives += 1
+            available.update({"@work/" + row["path"]: row["executable"] for row in command["outputs"]})
+    if archives != 1:
+        _fail("link_object_graph")
+    return [row for row in profile["inputs"] if row["path"] != "zig"]
+
+
 @dataclass(frozen=True, slots=True)
 class RetainedFixedInstallationDescription:
     """Candidate bytes and historical bindings; construction grants no authority."""
@@ -184,10 +210,13 @@ def _prepare(
     installation_version: str, workspace: Path, deadline: float,
     monotonic: Callable[[], float], interrupted: Callable[[], bool] | None,
     lifetime: bool = False,
+    worker_input_view: bool = False,
+    link_object_profile: tuple[bytes, str] | None = None,
 ) -> RetainedFixedInstallationDescription:
-    if type(lifetime) is not bool:
+    if (type(lifetime) is not bool or type(worker_input_view) is not bool
+            or worker_input_view and not lifetime):
         _fail("history_profile")
-    backend = _LIFETIME_BACKEND if lifetime else _BACKEND
+    backend = _WORKER_INPUT_BACKEND if worker_input_view else _LIFETIME_BACKEND if lifetime else _BACKEND
     for value, maximum in ((recipe_bytes, _MAX_WIRE),
                            (runtime_closure, fixed.MAX_FIXED_CLOSURE_BYTES)):
         if type(value) is not bytes or not 0 < len(value) <= maximum:
@@ -228,6 +257,13 @@ def _prepare(
 
     checkpoint()
     recipe = _recipe(recipe_bytes, expected_recipe_sha256, version4=True)
+    support_rows = None
+    if link_object_profile is not None:
+        if not worker_input_view:
+            _fail("history_profile")
+        profile_bytes, profile_pin = link_object_profile
+        _pin(profile_pin)
+        support_rows = _link_object_profile(recipe, profile_bytes, profile_pin, checkpoint)
     if _sha(canonical(recipe["inputs"]["source"])) != expected_augmented_source_inventory_sha256:
         _fail("augmented_source_inventory")
     if _sha(runtime_closure) != expected_runtime_closure_sha256:
@@ -240,6 +276,7 @@ def _prepare(
         build.execution_report, recipe, backend, version4=True, workspace=root,
         checkpoint=checkpoint, vfs_roots=True, vfs_retained=True,
         **({"vfs_lifetime": True} if lifetime else {}),
+        **({"vfs_worker_input_view": True} if worker_input_view else {}),
     )
     inventory = canonical(outputs)
     if _sha(inventory) != build.output_inventory_sha256:
@@ -263,7 +300,8 @@ def _prepare(
         _fail("historical_binding")
     dependency = _json(history_bytes["dependency-report.json"])
     expected_dependency = {
-        "schema": "lunar-actual-build-dependency-consumer-v6" if lifetime else
+        "schema": "lunar-actual-build-dependency-consumer-v7" if worker_input_view else
+                  "lunar-actual-build-dependency-consumer-v6" if lifetime else
                   "lunar-actual-build-dependency-consumer-v5", "status": "compared",
         "custody_backend": backend, "dependency_path_profile": SOURCE_DIRECTORY_PROFILE,
         **common, "execution_report_sha256": historical["report.json"],
@@ -344,6 +382,19 @@ def _prepare(
             _fail("runtime_closure")
 
     readback()
+    if support_rows is not None:
+        library = output_rows.get("libraries/liblunarpython.a")
+        if library is None or library["executable"] is not False:
+            _fail("link_object_library")
+        for role_root, row in [*((root / "toolchain", row) for row in support_rows),
+                               (root / "work", library)]:
+            if not 0 < row["size"] <= MAX_LINK_ARCHIVE_BYTES:
+                _fail("link_object_size")
+            retained = _read_pin(role_root, row, checkpoint, retain=True)
+            if row["path"].endswith(".a"):
+                inspect_static_python_link_archive(retained, checkpoint=checkpoint)
+            else:
+                inspect_static_python_relocatable_elf(retained, checkpoint=checkpoint)
     image_raw, mode = _read(root / "work", image["path"], image["sha256"], checkpoint,
                             maximum=128 * 1024 * 1024, executable=True)
     candidate = {
@@ -441,5 +492,72 @@ def prepare_lifetime_fixed_installation_description(
     except _Refusal as exc:
         reason = str(exc)
     except Exception:  # noqa: BLE001 - external validators, IO and callbacks retain no private material
+        reason = "readback_or_description"
+    raise RetainedInstallationDescriptionError(reason) from None
+
+
+def prepare_worker_input_view_fixed_installation_description(
+    build: DependencyCheckedBuild, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    expected_manifest_sha256: str, expected_dependency_report_sha256: str,
+    runtime_closure: bytes, expected_runtime_closure_sha256: str,
+    expected_cpython_inventory_sha256: str, expected_augmented_source_inventory_sha256: str,
+    installation_version: str, workspace: Path, deadline: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    interrupted: Callable[[], bool] | None = None,
+) -> RetainedFixedInstallationDescription:
+    """Read worker-view v8/v7 history into the existing unaccepted candidate.
+
+    Original summary/control validation and bounded readbacks remain mandatory.
+    A finite input view does not confer immutable custody or runtime authority.
+    """
+    try:
+        return _prepare(
+            build, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_dependency_report_sha256=expected_dependency_report_sha256,
+            runtime_closure=runtime_closure, expected_runtime_closure_sha256=expected_runtime_closure_sha256,
+            expected_cpython_inventory_sha256=expected_cpython_inventory_sha256,
+            expected_augmented_source_inventory_sha256=expected_augmented_source_inventory_sha256,
+            installation_version=installation_version, workspace=workspace, deadline=deadline,
+            monotonic=monotonic, interrupted=interrupted, lifetime=True, worker_input_view=True,
+        )
+    except _Refusal as exc:
+        reason = str(exc)
+    except Exception:  # noqa: BLE001 - preserve bounded refusal without historical private material
+        reason = "readback_or_description"
+    raise RetainedInstallationDescriptionError(reason) from None
+
+
+def prepare_worker_input_view_object_format_fixed_installation_description(
+    build: DependencyCheckedBuild, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    expected_manifest_sha256: str, expected_dependency_report_sha256: str,
+    runtime_closure: bytes, expected_runtime_closure_sha256: str,
+    expected_cpython_inventory_sha256: str, expected_augmented_source_inventory_sha256: str,
+    zig_lld_profile_bytes: bytes, expected_zig_lld_profile_sha256: str,
+    installation_version: str, workspace: Path, deadline: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    interrupted: Callable[[], bool] | None = None,
+) -> RetainedFixedInstallationDescription:
+    """Opt in to original support/CRT/library structural checks on v8/v7 history.
+
+    Reads and checks the same pinned history/files, then returns unchanged false-
+    authority candidate bytes. Present format checks do not prove past reads or
+    immutable execution-time custody. No fallback, write or process is added.
+    """
+    try:
+        return _prepare(
+            build, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_dependency_report_sha256=expected_dependency_report_sha256,
+            runtime_closure=runtime_closure, expected_runtime_closure_sha256=expected_runtime_closure_sha256,
+            expected_cpython_inventory_sha256=expected_cpython_inventory_sha256,
+            expected_augmented_source_inventory_sha256=expected_augmented_source_inventory_sha256,
+            installation_version=installation_version, workspace=workspace, deadline=deadline,
+            monotonic=monotonic, interrupted=interrupted, lifetime=True, worker_input_view=True,
+            link_object_profile=(zig_lld_profile_bytes, expected_zig_lld_profile_sha256),
+        )
+    except _Refusal as exc:
+        reason = str(exc)
+    except Exception:  # noqa: BLE001 - original IO/format/control data never enter refusal prose
         reason = "readback_or_description"
     raise RetainedInstallationDescriptionError(reason) from None

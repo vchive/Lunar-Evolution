@@ -14,19 +14,28 @@ env:
 
 jobs:
   test:
+    name: test (${{ matrix.python-version }}, ${{ matrix.role }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
         role: ["current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "heavy-3", "heavy-4", "heavy-5", "heavy-6", "history"]
+        # Keep exact interpreter releases identical to the focused jobs below.
+        include:
+          - python-version: "3.11"
+            python-release: "3.11.17"
+          - python-version: "3.12"
+            python-release: "3.12.15"
+          - python-version: "3.13"
+            python-release: "3.13.17"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-release }}
       - name: Install package and test dependencies
         # Historical identity checks require the local .venv and uv's console launcher.
         # Collection IDs are part of the immutable historical inventory.
@@ -128,13 +137,20 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - python-version: "3.11"
+            python-release: "3.11.17"
+          - python-version: "3.12"
+            python-release: "3.12.15"
+          - python-version: "3.13"
+            python-release: "3.13.17"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-release }}
       - name: Install aggregate dependencies
         run: |
           python -m pip install 'uv==0.11.8'

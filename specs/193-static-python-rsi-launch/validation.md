@@ -1,5 +1,61 @@
 # Feature 193 validation
 
+## Explicit retained link-object format — 2026-10-31
+
+At `ec4de6b6`, nine complete focused files executed 516 exact nodes once:
+513 passed, three failed with fixture `PermissionError`, zero skips/errors.
+The failure was an attempted overwrite of the fixture's already read-only
+simulated Zig. At `481a7430`, only the fixture's temporary write permissions
+changed; the complete new 102-node file passed in 2.732732 seconds with no
+failures/errors/skips/retries. Product bytes and all test-body/parameter AST
+were identical. Independent original JUnit/key/source/Git-byte/mode review
+preserves both outcomes and does not label them one 516-pass invocation.
+
+The same 481 source passed a separately reviewed once-only real-byte parser
+observation in 2.361669 seconds, original budget 120 seconds, zero retries,
+stderr empty and direct child reaped. Seven original support/library/CRT
+members (25,465,768 bytes; 1281 inline objects plus two CRT objects) matched
+their original pins and finite format. Two exact parser source modules were
+loaded without package initialization; all 2784 source files and original
+HEAD/ref metadata matched before and after. Only streaming tar/gzip reads and
+in-memory parsing occurred. This is present-format evidence, not an execution
+of the strict retained-candidate consumer on the whole original build history.
+
+Originals and independent audits reside under the main workspace ignored
+`validation/support-object-format-20261031/`; exact receipt hashes and remaining
+limits are in `link-object-format.md`. The later import-order-only correction
+passes whole-source Ruff, compileall and diff checks without repeating already
+passing test bodies. Final-source complete CI/source review remains required.
+All complete closure, custody, installation/runtime and admission/publication
+authority claims remain false.
+
+The separate strict reader on frozen9103b3fe subsequently completed its actual
+whole-history observation in156.10103662591428s /300s,zero retry. Its53,563-byte
+canonical candidate exactly equals the existing worker-view reader's output;
+103frozen/43native bindings and all false claims remain. The harness recorded
+all2784 frozen source files equal before/after. Collected-original independent
+review passed38checks (ad075f62…); the complete candidate was reconstructed from
+original pins. Both-reader equality is recorded by the pinned harness, without
+a separately saved legacy wire or auditor rerun. This is distinct from the
+seven-material parser evidence.
+
+## Original CI patch drift and successor — 2026-10-31
+
+PR201 run41142583935/attempt1 has44 successful jobs and one failed focused3.13
+job; all42 test jobs succeeded. One3.13 role used3.13.16 and the other13 used
+3.13.17. The unchanged strict Python provenance comparison correctly refused.
+All45 original ZIPs,44 normal receipts, failed logs and local collection failures
+remain preserved. Independent failed-run receipt SHA256:
+`1d5e7523ae90ee7c29c28244ffd9784ed0aad8a962d3c9bad9d581ee3e44b333`.
+It explicitly reports `final_ci_passed=false` and `merge_eligible=false`.
+
+The combined successor fixes both matrices to3.11.17/3.12.15/3.13.17 and keeps
+42test+3focused jobs, original names/artifacts/commands and the strict aggregate
+comparison. The10 selected existing CI structure/provenance cases passed,
+72 deselected, with no test-body change. A first interpreter lacked pytest and
+refused before collection; the subsequent actual run used local Python3.13.
+The complete successor CI and independent source/original audit remain required.
+
 ## Source-data execution view v4 — 2026-10-29
 
 The explicit v4 API and capture/consumer path have completed affected software

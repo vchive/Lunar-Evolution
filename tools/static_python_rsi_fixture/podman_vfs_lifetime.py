@@ -7,6 +7,7 @@ conferred. The original raw-snapshot roles and verifier remain separate.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import select
 import stat
@@ -17,6 +18,8 @@ from tools.static_python_rsi_fixture import podman_vfs_snapshots as raw_store
 
 BACKEND = "podman-snapshots-source-data-vfs-lifetime-v1"
 SCHEMA = "lunar-podman-vfs-execution-lifetime-v1"
+WORKER_INPUT_SCHEMA = "lunar-podman-vfs-execution-lifetime-v2"
+WORKER_INPUT_PROFILE = "lunar-podman-worker-input-view-v1"
 PHASES = ("initialized", "before-start", "original-exit", "before-readback", "after-readback")
 MAX_RECORDS = 32
 CLAIMS = {name: False for name in (
@@ -26,6 +29,151 @@ CLAIMS = {name: False for name in (
     "production_admission", "online_publication",
 )}
 _ROLES = {"source": "/source", "toolchain": "/toolchain", "work": "/work", "current_output": "/out"}
+
+
+def _inventory_tree(records, checkpoint=lambda: None, *, maximum=None):
+    """Derive the complete directory vocabulary from existing finite records."""
+    from tools.static_python_rsi_fixture.execution_backend import (
+        MAX_INPUT_FILE_BYTES,
+        MAX_V3_INPUT_RECORDS,
+        _path,
+    )
+
+    checkpoint()
+    if maximum is None:
+        maximum = MAX_INPUT_FILE_BYTES
+    if type(records) is not list or len(records) > MAX_V3_INPUT_RECORDS:
+        _refuse()
+    tree, directories, total = {}, 1, 0
+    for record in records:
+        checkpoint()
+        if (type(record) is not dict or set(record) != {"path", "size", "sha256", "executable"}
+                or type(record["size"]) is not int or not 0 <= record["size"] <= maximum
+                or type(record["executable"]) is not bool or type(record["sha256"]) is not str
+                or raw_store._ID.fullmatch(record["sha256"]) is None):
+            _refuse()
+        parts = _path(record["path"]).split("/")
+        node = tree
+        for part in parts[:-1]:
+            checkpoint()
+            if part not in node:
+                node[part] = {}
+                directories += 1
+            node = node[part]
+            if type(node) is not dict:
+                _refuse()
+        if parts[-1] in node:
+            _refuse()
+        node[parts[-1]] = (record,)
+        total += record["size"]
+    checkpoint()
+    inventory_sha256 = raw_store._sha(raw_store._json(records))
+    checkpoint()
+    return tree, {"inventory_sha256": inventory_sha256,
+                  "file_count": len(records), "directory_count": directories,
+                  "total_bytes": total}
+
+
+def _stat_pin(info):
+    return tuple(getattr(info, field) for field in (
+        "st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns"))
+
+
+def _observe_worker_inventory(role_fd, records, checkpoint):
+    """One exact member/hash walk through a borrowed original worker role FD.
+
+    Finite equality is not writer exclusion. No descriptor number or caller
+    summary is accepted as persistent authority, and this function owns only
+    its nested opened descriptors.
+    """
+    tree, summary = _inventory_tree(records, checkpoint)
+
+    def walk(descriptor, expected):
+        checkpoint()
+        before = os.fstat(descriptor)
+        if not stat.S_ISDIR(before.st_mode):
+            _refuse()
+        names = set()
+        with os.scandir(descriptor) as entries:
+            for entry in entries:
+                checkpoint()
+                if entry.name in names or entry.name not in expected:
+                    _refuse()
+                names.add(entry.name)
+                if len(names) > len(expected):
+                    _refuse()
+        if names != set(expected):
+            _refuse()
+        for name in sorted(expected):
+            checkpoint()
+            node = expected[name]
+            directory = type(node) is dict
+            record = None if directory else node[0]
+            flags = vfs._DIRECTORY if directory else (
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+            named = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if (not (stat.S_ISDIR(named.st_mode) if directory else stat.S_ISREG(named.st_mode))
+                    or not directory and named.st_nlink != 1):
+                _refuse()
+            child = os.open(name, flags, dir_fd=descriptor)
+            try:
+                original = os.fstat(child)
+                if _stat_pin(original) != _stat_pin(named) or not directory and original.st_nlink != 1:
+                    _refuse()
+                if directory:
+                    walk(child, node)
+                else:
+                    if (not stat.S_ISREG(original.st_mode) or original.st_size != record["size"]
+                            or bool(original.st_mode & 0o111) is not record["executable"]):
+                        _refuse()
+                    digest, count = hashlib.sha256(), 0
+                    while True:
+                        checkpoint()
+                        block = os.read(child, min(65536, record["size"] + 1 - count))
+                        checkpoint()
+                        if not block:
+                            break
+                        count += len(block)
+                        if count > record["size"]:
+                            _refuse()
+                        digest.update(block)
+                    if count != record["size"] or digest.hexdigest() != record["sha256"]:
+                        _refuse()
+                if _stat_pin(os.fstat(child)) != _stat_pin(original):
+                    _refuse()
+                repeated = os.open(name, flags, dir_fd=descriptor)
+                try:
+                    if _stat_pin(os.fstat(repeated)) != _stat_pin(original):
+                        _refuse()
+                finally:
+                    os.close(repeated)
+            finally:
+                os.close(child)
+        if _stat_pin(os.fstat(descriptor)) != _stat_pin(before):
+            _refuse()
+
+    walk(role_fd, tree)
+    return summary
+
+
+def _worker_input_summary(owner, inventories, checkpoint=lambda: None):
+    from tools.static_python_rsi_fixture.execution_backend import (
+        MAX_INPUT_FILE_BYTES,
+        MAX_OUTPUT_BYTES,
+    )
+
+    checkpoint()
+    if type(inventories) is not dict or set(inventories) != {"source", "toolchain", "work"}:
+        _refuse()
+    roles = {}
+    for role in ("source", "toolchain", "work"):
+        roles[role] = {"root_identity": owner["roles"][role],
+                       **_inventory_tree(inventories[role], checkpoint,
+                           maximum=MAX_OUTPUT_BYTES if role == "work" else MAX_INPUT_FILE_BYTES)[1]}
+    checkpoint()
+    return {"schema": WORKER_INPUT_PROFILE, "phase": "before-start",
+            "owner_sha256": raw_store._sha(raw_store._json(owner)), "roles": roles,
+            "claims": dict(CLAIMS)}
 
 
 def _refuse():
@@ -139,8 +287,11 @@ def _proc_read(pid, name, maximum, checkpoint):
 class _LifetimeCapture:
     """Separate roles using the original store's owned CAS and write ledger."""
 
-    def __init__(self, store, stage, index):
+    def __init__(self, store, stage, index, *, worker_input_view=False):
+        if type(worker_input_view) is not bool:
+            _refuse()
         self.store, self.stage, self.index = store, stage, index
+        self.worker_input_view, self.input_view = worker_input_view, None
         self.relative = raw_store._command(stage, index).replace("/vfs-raw", "/vfs-lifetime")
         self.records, self.keys, self.phases, self.completed = [], set(), [], False
         root = store._open_checked()
@@ -183,9 +334,14 @@ class _LifetimeCapture:
             _refuse()
         paths = {"", "custody", "custody/vfs-raw", "custody/vfs-raw/blobs",
                  self.relative, self.relative.rsplit("/", 1)[0]}
-        payload = {"schema": SCHEMA, "binding": binding, "phases": self.phases,
+        if self.worker_input_view and self.input_view is None:
+            _refuse()
+        payload = {"schema": WORKER_INPUT_SCHEMA if self.worker_input_view else SCHEMA,
+                   "binding": binding, "phases": self.phases,
                    "records": self.records, "complete": True, "claims": CLAIMS,
                    "directory_identities": {key: dict(self.store.directories[key]) for key in sorted(paths)}}
+        if self.worker_input_view:
+            payload["worker_input_view"] = self.input_view
         raw = raw_store._json(payload)
         self.store._write(self.relative + "/manifest.json", raw, raw_store.MAX_MANIFEST_BYTES)
         self.completed = True
@@ -311,8 +467,36 @@ class _VfsExecutionLifetime:
                                     "pidfd_exited": not live, "mount_tables": mounts, "links": links})
         self.phase += 1
 
+    def _bind_worker_inputs(self, inputs, prior):
+        """Bind only the original run's inventories, before its start boundary."""
+        if (self.closed or self.phase != 1 or not self.capture.worker_input_view
+                or hasattr(self, "_worker_inputs") or type(inputs) is not dict
+                or set(inputs) != {"source", "toolchain"}):
+            _refuse()
+        self._check(live=True)
+        inventories = {**inputs, "work": prior}
+        _worker_input_summary(self.owner, inventories, self.checkpoint)
+        self.checkpoint()
+        self._worker_inputs = raw_store._json(inventories)
+        self.checkpoint()
+
     def before_start(self):
-        self._phase("before-start", {})
+        links = {}
+        if self.capture.worker_input_view:
+            if self.closed or self.phase != 1 or not hasattr(self, "_worker_inputs"):
+                _refuse()
+            self._check(live=True)
+            inventories = raw_store._decode(self._worker_inputs)
+            summary = _worker_input_summary(self.owner, inventories, self.checkpoint)
+            for role in ("source", "toolchain", "work"):
+                observed = _observe_worker_inventory(self.role_fds[role], inventories[role], self.checkpoint)
+                if observed != {key: value for key, value in summary["roles"][role].items()
+                                if key != "root_identity"}:
+                    _refuse()
+            self._check(live=True)
+            self.capture.input_view = summary
+            links["worker_input_view_sha256"] = raw_store._sha(raw_store._json(summary))
+        self._phase("before-start", links)
 
     def observe_original_exit(self, attach, wait_raw, state_raw):
         if (type(attach) is not dict or attach.get("status") != "complete"
@@ -413,7 +597,8 @@ def _read_log(workspace, relative, pin, maximum, checkpoint):
         os.close(fd)
 
 
-def _verify(workspace, pin, binding, proof, view, vfs_pin, operations, outputs, checkpoint):
+def _verify(workspace, pin, binding, proof, view, vfs_pin, operations, outputs, checkpoint,
+            *, worker_inputs=None):
     raw_store._binding(binding)
     if type(proof) is not dict or raw_store._sha(raw_store._json(proof)) != binding["root_acquisition_sha256"]:
         _refuse()
@@ -426,9 +611,13 @@ def _verify(workspace, pin, binding, proof, view, vfs_pin, operations, outputs, 
     try:
         raw, _ = raw_store._read(root, pin["path"], pin["size"], pin["sha256"], raw_store.MAX_MANIFEST_BYTES, checkpoint)
         payload = raw_store._decode(raw)
+        fields = {"schema", "binding", "phases", "records", "complete", "claims", "directory_identities"}
+        if worker_inputs is not None:
+            fields.add("worker_input_view")
         if (raw_store._json(payload) != raw
-                or type(payload) is not dict or set(payload) != {"schema", "binding", "phases", "records", "complete", "claims", "directory_identities"}
-                or payload["schema"] != SCHEMA or payload["binding"] != expected_binding
+                or type(payload) is not dict or set(payload) != fields
+                or payload["schema"] != (WORKER_INPUT_SCHEMA if worker_inputs is not None else SCHEMA)
+                or payload["binding"] != expected_binding
                 or payload["complete"] is not True or type(payload["claims"]) is not dict
                 or set(payload["claims"]) != set(CLAIMS) or any(value is not False for value in payload["claims"].values())
                 or type(payload["phases"]) is not list or len(payload["phases"]) != 5
@@ -483,6 +672,12 @@ def _verify(workspace, pin, binding, proof, view, vfs_pin, operations, outputs, 
             _identity(original)
             if roles[role]["identity"] != original or roles[role]["destination"] != _ROLES[role]:
                 _refuse()
+        input_view_sha256 = None
+        if worker_inputs is not None:
+            expected_input_view = _worker_input_summary(owner, worker_inputs, checkpoint)
+            if raw_store._json(payload["worker_input_view"]) != raw_store._json(expected_input_view):
+                _refuse()
+            input_view_sha256 = raw_store._sha(raw_store._json(expected_input_view))
         protected = [Path(proof["graph_root"]), Path(proof["run_root"]), Path(proof["root"]["path"]),
                      *(Path(row["source"]) for row in roles.values())]
         for index, (phase, name) in enumerate(zip(phases, PHASES, strict=True)):
@@ -508,6 +703,8 @@ def _verify(workspace, pin, binding, proof, view, vfs_pin, operations, outputs, 
                       "wait_sha256": raw_store._sha(bodies["wait", name]),
                       "state_sha256": raw_store._sha(bodies["state", name])} if index == 2 else
                      {"readback_outputs_sha256": raw_store._sha(raw_store._json(outputs))} if index == 4 else {})
+            if index == 1 and input_view_sha256 is not None:
+                links = {"worker_input_view_sha256": input_view_sha256}
             if phase["links"] != links:
                 _refuse()
         _terminal(bodies["state", "original-exit"])
@@ -565,6 +762,24 @@ def verify_lifetime(workspace, pin, binding, proof, view, vfs_pin, operations, o
     failed = False
     try:
         _verify(workspace, pin, binding, proof, view, vfs_pin, operations, outputs, checkpoint)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError, RecursionError,
+            BuildExecutionError):
+        failed = True
+    if failed:
+        _refuse()
+
+
+def verify_worker_input_lifetime(workspace, pin, binding, proof, view, vfs_pin, operations,
+                                 outputs, checkpoint, *, inputs, prior):
+    """Strict successor reader; retain finite observations, never live authority."""
+    from tools.static_python_rsi_fixture.execution_backend import BuildExecutionError
+
+    failed = False
+    try:
+        if type(inputs) is not dict or set(inputs) != {"source", "toolchain"}:
+            _refuse()
+        _verify(workspace, pin, binding, proof, view, vfs_pin, operations, outputs, checkpoint,
+                worker_inputs={**inputs, "work": prior})
     except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError, RecursionError,
             BuildExecutionError):
         failed = True

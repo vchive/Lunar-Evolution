@@ -565,6 +565,7 @@ def _run_pinned_build(
     vfs_roots: bool = False,
     vfs_retained: bool = False,
     vfs_lifetime: bool = False,
+    vfs_worker_input_view: bool = False,
 ) -> BuildExecutionReport:
     """Execute pinned tools with no ambient environment or installation promotion.
 
@@ -584,13 +585,15 @@ def _run_pinned_build(
     extended = version3 or version4
     command_outputs = recipe["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA, RECIPE_V4_SCHEMA}
     custody_prefix = None
-    source_data_backend = ("podman-snapshots-source-data-vfs-lifetime-v1" if vfs_lifetime else
+    source_data_backend = ("podman-snapshots-source-data-vfs-worker-input-view-v1" if vfs_worker_input_view else
+                           "podman-snapshots-source-data-vfs-lifetime-v1" if vfs_lifetime else
                            "podman-snapshots-source-data-vfs-retained-v1" if vfs_retained else
                            "podman-snapshots-source-data-vfs-v1" if vfs_roots
                            else "podman-snapshots-source-data-v2")
     if (type(vfs_roots) is not bool or vfs_roots and not version4
             or type(vfs_retained) is not bool or vfs_retained and not (version4 and vfs_roots)
-            or type(vfs_lifetime) is not bool or vfs_lifetime and not (version4 and vfs_roots and vfs_retained)):
+            or type(vfs_lifetime) is not bool or vfs_lifetime and not (version4 and vfs_roots and vfs_retained)
+            or type(vfs_worker_input_view) is not bool or vfs_worker_input_view and not vfs_lifetime):
         _fail("custody_backend")
     if version4 and custody_backend != source_data_backend:
         _fail("custody_backend")
@@ -743,6 +746,8 @@ def _run_pinned_build(
                 custody_options["vfs_retained"] = True
             if vfs_lifetime:
                 custody_options["vfs_lifetime"] = True
+            if vfs_worker_input_view:
+                custody_options["vfs_worker_input_view"] = True
             custody = PodmanCustody(destination=destination, prefix=custody_prefix,
                                      recipe_sha256=expected_recipe_sha256, checkpoint=checkpoint,
                                      **custody_options)
@@ -753,14 +758,14 @@ def _run_pinned_build(
             for record in records if record["executable"] and not (version4 and role == "source")
         }
 
-        def verify_inputs() -> None:
+        def verify_inputs(*, snapshot_view: bool = True) -> None:
             for role, records in recipe["inputs"].items():
                 for record in records:
                     checkpoint()
                     if (_observe(roots[role], record["path"], MAX_INPUT_FILE_BYTES,
                                  checkpoint=checkpoint) != record
-                            or _observe(snapshots[role], record["path"], MAX_INPUT_FILE_BYTES,
-                                        checkpoint=checkpoint) != record):
+                            or snapshot_view and _observe(snapshots[role], record["path"], MAX_INPUT_FILE_BYTES,
+                                                         checkpoint=checkpoint) != record):
                         _fail("input_drift")
             for record in retained_outputs:
                 checkpoint()
@@ -779,7 +784,10 @@ def _run_pinned_build(
                 active_command = index
                 argv = command["argv"] if command_outputs else command
                 operation = "inputs.verify"
-                verify_inputs()
+                # Only this pre-command snapshot read moves into the original
+                # initialized worker's role-FD pass. Stage/post-command/group/
+                # final host checks retain their original call sites.
+                verify_inputs(snapshot_view=not vfs_worker_input_view)
                 if command_outputs:
                     if argv[0] not in observed_executables:
                         _fail("executable_not_observed")
@@ -853,7 +861,8 @@ def _run_pinned_build(
     except Exception:  # noqa: BLE001 - preserve partial workspace without leaking paths
         reason = "attempt_io_failure"
     payload = {
-        "schema": "lunar-static-python-build-execution-report-v7" if vfs_lifetime else
+        "schema": "lunar-static-python-build-execution-report-v8" if vfs_worker_input_view else
+                  "lunar-static-python-build-execution-report-v7" if vfs_lifetime else
                   "lunar-static-python-build-execution-report-v6" if vfs_retained else
                   "lunar-static-python-build-execution-report-v5" if vfs_roots else
                   "lunar-static-python-build-execution-report-v4" if version4 else
@@ -1002,6 +1011,27 @@ def run_pinned_build_v4_vfs_lifetime(
     )
 
 
+def run_pinned_build_v4_vfs_worker_input_view(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str = "podman-snapshots-source-data-vfs-worker-input-view-v1",
+) -> BuildExecutionReport:
+    """Compare original held-worker input views under the unchanged build loop.
+
+    This finite before-start comparison does not protect writable host backing,
+    prove each consumption, drain descendants or accept a runtime installation.
+    """
+    return _run_pinned_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
+        deadline=deadline, interrupted=interrupted, monotonic=monotonic, version4=True,
+        custody_backend=custody_backend, vfs_roots=True, vfs_retained=True, vfs_lifetime=True,
+        vfs_worker_input_view=True,
+    )
+
+
 __all__ = [
     "INPUT_PROJECTION",
     "INPUT_PROJECTION_V4",
@@ -1017,4 +1047,5 @@ __all__ = [
     "run_pinned_build_v4_vfs",
     "run_pinned_build_v4_vfs_lifetime",
     "run_pinned_build_v4_vfs_retained",
+    "run_pinned_build_v4_vfs_worker_input_view",
 ]

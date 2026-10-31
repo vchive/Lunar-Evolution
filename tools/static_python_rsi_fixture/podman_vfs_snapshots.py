@@ -294,18 +294,19 @@ class VfsSnapshotStore:
         self.commands[stage, index] = value
         return value
 
-    def _lifetime(self, stage, index):
+    def _lifetime(self, stage, index, *, worker_input_view=False):
         """Separate opt-in roles sharing this original attempt's CAS ledger."""
         from tools.static_python_rsi_fixture.podman_vfs_lifetime import _LifetimeCapture
 
-        if (stage, index) not in self.commands:
+        if type(worker_input_view) is not bool or (stage, index) not in self.commands:
             _refuse()
         # Do not create any additional directories/attributes on legacy routes.
         if not hasattr(self, "_lifetimes"):
             self._lifetimes = {}
         if (stage, index) in self._lifetimes:
             _refuse()
-        capture = _LifetimeCapture(self, stage, index)
+        capture = (_LifetimeCapture(self, stage, index, worker_input_view=True) if worker_input_view
+                   else _LifetimeCapture(self, stage, index))
         self._lifetimes[stage, index] = capture
         return capture
 

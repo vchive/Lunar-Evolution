@@ -8,6 +8,53 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Current lifetime and worker-view continuation — 2026-10-31
+
+This checklist is the current execution state; older grouped open items below
+retain their historical scope and do not undo these narrower completions.
+
+- [x] Implement the explicit original-owner five-phase lifetime path and
+  connected-stream socket parser; retain old defaults and candidate contracts.
+- [x] Complete the frozen02347d68 1,683-node Linux batch and independently
+  audited six-command original inert observation, with no failures or skips.
+- [x] Complete a fresh original Shinka build on that source: all318 commands,
+  212compiler/2linker comparisons, 2828.000364s within3000s, zero retry; audit
+  all22,397 archived files and preserve the complete originals losslessly.
+- [x] Preserve the failed first candidate observation and identify the audit's
+  two trailing-newline comparison-pin defects without modifying product bytes.
+- [x] Independently review and observe the corrected candidate mapping under
+  a separate exact plan: 29.768905s / 300s, zero retry, full 53,556-byte candidate
+  reconstructed identically (e768b0d6…). The original failed observation stays failed.
+- [x] Implement explicit worker-input-view v1 on the original held role FDs,
+  bounded inventory equality and report-v8/observation-v6/dependency-v7/lifetime-v2.
+- [x] Retain the original1750-node batch as1749pass/1stale-count failure;
+  all67 additions passed. Correct only the count and pass its82-node full file
+  separately, with unchanged src/tools; never sum these as one passing batch.
+- [x] Independently review and execute one six-command worker-view inert plan:
+  remote14.251950s, original600s, zero retry, original SSH child reaped/rc0.
+- [x] Complete independent worker-view original-record review (fc3162e8…) and
+  the explicit installation candidate reader's frozen40a4fc23 focused regression:
+  211pass in4completefiles including21new,0fail/error/skip/retry, source2781
+  and all13originals independently verified (7869bbd3…); Ruff/compileall/diff pass.
+- [x] Complete the frozen0d9844d5 worker-view Shinka build:318 commands,
+  212compiler/2linker comparisons,2531.604313s /3000s,zero retry; independently
+  review all22,397 original files (4c94cdc0…). The static ELF was not executed.
+- [x] Preserve PR201's failed original CI:42test jobs pass, one3.13 focused
+  gate refuses mixed3.13.16/3.13.17; audit45ZIP/44receipts (1d5e7523…). Pin
+  identical exact releases in both successor matrices without weakening provenance.
+- [x] Complete PR200's45-job CI/source gate and exact-tree main merge dd46fe0b.
+- [ ] Complete the combined successor's own final-source CI/source gate and main
+  merge, then close failed PR201 as superseded.
+- [ ] Complete configured driver input closure, original immutable consumption,
+  protected output transitions and complete original descendant drainage.
+- [ ] Establish an accepted static image/live owner, then the first production
+  scheduler context loader, production RSI CLI and copied local-case acceptance.
+
+Original fixed-U exclusivity, external-writer acquisition and account/root/ACL/
+cgroup prerequisites remain separate open conditions. The finite worker view
+does not establish them or turn any authority claim true. See
+`full-build-observation-20261031.md` and `vfs-worker-input-view.md`.
+
 ## Delegated actual configuration review — 2026-10-30
 
 - [x] Record the user's explicit delegation and permit independent agent review
@@ -481,3 +528,27 @@ not an approval of the previously retained real configure observation.
 - [ ] Establish accepted immutable build-input custody, actual complete static
   CPython build/runtime and real solver/production CLI acceptance. F02c/L08
   remain binding; admission and online publication remain false.
+
+## Opt-in retained link-object format — 2026-10-31
+
+- [x] Inspect retained real support headers without executing or modifying them;
+  specify the finite ordinary GNU ar and x86_64 ET_REL contract in
+  `link-object-format.md`.
+- [x] Implement bounded parsing and explicitly selected original support staging
+  and worker-view retained-candidate consumption; preserve older APIs/bytes.
+- [x] Complete the code/test batch and concentrated focused regression; preserve
+  the original 513-pass/3-fixture-failure run and the corrected complete
+  102-node successor separately. Ruff, compileall and diff checks pass.
+- [x] Independently review and execute one bounded read-only observation of
+  seven retained real materials: 1281 inline objects and two CRT objects pass
+  the present-format checks. No extraction, rebuild or image execution occurs.
+- [ ] Verify final-source complete CI and original source/artifacts, then merge.
+- [x] Exercise the explicit strict retained-candidate reader against the complete
+  original worker-view build history under its own exact reviewed read-only
+  plan. Present-format success does not complete this integration gate or
+  establish complete driver closure, immutable custody or runtime authority.
+
+Strict whole-history observation completed156.101037s /300s,zero retry;
+independent original/canonical review passed38checks (ad075f62…). Its53,563-byte
+candidate matches the existing reader inside the pinned harness; no separate
+legacy wire was saved and the auditor did not rerun either reader.

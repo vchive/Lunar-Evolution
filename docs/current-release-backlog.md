@@ -1,3 +1,74 @@
+## Current closeout — worker views, link formats and CI patch drift, 2026-10-31
+
+PR200 passed all 45 original jobs and independent source/artifact review, then
+merged as `dd46fe0b`, exact tested tree `42b43430`. PR201's original attempt
+41142583935 failed: all 42 test jobs passed, but the 3.13 focused aggregation
+correctly refused mixed 3.13.16/3.13.17 provenance. The independent failed-run
+audit (`1d5e7523…`) preserves all 45 ZIPs, 44 normal receipts and that failure.
+PR201 must be superseded rather than merged or relabeled successful.
+
+The successor combines original worker-input-view validation, explicit bounded
+GNU ar/x86_64 ET_REL consumption and exact Python release pins shared by test
+and focused jobs. Existing 42+3 roles, artifact names and strict provenance
+comparison remain. The 102-node corrected format file and seven-real-material
+read-only observation passed; the initial three fixture failures remain recorded.
+The same frozen worker-view build completed all 318 commands and 212 compiler/
+two linker comparisons in 2531.604313s / 3000s, zero retry. All 22,397 retained
+originals passed independent review (`4c94cdc0…`); no final image was executed.
+
+The strict whole-history reader observation also passed in156.101037s /300s,
+zero retry;38 independent checks reconstructed its53,563-byte canonical candidate
+(ad075f62…). Both-reader equality is the pinned harness result; no separate
+legacy wire was saved or rerun by the auditor. P0 is now this successor's
+final-source CI, independent review and verified main integration.
+P1 remains complete configured driver inputs, original immutable consumption,
+protected output transitions and descendant drainage, followed by accepted
+image/live ownership, the first scheduler context loader, production RSI CLI
+and copied local cases. Fixed-U/external-writer/account/root/ACL/cgroup
+prerequisites remain separate. These results grant no installation/runtime,
+production admission or publication authority. Older observations below retain
+their original sources, outcomes and scope.
+
+## Current closeout — original worker input view, 2026-10-31
+
+This entry supersedes the older in-progress observations below. The original
+Shinka lifetime build on 02347d68 completed 318 commands and 212 compiler/2 linker
+comparisons in 2828.000364s under the original 3000s allowance, zero retry;
+22,397 original files were independently audited. Its first separate candidate
+observation failed because two audit comparison pins included a trailing LF.
+The failed observation remains failed. A narrow correction and a fresh exact
+candidate plan are separate from the successful full build. The independently
+reviewed v2 observation subsequently passed in 29.768905s / 300s, zero retry; its
+53,556-byte candidate was independently reconstructed byte for byte, including
+103 frozen/43 native and all false claims. Receipt e768b0d6… preserves the prior
+failure and explicitly excludes unrecorded module-origin/per-file snapshots.
+
+The explicit worker-input-view successor verifies original source/toolchain/work
+inventories through the original initialized worker's held FDs before start,
+with report-v8/observation-v6/dependency-v7/lifetime-v2 and unchanged old defaults.
+All 67 additions passed in the retained 1750-node batch; its stale CI count caused
+one original failure. The count-only successor passed its complete 82-node file,
+with identical product bytes. These are separate batches. On acafb640, the exact
+six-command inert run passed in 14.251950s, 600s/zero retry. Independent review
+matched 486 files, 108 lifetime/102 VFS raw records, 61 controls/122 logrefs/22 outputs and
+all three role summaries; source 2780 records matched before/after. The explicit
+candidate reader reuses that strict history, without installation authority;
+its 4-file concentrated 211-node regression passed on 40a4fc23, including 21 new
+nodes, 0 failure/error/skip/retry. Independent audit verified 2781 source records,
+13 originals, all node keys and import origins; Ruff/compileall/diff passed.
+Final-source CI/main integration remains required.
+
+P0 is final-source CI, independent original/source review and verified main
+integration for PR200 and this successor. P1 remains original immutable input
+consumption, configured driver closure, protected output transitions and complete
+descendant drainage, followed by accepted image/live ownership, the first
+scheduler context loader, production RSI CLI and copied local cases. Fixed-U,
+external-writer and account/root/ACL/cgroup prerequisites remain separate open
+conditions. No finite observation changes installation/runtime/admission or
+publication authority. Evidence is under primary ignored
+`validation/vfs-worker-input-view-20261031/` and
+`validation/native-support-export-20261030/`.
+
 ## Current closeout — original VFS lifetime observation, 2026-10-31
 
 This entry supersedes the older execution states below. PR199 is merged into

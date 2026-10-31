@@ -177,9 +177,13 @@
         "tests/test_static_python_rsi_vfs_lifetime.py",
         "tests/test_static_python_rsi_vfs_lifetime_entrypoints.py",
         "tests/test_static_python_lifetime_installation.py",
-        "tests/test_static_python_vfs_connected_stream_socket.py"
+        "tests/test_static_python_vfs_connected_stream_socket.py",
+        "tests/test_static_python_worker_input_view.py",
+        "tests/test_static_python_worker_input_view_entrypoints.py",
+        "tests/test_static_python_worker_input_view_installation.py",
+        "tests/test_static_python_link_objects.py"
       ],
-      "expected_tests": 1374,
+      "expected_tests": 1564,
       "zero_skips": true
     },
     {

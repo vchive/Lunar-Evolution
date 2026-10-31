@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NoReturn
 
@@ -15,11 +16,17 @@ MAX_STATIC_PYTHON_IMAGE_BYTES = 128 * 1024 * 1024
 _MAX_PROGRAM_HEADERS = 256
 _MAX_SECTION_HEADERS = 4096
 _MAX_DYNAMIC_ENTRIES = 4096
+_MAX_RELOCATABLE_ENTRIES = 262144
+# LLVM ELF extensions with embedded linker options or dependent-library names.
+# Their bytes can select additional link inputs, unlike ADDRSIG/unwind metadata.
+_EXTERNAL_LINK_INPUT_SECTIONS = frozenset({0x6FFF4C01, 0x6FFF4C04})
+_LLVM_LTO_SECTION = 0x6FFF4C0C  # Embedded LTO/ThinLTO is outside this native-object profile.
 _UINT64_MAX = (1 << 64) - 1
 _HEADER = struct.Struct("<16sHHIQQQIHHHHHH")
 _PROGRAM = struct.Struct("<IIQQQQQQ")
 _SECTION = struct.Struct("<IIQQQQIIQQ")
 _DYNAMIC = struct.Struct("<qQ")
+_SYMBOL = struct.Struct("<IBBHQQ")
 
 
 class StaticPythonELFError(ValueError):
@@ -206,3 +213,128 @@ def inspect_static_python_elf(image: bytes) -> StaticPythonELFProfile:
         load_segment_count=loads, executable_load_segment_count=executable,
         dynamic_table_count=len(dynamic_tables), dynamic_entry_count=total_dynamic_entries,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class StaticPythonRelocatableELFProfile:
+    """Finite ET_REL structure; no link, code-origin or runtime authority."""
+
+    sha256: str
+    size: int
+    section_header_count: int
+    elf_type: str = "ET_REL"
+    machine: str = "x86_64"
+    production_admission: bool = False
+
+
+def inspect_static_python_relocatable_elf(
+    image: bytes, *, checkpoint: Callable[[], None] | None = None,
+) -> StaticPythonRelocatableELFProfile:
+    """Check inline ordinary ELF objects without opening or executing anything.
+
+    This structural profile deliberately excludes program headers, dynamic and
+    extended-index tables. It does not validate relocation instructions, symbol
+    resolution or machine code. The ET_EXEC inspector above is unchanged.
+    """
+    if checkpoint is not None and not callable(checkpoint):
+        _fail("relocatable_control")
+    check = checkpoint if checkpoint is not None else lambda: None
+    check()
+    if type(image) is not bytes:
+        _fail("relocatable_type")
+    size = len(image)
+    if not _HEADER.size <= size <= MAX_STATIC_PYTHON_IMAGE_BYTES:
+        _fail("relocatable_size")
+    (ident, kind, machine, version, entry, phoff, shoff, flags, ehsize,
+     phsize, phcount, shsize, shcount, shnames) = _HEADER.unpack_from(image)
+    if (ident[:4] != b"\x7fELF" or ident[4:7] != b"\x02\x01\x01"
+            or ident[7] not in (0, 3) or ident[8:] != b"\0" * 8
+            or kind != 1 or machine != 62 or version != 1 or flags or entry
+            or phoff or phcount or phsize or ehsize != _HEADER.size):
+        _fail("relocatable_header")
+    if (not 0 < shcount <= _MAX_SECTION_HEADERS or shnames >= shcount
+            or shoff < _HEADER.size or shsize != _SECTION.size):
+        _fail("relocatable_sections")
+    shend = _file_end(shoff, shsize * shcount, size)
+    sections = []
+    for index in range(shcount):
+        check()
+        row = _SECTION.unpack_from(image, shoff + index * shsize)
+        sections.append(row)
+        if index == 0:
+            if any(row):
+                _fail("relocatable_sections")
+            continue
+        (name, section_type, _section_flags, address, offset, length,
+         link, _info, alignment, item_size) = row
+        if section_type in _EXTERNAL_LINK_INPUT_SECTIONS:
+            _fail("relocatable_external_input")
+        if section_type == _LLVM_LTO_SECTION:
+            _fail("relocatable_bitcode")
+        if (section_type in (0, 6, 11, 18) or address or link >= shcount
+                or not _alignment(alignment) or item_size and length % item_size):
+            _fail("relocatable_sections")
+        end = _file_end(offset, 0 if section_type == 8 else length, size)
+        if section_type != 8 and length and (
+                offset < _HEADER.size or offset < shend and shoff < end):
+            _fail("relocatable_sections")
+        if shnames == 0 and name:
+            _fail("relocatable_names")
+    if shnames:
+        names = sections[shnames]
+        start, length = names[4:6]
+        if (names[1] != 3 or not length or image[start] or image[start + length - 1]
+                or any(row[0] >= length for row in sections)):
+            _fail("relocatable_names")
+    entries = 0
+    for index, row in enumerate(sections[1:], 1):
+        check()
+        kind, length, link, info, item_size = row[1], row[5], row[6], row[7], row[9]
+        if kind in (2, 4, 9, 17):
+            entries += length // max(1, item_size)
+            if entries > _MAX_RELOCATABLE_ENTRIES:
+                _fail("relocatable_limits")
+        if kind == 2:  # SHT_SYMTAB
+            if (item_size != 24 or length < 24 or not link or sections[link][1] != 3
+                    or info > length // 24):
+                _fail("relocatable_symbols")
+            strings = sections[link]
+            start, string_size = strings[4:6]
+            if not string_size or image[start] or image[start + string_size - 1]:
+                _fail("relocatable_symbols")
+            if any(image[row[4]:row[4] + 24]):
+                _fail("relocatable_symbols")
+            for offset in range(row[4], row[4] + length, 24):
+                check()
+                name, _binding, _visibility, section, value, symbol_size = _SYMBOL.unpack_from(image, offset)
+                if (name >= string_size or section >= shcount and section not in (0xFFF1, 0xFFF2)
+                        or 0 < section < shcount and (
+                            value > sections[section][5] or symbol_size > sections[section][5] - value)):
+                    _fail("relocatable_symbols")
+        elif kind in (4, 9):  # SHT_RELA / SHT_REL
+            if (item_size != (24 if kind == 4 else 16) or not link
+                    or sections[link][1] != 2 or sections[link][9] != 24
+                    or not 0 < info < shcount):
+                _fail("relocatable_relocations")
+            for offset in range(row[4], row[4] + length, item_size):
+                check()
+                target, relation = struct.unpack_from("<QQ", image, offset)
+                if (relation >> 32 >= sections[link][5] // 24 or target > sections[info][5]
+                        or relation & 0xFFFFFFFF and target == sections[info][5]):
+                    _fail("relocatable_relocations")
+        elif kind == 17:  # SHT_GROUP, linked to its signature's symbol table.
+            if (item_size != 4 or not length or not link or sections[link][1] != 2
+                    or sections[link][9] != 24 or not 0 < info < sections[link][5] // 24):
+                _fail("relocatable_group")
+            for offset in range(row[4], row[4] + length, 4):
+                check()
+                member = struct.unpack_from("<I", image, offset)[0]
+                if (offset == row[4] and member not in (0, 1)
+                        or offset != row[4] and (not 0 < member < shcount or member == index)):
+                    _fail("relocatable_group")
+    digest = hashlib.sha256()
+    for offset in range(0, size, 65536):
+        check()
+        digest.update(memoryview(image)[offset:offset + 65536])
+    check()
+    return StaticPythonRelocatableELFProfile(digest.hexdigest(), size, shcount)

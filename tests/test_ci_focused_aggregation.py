@@ -409,7 +409,7 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 8190
+    assert sum(group["expected_tests"] or 0 for group in groups) == 8380
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     for identity, expected in (("rsi-python-scheduler-inputs", 97), ("independent-guardian", 101)):
         group = next(group for group in groups if group["id"] == identity)
@@ -453,7 +453,7 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
                                "tests/test_native_whole_scope_creator_transport.py",
                                "tests/test_rsi_native_scope_scheduler.py"]
     recipe = next(group for group in groups if group["id"] == "python-rsi-launch-source")
-    assert (recipe["expected_tests"], recipe["zero_skips"]) == (1374, True)
+    assert (recipe["expected_tests"], recipe["zero_skips"]) == (1564, True)
     assert "tests/test_static_python_zig_lld_capture.py" in recipe["files"]
     assert {"tests/test_static_python_zig_support_candidates.py",
             "tests/test_static_python_zig_support_selection.py",
@@ -464,7 +464,9 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
             "tests/test_static_python_rsi_vfs_lifetime.py",
             "tests/test_static_python_rsi_vfs_lifetime_entrypoints.py",
             "tests/test_static_python_lifetime_installation.py",
-            "tests/test_static_python_vfs_connected_stream_socket.py"}.issubset(recipe["files"])
+            "tests/test_static_python_vfs_connected_stream_socket.py",
+            "tests/test_static_python_worker_input_view.py",
+            "tests/test_static_python_worker_input_view_entrypoints.py"}.issubset(recipe["files"])
     assert {"tests/test_static_python_source_data_backend.py",
             "tests/test_static_python_source_data_graph.py",
             "tests/test_static_python_source_data_consumer.py"}.issubset(recipe["files"])

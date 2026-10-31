@@ -54,6 +54,7 @@ SOURCE_DATA_BACKEND = "podman-snapshots-source-data-v2"
 SOURCE_DATA_VFS_BACKEND = "podman-snapshots-source-data-vfs-v1"
 SOURCE_DATA_VFS_RETAINED_BACKEND = "podman-snapshots-source-data-vfs-retained-v1"
 SOURCE_DATA_VFS_LIFETIME_BACKEND = "podman-snapshots-source-data-vfs-lifetime-v1"
+SOURCE_DATA_VFS_WORKER_INPUT_BACKEND = "podman-snapshots-source-data-vfs-worker-input-view-v1"
 VFS_RETENTION_PROFILE = "podman-vfs-raw-snapshots-v1"
 MAX_SNAPSHOT_COMMANDS = 512
 _PASSWD = b"root:x:0:0:root:/tmp/home:/nonexistent\n"
@@ -156,7 +157,7 @@ def validate_snapshot_budget(recipe: dict) -> None:
 
 
 def _prior_snapshot(work: Path, root: Path, prior: list[dict],
-                    checkpoint: Callable[[], None]) -> None:
+                    checkpoint: Callable[[], None], *, verify_copy: bool = True) -> None:
     """Copy only verified prior outputs; never expose the live work directory."""
     root.mkdir(mode=0o700)
     for record in prior:
@@ -168,7 +169,7 @@ def _prior_snapshot(work: Path, root: Path, prior: list[dict],
             if observed != record:
                 _fail("custody_prior_pin")
             (root / record["path"]).chmod(0o555 if record["executable"] else 0o444)
-            if _observe(root, record["path"], MAX_OUTPUT_BYTES, checkpoint=checkpoint) != record:
+            if verify_copy and _observe(root, record["path"], MAX_OUTPUT_BYTES, checkpoint=checkpoint) != record:
                 _fail("custody_prior_pin")
         except OSError as error:
             # Missing/replaced path components are the same pin refusal as
@@ -539,7 +540,8 @@ class PodmanCustody:
     def __init__(self, *, destination: Path, prefix: list[str], recipe_sha256: str,
                  checkpoint: Callable[[], None], snapshot_mounts: bool = False,
                  source_data: bool = False, vfs_roots: bool = False,
-                 vfs_retained: bool = False, vfs_lifetime: bool = False):
+                 vfs_retained: bool = False, vfs_lifetime: bool = False,
+                 vfs_worker_input_view: bool = False):
         self.destination, self.prefix = destination, prefix
         self.recipe_sha256, self.checkpoint = recipe_sha256, checkpoint
         self.image_bytes = 0
@@ -553,9 +555,12 @@ class PodmanCustody:
             _fail("custody_vfs_retention_mode")
         if type(vfs_lifetime) is not bool or vfs_lifetime and not vfs_retained:
             _fail("custody_vfs_lifetime_mode")
+        if type(vfs_worker_input_view) is not bool or vfs_worker_input_view and not vfs_lifetime:
+            _fail("custody_vfs_worker_input_mode")
         self.snapshot_mounts, self.source_data = snapshot_mounts, source_data
         self.vfs_roots, self.vfs_retained = vfs_roots, vfs_retained
         self.vfs_lifetime = vfs_lifetime
+        self.vfs_worker_input_view = vfs_worker_input_view
         self.base_image: tuple[str, Path, dict] | None = None
         self.root = destination / "custody"
         self.root.mkdir(mode=0o700) if vfs_retained else self.root.mkdir()
@@ -836,7 +841,13 @@ class PodmanCustody:
             size = sum(record["size"] for record in prior)
             if self.image_bytes + size > MAX_CUMULATIVE_IMAGE_BYTES:
                 _fail("custody_image_attempt_budget")
-            _prior_snapshot(work, root / "prior", prior, self.checkpoint)
+            if self.vfs_worker_input_view:
+                # The original initialized worker's /work FD performs this
+                # destination readback once before start. Source copying above
+                # still hashes original prior bytes under the same checkpoint.
+                _prior_snapshot(work, root / "prior", prior, self.checkpoint, verify_copy=False)
+            else:
+                _prior_snapshot(work, root / "prior", prior, self.checkpoint)
             self.image_bytes += size
             readonly = {**snapshots, "work": root / "prior"}
             _readonly_volumes(readonly, source_data=self.source_data)
@@ -869,7 +880,8 @@ class PodmanCustody:
                 observation["base_image_reused"] = False
         observation["cumulative_image_bytes"] = self.image_bytes
         observation["image_id"] = image
-        observation["input_layout"] = (SOURCE_DATA_VFS_LIFETIME_BACKEND if self.vfs_lifetime else
+        observation["input_layout"] = (SOURCE_DATA_VFS_WORKER_INPUT_BACKEND if self.vfs_worker_input_view else
+                                       SOURCE_DATA_VFS_LIFETIME_BACKEND if self.vfs_lifetime else
                                        SOURCE_DATA_VFS_RETAINED_BACKEND if self.vfs_retained else
                                        SOURCE_DATA_VFS_BACKEND if self.vfs_roots else
                                        SOURCE_DATA_BACKEND if self.source_data else
@@ -931,6 +943,10 @@ class PodmanCustody:
             if self.vfs_lifetime:
                 observation.update(schema="lunar-podman-build-command-observation-v5",
                                    lifetime_profile="lunar-podman-vfs-execution-lifetime-v1")
+            if self.vfs_worker_input_view:
+                observation.update(schema="lunar-podman-build-command-observation-v6",
+                                   lifetime_profile="lunar-podman-vfs-execution-lifetime-v2",
+                                   worker_input_profile="lunar-podman-worker-input-view-v1")
         evidence.update(status="partial", returncode=None, direct_child_reaped=False,
                         descendant_cleanup_verified=False, custody=observation)
         operations = observation["operations"]
@@ -1007,8 +1023,12 @@ class PodmanCustody:
                 lifetime = _VfsExecutionLifetime(
                     lifetime_services[0], initial, observation["runtime_policy"]["root_acquisition"],
                     observation["runtime_policy"]["execution_view"],
-                    self.snapshot_store._lifetime(stage, index), self.checkpoint,
+                    self.snapshot_store._lifetime(stage, index, worker_input_view=True)
+                    if self.vfs_worker_input_view else self.snapshot_store._lifetime(stage, index),
+                    self.checkpoint,
                 )
+                if self.vfs_worker_input_view:
+                    lifetime._bind_worker_inputs(inputs, prior)
             if capture is not None:
                 observation["vfs_snapshots"] = capture.complete({
                     "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,
@@ -1429,3 +1449,34 @@ def validate_custody_observation_v5(command: dict, planned: dict, stage: str, in
     verify_lifetime(workspace, value.get("vfs_lifetime"), binding, policy["root_acquisition"],
                     policy["execution_view"], value["vfs_snapshots"], value["operations"],
                     command["outputs"], checkpoint or (lambda: None))
+
+
+def validate_custody_observation_v6(command: dict, planned: dict, stage: str, index: int,
+                                    recipe_sha256: str, environment: dict, *, inputs: dict,
+                                    prior: list[dict], workspace: Path,
+                                    checkpoint: Callable[[], None] | None = None) -> None:
+    """Consume original lifetime-v2 and its finite held-worker inventory view."""
+    from tools.static_python_rsi_fixture.podman_vfs_lifetime import (
+        WORKER_INPUT_PROFILE,
+        WORKER_INPUT_SCHEMA,
+        verify_worker_input_lifetime,
+    )
+
+    value = command.get("custody")
+    if (type(value) is not dict or value.get("schema") != "lunar-podman-build-command-observation-v6"
+            or value.get("input_layout") != SOURCE_DATA_VFS_WORKER_INPUT_BACKEND
+            or value.get("lifetime_profile") != WORKER_INPUT_SCHEMA
+            or value.get("worker_input_profile") != WORKER_INPUT_PROFILE
+            or value.get("lifetime_close_unknown", False) is not False):
+        raise ValueError("podman_custody_original_observation_v6")
+    compatible = {**command, "custody": {**value,
+        "schema": "lunar-podman-build-command-observation-v4", "input_layout": SOURCE_DATA_VFS_RETAINED_BACKEND}}
+    validate_custody_observation_v4(compatible, planned, stage, index, recipe_sha256, environment,
+        inputs=inputs, prior=prior, workspace=workspace, checkpoint=checkpoint)
+    policy = value["runtime_policy"]
+    binding = {"recipe_sha256": recipe_sha256, "stage": stage, "index": index,
+               "container_id": value["container_id"], "image_id": value["image_id"],
+               "root_acquisition_sha256": policy["root_acquisition_sha256"]}
+    verify_worker_input_lifetime(workspace, value.get("vfs_lifetime"), binding, policy["root_acquisition"],
+        policy["execution_view"], value["vfs_snapshots"], value["operations"], command["outputs"],
+        checkpoint or (lambda: None), inputs=inputs, prior=prior)
