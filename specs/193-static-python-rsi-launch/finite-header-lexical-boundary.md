@@ -1,5 +1,13 @@
 # Finite configuration-header lexical boundary
 
+Integration complete: PR207 is merged as main `e19be0d1`, exact tested tree
+`a8c35bed`. Original run41229995960/attempt1 passed all45 jobs; independent
+audit `dbd0401a…` passed29 original/source checks, and root merge receipt
+`78491fb2…` confirms the actual tree and parents. Each Python has27,839pass and
+the original134skip; all69 additions explicitly pass. Native runtime and
+production admission remain unaccepted. The preparation/results below retain
+their original source and failure boundaries.
+
 This successor continues the explicitly selected configuration-review v2 reader.
 PR206's original head remains pinned at `041e5ca2`; its original CI/source gate
 passed independently (`466e07ca…`) and it is merged as main `fc336fa42`, exact
@@ -44,7 +52,7 @@ without running a preprocessor or resolving any input.
 - [x] Verify original retained header compatibility without replacing its pins.
 - [x] Freeze the completed slice, then run the complete affected files once.
   Run Ruff, compileall and git diff --check; preserve the original results.
-- [ ] Complete its separate final-source CI and main integration gate.
+- [x] Complete its separate final-source CI and main integration gate (PR207).
 
 No worker/namespace mechanism, toolchain campaign, model or remote evaluator is
 part of this slice. Actual immutable consumption, complete driver closure,
@@ -80,8 +88,9 @@ including the failed original archive, match before/after. Supplement archive
 These observed facts and compatibility results do not create review approval.
 
 Evidence lives under primary ignored `validation/finite-header-lexical-20261101/`.
-The code is pushed on `codex/header-directive-prefixes`; its own full CI and
-main integration remain open, separately from PR206's closed gate. The27,973-key inventory is
-expected-only (predicted27,839pass plus the original134skip), with83focused
-groups/65zero-skip gates, source group2,137 and configured sum8,953. No CI or
-runtime success follows from that prediction.
+The code was pushed on `codex/header-directive-prefixes` and integrated through
+PR207's own accepted CI/source/main gate above. Its pre-CI27,973-key inventory
+was an expected-only prediction (27,839pass plus the original134skip), with
+83focused groups/65zero-skip gates, source group2,137 and configured sum8,953.
+Those predictions are distinct from the later accepted original CI result;
+neither creates runtime acceptance.

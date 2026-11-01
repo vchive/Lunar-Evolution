@@ -1,3 +1,31 @@
+# 唯一当前状态（2026-11-01）
+
+当前分支为 `codex/ordinary-model-acceptance`，从已合入的 main 继续。
+本节是全局待办入口；Feature193 软件切片合入不代表普通模型端到端或生产 RSI 已验收。
+
+- **已关闭的软件集成 P0**：PR207 已实际合 main 为
+  `e19be0d12365c34b514e8346f82cb84a208df475`，精确受测 tree 为
+  `a8c35bedbe9f5766d30efcb8278c3e41e059c635`。原45项 CI 全成功，45份原ZIP
+  的独审29项检查通过；Python3.11/3.12/3.13 每版27,839pass+原134skip，69新增全过。
+- **仍开放的全局 P0**：普通模型在复制 train-delay case 上的真实本地端到端验收。
+  原单次600秒尝试在第四次模型请求等待响应头时超时，未生成 `schedule.json`，仍为失败；
+  A/B 合成协议诊断通过只说明小型消息/工具历史兼容，不能替代 case 验收。
+  e19be0d1 的 fresh 单次、零重试验收也失败：8轮模型/11个工具结果后，第9次模型请求
+  等待响应头耗尽剩余352.5秒；保留34,627 tokens部分用量，未生成提交或完成receipt，
+  未调用评分。没有外层超时，原件和旧失败均保留。详见
+  [本轮实跑记录](docs/ordinary-model-acceptance-20261101.md)及
+  [普通模型原实跑记录](docs/normal-model-smoke-20261025.md)。
+- **P1 真实依赖仍开放**：实际 worker 的不可变输入消费、完整 source/toolchain/driver
+  保护及外部 writer 排除，随后才是 accepted image/live owner、首个 scheduler context、
+  生产 native RSI CLI 和复制本地 case 验收。既有 stager/gateway/recovery 不重做；
+  `production_admission=false`、`online_publication=false`。已被自动审查拒绝的
+  namespace-holder 方向保持停止，不重试或绕过。
+- **P2 后置**：远程 evaluator、多机/分布式服务扩展与模型训练不是本轮必要交付，
+  不因历史路线图自动新增需求。
+
+> 以下为历史时点快照，旧 Current/当前、pending、expected-only 不作当前待开发清单。
+> 原文和原证据状态完整保留；失败、取消、中间预测清单及真实运行时边界不因后继合入改写。
+
 ## 当前续开发：配置 header 的有限词法边界（2026-11-01）
 
 PR205 已合 main 为 `a094d387`。PR206/head `041e5ca2` 的原 CI

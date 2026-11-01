@@ -1,5 +1,17 @@
 # Feature 193 tasks
 
+Current integration: PR207 is merged as main `e19be0d1`, exact tested tree
+`a8c35bed`. Original run `41229995960` passed all45 jobs; independent original
+audit `dbd0401a…` passed29 checks. Each Python retained27,973 keys:
+27,839pass+the original134skip, including69 new explicit passes. Root merge
+receipt `78491fb2…` verifies the actual merge. Native runtime/worker acceptance
+remains open. See the top of `../../docs/current-release-backlog.md` for global
+priorities, including the separate ordinary-model E2E P0.
+
+Older execution notes and unchecked intermediate-source integration markers
+below retain their historical scope; they do not reopen implementation already
+integrated by a later accepted source.
+
 ## Current finite header lexical successor — 2026-11-01
 
 See `finite-header-lexical-boundary.md`. PR205 is merged; PR206/head041e5ca2
@@ -22,8 +34,11 @@ exact tested tree `b1be9e0d`. The separate pushed successor
 - [x] Finish PR206's original full CI/source gate and precise-tree integration:
   all 45 jobs success, 45 ZIPs independently audited `466e07ca…`; each Python
   27,904 keys = 27,770 pass + original 134 skip, 116 new pass; merge receipt `565b7b47…`.
-- [ ] Complete this successor's separate final-source CI/main gate. Its27,973
-  node list remains expected-only; runtime and actual worker gates stay open.
+- [x] Complete this successor's separate final-source CI/main gate: PR207,
+  run41229995960/attempt1,45 original successful jobs and independent29-check
+  original/source audit, merged as e19be0d1 with exact tested tree a8c35bed.
+  Actual27,973 keys per Python=27,839pass+original134skip. Runtime and actual
+  worker gates stay open; the original wrapper failure remains a failure.
 
 ## Current finite compiler inputs — 2026-11-01
 
