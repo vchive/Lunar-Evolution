@@ -1,5 +1,30 @@
 # Feature 193 tasks
 
+## Current finite header lexical successor — 2026-11-01
+
+See `finite-header-lexical-boundary.md`. PR205 is merged; PR206/head041e5ca2
+passed original CI41223482974 attempt1 and is merged as main `fc336fa42`,
+exact tested tree `b1be9e0d`. The separate pushed successor
+`codex/header-directive-prefixes` adds a pure v2 lexical refusal and 69 tests.
+
+- [x] Independently review implementation, preserved wire/error order and all
+  69 new boundaries, including commented feature/guard inventory conflicts.
+- [x] Freeze1fd00732/treebacbfd86 and execute four complete Linux3.12.3 files
+  once:458 pytest pass/69new,27.364832s/600s,zero fail/error/skip/retry; complete
+  source2803/dirs308 and273 actual origins match. Original review7de57ee4….
+- [x] Preserve original overall failure: compatibility harness used the wrong
+  observed-facts field path, causing KeyError/child97/SSH1 after parser return.
+- [x] Independently review and run only the necessary pure compatibility
+  supplement:1.166622s/120s,rc0/reaped,0retry/1parser/0pytest;699 directives
+  match both old observed facts,source2803/dirs308/origins245/input pins match.
+  No pytest rerun, approval replacement or relabeling of the original failure.
+- [x] Pass Ruff, compileall and diff checks; push the completed code.
+- [x] Finish PR206's original full CI/source gate and precise-tree integration:
+  all 45 jobs success, 45 ZIPs independently audited `466e07ca…`; each Python
+  27,904 keys = 27,770 pass + original 134 skip, 116 new pass; merge receipt `565b7b47…`.
+- [ ] Complete this successor's separate final-source CI/main gate. Its27,973
+  node list remains expected-only; runtime and actual worker gates stay open.
+
 ## Current finite compiler inputs — 2026-11-01
 
 See `finite-driver-language-inputs.md`. Both existing-path preflights are

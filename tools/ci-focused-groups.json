@@ -193,7 +193,7 @@
         "tests/test_static_python_sealed_prior_integration.py",
         "tests/test_static_python_sealed_prior_leaf_export.py"
       ],
-      "expected_tests": 2068,
+      "expected_tests": 2137,
       "zero_skips": true
     },
     {

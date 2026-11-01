@@ -1,3 +1,36 @@
+## Current successor — finite header lexical boundary, 2026-11-01
+
+PR205 is merged as main `a094d387`. PR206/head `041e5ca2` completed original CI
+`41223482974` attempt1, all 45 jobs successful. Independent audit `466e07ca…`
+verified 45 ZIPs and each Python's 27,904 keys = 27,770 pass + the original 134 skip,
+including 116 additions. It is merged as main `fc336fa42`, exact tested tree
+`b1be9e0d` (root merge receipt `565b7b47…`). Preserve its original head, CI and
+final-source material while `codex/header-directive-prefixes` continues.
+
+Frozen `1fd00732`/tree `bacbfd86` adds only a pure v2 lexical refusal before the
+existing inventory. It rejects unsupported directive prefixes and lexical or
+comment/inventory conflicts, preserving v1, original include refusal codes,
+review pins and successful wire. One four-complete-file Linux3.12.3 run passed
+all 458 pytest cases, including all 69 additions, in 27.364832s/600s with zero
+failure/error/skip/retry. Independent original review `7de57ee4…` verified all
+17 originals, 2,803 source files/308 directories and 273 actual module origins.
+
+The original overall batch remains failed: its compatibility harness addressed
+a nested observed-facts field at the top level, causing KeyError after the
+parser returned, child97/SSH1. Preserve that failure. A separately reviewed
+pure-parser supplement passed in 1.166622s/120s, rc0/reaped, zero retry, one
+parser call and zero pytest/collection. All 699 directives match both prior
+observed facts; complete source, 245 actual origins and input pins match before/
+after. No 458-case rerun or new approval occurred. Supplement originals are
+`a3bd7be0…`, under primary ignored `validation/finite-header-lexical-20261101/`.
+Ruff/compileall/diff pass; code is pushed. See the [finite contract](../specs/193-static-python-rsi-launch/finite-header-lexical-boundary.md).
+
+This branch's own CI/main gate remains open, with 27,973 expected-only keys.
+Actual immutable worker consumption, complete input protection, accepted
+runtime, first scheduler context and production CLI/copied-case acceptance
+remain open. The earlier namespace-holder automatic-review refusal is retained;
+this successor does not retry that mechanism or change any authority claim.
+
 ## Current batch — finite driver-language inputs, 2026-11-01
 
 The successor adds two existing-path preflights: declared `.c` compilation
