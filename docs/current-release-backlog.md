@@ -1,3 +1,21 @@
+# 当前发布工作台账（2026-11-01）
+
+本节是唯一当前优先级入口。当前分支 `codex/ordinary-model-acceptance` 从已合 main 继续；
+Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
+
+| 优先级 | 当前状态与必要下一步 |
+| --- | --- |
+| 已关闭的软件集成 P0 | PR207 已实际合 main：`e19be0d12365c34b514e8346f82cb84a208df475`，精确受测 tree `a8c35bedbe9f5766d30efcb8278c3e41e059c635`。原45项 CI 全成功，45份ZIP独审29项检查通过；Python3.11/3.12/3.13 每版27,839pass+原134skip，69新增全过。 |
+| 仍开放的全局 P0 | 普通模型在复制 train-delay case 上的真实本地端到端验收仍未通过。e19be0d1 的 fresh 单次、零重试尝试完成8轮模型/11个工具结果后，第9次请求等待响应头超时，未生成提交或完成receipt；本轮评分正确跳过，34,627 tokens部分用量已保留。下一步调查请求/服务停滞原因，不能视为已修复。见[本轮实跑记录](ordinary-model-acceptance-20261101.md)；[旧失败](normal-model-smoke-20261025.md)完整保留，A/B诊断不替代case。 |
+| P1 | 实际 worker 的不可变输入消费、完整 source/toolchain/driver 保护及外部 writer 排除，随后是 accepted image/live owner、首 scheduler context、生产 native RSI CLI 和复制本地 case 验收。复用已有 stager/gateway/recovery；已被自动审查拒绝的 namespace-holder 方向保持停止，不重试或绕过。 |
+| P2 后置 | 远程 evaluator、多机/分布式服务扩展及模型训练不属于本轮必要交付，不从历史路线图新增需求。 |
+
+`production_admission=false`、`online_publication=false`。当前没有可脱离上述真实 P1
+边界独立完成的必要 Feature193 编码块；这不取消普通模型端到端 P0。
+
+> 以下为历史时点快照，旧 Current/当前、pending、expected-only 不作当前待开发清单。
+> 原文及原证据完整保留；不把中间预测清单改称实跑通过，也不改写旧失败或生产准入边界。
+
 ## Current successor — finite header lexical boundary, 2026-11-01
 
 PR205 is merged as main `a094d387`. PR206/head `041e5ca2` completed original CI

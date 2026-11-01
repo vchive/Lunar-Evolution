@@ -164,7 +164,9 @@ CI 在 Ubuntu 上覆盖 Python 3.11、3.12 和 3.13。[Linux 开发指南](docs/
 
 ## 当前发布边界
 
-provider-free DRS/BRS 控制与恢复路径已实现，并有本地回归覆盖。发布仍需通过固定预算的 mixed 回归和最终来源完整 CI；局部测试通过不能关闭这个门槛。真实 native producer 验收还需独立核验 Python 源码和 toolchain、隔离构建与 runtime 闭包、sealed startup、权威输入与结果处理、进程 ownership 与生命周期，以及 Linux 中断测试。OpenEvolve/Shinka 源码准备和 detached evidence reader 不会授予生产准入。
+provider-free DRS/BRS 控制与恢复路径已实现；PR207 已合入 main（`e19be0d1`），原45项 CI 全部成功并通过独立审查。普通模型在复制 train-delay case 上的端到端验收仍是 P0：[最新单次、零重试验收](docs/ordinary-model-acceptance-20261101.md)完成8轮模型/11个工具结果后，第9次请求等待响应头超时，没有提交文件；本轮未调用评分，旧失败记录完整保留。
+
+真实 native producer 仍有独立 P1：实际 worker 的不可变输入消费、完整 source/toolchain/driver 保护及外部 writer 排除仍受阻，随后才是 accepted runtime、首个 scheduler context、生产 RSI CLI 和复制本地 case 验收。已有 stager、gateway 和 recovery 不重复建设；OpenEvolve/Shinka 源码准备和 detached evidence reader 不会授予生产准入。具体依赖与边界以[发布工作台账](docs/current-release-backlog.md)为准。
 
 因此，RSI producer 的 `production_admission=false` 与 `online_publication=false` 仍是当前状态。外部 worker 的认证回执不授予 native 成功、结果发布或远端清理权威。远程 evaluator、多 controller 接管和模型权重训练不属于当前发布范围。哪些证据可以改变这些状态，见[发布工作台账](docs/current-release-backlog.md)。
 
