@@ -81,7 +81,7 @@ def test_bounded_transport_failure_retains_detail_without_changing_request_or_cl
     error = bounded_call(monkeypatch, failure=failure)
     payload = observer_payload(tmp_path, error)
     assert error.transport_observation is observation
-    assert payload["schema_version"] == "5" and payload["code"] == code
+    assert payload["schema_version"] == "7" and payload["code"] == code
     assert payload["model_failure"] == {"reason": reason, "response_status": status}
     assert payload["request_observation"]["phase"] == phase
     assert payload["transport_observation"] == projection(observation)
@@ -103,7 +103,7 @@ def test_successful_transport_detail_survives_response_validation_failure(
     error = bounded_call(monkeypatch, response=TransportResponse(200, raw, observation))
     payload = observer_payload(tmp_path, error)
     assert error.transport_observation is observation
-    assert payload["schema_version"] == "5" and payload["code"] == "model_failed"
+    assert payload["schema_version"] == "7" and payload["code"] == "model_failed"
     assert payload["model_failure"] == {"reason": reason, "response_status": 200}
     assert payload["request_observation"]["phase"] == "validate_response"
     assert payload["transport_observation"] == projection(observation)
@@ -114,7 +114,7 @@ def test_non_success_transport_response_keeps_original_null_legacy_http_status(t
     error = bounded_call(monkeypatch, response=TransportResponse(503, b"{}", observation))
     payload = observer_payload(tmp_path, error)
     assert error.__cause__ is None
-    assert payload["schema_version"] == "5" and payload["http_status"] is None
+    assert payload["schema_version"] == "7" and payload["http_status"] is None
     assert payload["code"] == "model_failed"
     assert payload["model_failure"] == {"reason": "http_error", "response_status": 503}
     assert payload["request_observation"]["phase"] == "validate_response"
@@ -128,7 +128,7 @@ def test_legacy_transport_objects_remain_v4(tmp_path, monkeypatch, failure):
     )
     payload = observer_payload(tmp_path, error)
     assert error.transport_observation is None
-    assert payload["schema_version"] == "4" and "transport_observation" not in payload
+    assert payload["schema_version"] == "7" and "transport_observation" not in payload
 
 
 @pytest.mark.parametrize("kind", ["missing", "foreign", "invalid", "property"])
@@ -162,7 +162,7 @@ def test_invalid_optional_transport_detail_cannot_mask_original_outcome(
         monkeypatch, failure=carrier if failure else None, response=None if failure else carrier,
     )
     payload = observer_payload(tmp_path, error)
-    assert payload["schema_version"] == "4"
+    assert payload["schema_version"] == "7"
     assert payload["model_failure"]["reason"] == ("transport_error" if failure else "invalid_json")
     assert SECRET not in json.dumps(payload)
 
@@ -176,7 +176,7 @@ def test_missing_coarse_clock_keeps_detail_on_error_but_subject_remains_v3(tmp_p
     error = bounded_call(monkeypatch, response=TransportResponse(200, b"invalid", observation))
     assert error.transport_observation is observation and error.observation is None
     payload = observer_payload(tmp_path, error)
-    assert payload["schema_version"] == "3" and "transport_observation" not in payload
+    assert payload["schema_version"] == "7" and "transport_observation" not in payload
 
 
 def test_bounded_success_and_subsequent_calls_keep_no_shared_observation_state(tmp_path, monkeypatch):
@@ -201,8 +201,8 @@ def test_bounded_success_and_subsequent_calls_keep_no_shared_observation_state(t
     assert first.value.transport_observation is observation
     assert second.value.transport_observation is None
     assert observer_payload(tmp_path, first.value) == before
-    assert before["schema_version"] == "5"
-    assert observer_payload(tmp_path, second.value)["schema_version"] == "4"
+    assert before["schema_version"] == "7"
+    assert observer_payload(tmp_path, second.value)["schema_version"] == "7"
 
 
 @pytest.mark.parametrize("timeout", [None, 1])
@@ -214,7 +214,7 @@ def test_direct_path_never_adds_response_transport_detail(tmp_path, monkeypatch,
     with pytest.raises(rt.ModelRequestFailure) as caught:
         model._complete_direct([], timeout=timeout)
     assert caught.value.transport_observation is None
-    assert observer_payload(tmp_path, caught.value)["schema_version"] == "4"
+    assert observer_payload(tmp_path, caught.value)["schema_version"] == "7"
 
 
 @pytest.mark.parametrize("foreign", [False, True])
@@ -237,7 +237,7 @@ def test_detail_attachment_preserves_owned_failure_identity_and_foreign_exceptio
     error = bounded_call(monkeypatch, response=TransportResponse(200, b"{}", observation))
     assert error is original and error.__cause__ is cause
     assert error.transport_observation is (None if foreign else observation)
-    assert observer_payload(tmp_path, error)["schema_version"] == ("1" if foreign else "5")
+    assert observer_payload(tmp_path, error)["schema_version"] == ("1" if foreign else "7")
 
 
 @pytest.mark.parametrize("milestone,index", [
@@ -411,7 +411,7 @@ def test_bounded_native_subject_publishes_and_collects_v5_without_receipt(tmp_pa
     sidecar = (request.parent / data["receipt_path"]).with_suffix(".failure.json")
     raw = sidecar.read_bytes()
     payload = json.loads(raw)
-    assert payload["schema_version"] == "5"
+    assert payload["schema_version"] == "7"
     assert payload["request_sha256"] == hashlib.sha256(request_bytes).hexdigest()
     assert payload["model_failure"] == {"reason": "invalid_json", "response_status": 200}
     assert payload["transport_observation"]["last_milestone"] == "response_headers_received"

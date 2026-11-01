@@ -7,6 +7,7 @@ configured OpenAI-compatible HTTP endpoint.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -24,7 +25,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, urlunparse
 from urllib.request import Request, urlopen
 
-from .http_transport import TransportFailure, TransportObservation, exchange, validate_timeout
+from .http_transport import (
+    MAX_REQUEST_BYTES,
+    TransportFailure,
+    TransportObservation,
+    exchange,
+    validate_timeout,
+)
 
 MAX_ENVELOPE_ARTIFACTS = 32
 MAX_ENVELOPE_BYTES = 256 * 1024
@@ -106,6 +113,14 @@ class ModelRequestObservation:
     request_timeout_ms: int | None
 
 
+@dataclass(frozen=True)
+class ModelRequestFingerprint:
+    """Fingerprint of the initial serialized body, never remote receipt evidence."""
+
+    body_bytes: int
+    body_sha256: str
+
+
 class ModelRequestFailure(RuntimeExecutionError):
     """A terminal model failure carrying an optional, independently validated projection."""
 
@@ -114,6 +129,14 @@ class ModelRequestFailure(RuntimeExecutionError):
         self.evidence = ModelFailureEvidence(reason, response_status)
         self.observation: ModelRequestObservation | None = None
         self.transport_observation: TransportObservation | None = None
+        self.request_fingerprint: ModelRequestFingerprint | None = None
+
+
+def _request_fingerprint(body: object) -> ModelRequestFingerprint | None:
+    """Project bounded request bytes only; the caller preserves failures if hashing fails."""
+    if type(body) is not bytes or not 1 <= len(body) <= MAX_REQUEST_BYTES:
+        return None
+    return ModelRequestFingerprint(len(body), hashlib.sha256(body).hexdigest())
 
 
 def _request_clock() -> float | None:
@@ -791,6 +814,11 @@ class OpenAICompatibleRuntime:
                 try:
                     exc.observation = _request_observation(phase, started, timeout)
                 except Exception:  # noqa: BLE001, S110 - preserve error without logging request data
+                    pass
+                exc.request_fingerprint = None
+                try:
+                    exc.request_fingerprint = _request_fingerprint(body)
+                except Exception:  # noqa: BLE001, S110 - optional projection preserves original error
                     pass
             raise
 

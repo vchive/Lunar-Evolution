@@ -257,7 +257,7 @@ def test_safe_cross_process_projection_preserves_legacy_code(tmp_path, monkeypat
     with pytest.raises(rt.ModelRequestFailure) as caught:
         rt.OpenAICompatibleRuntime("http://fixture.invalid", "fixture").complete([], timeout=2)
     payload = observer_payload(tmp_path, caught.value)
-    assert payload["schema_version"] == "4" and payload["code"] == code
+    assert payload["schema_version"] == "7" and payload["code"] == code
     assert payload["model_failure"] == {"reason": reason, "response_status": status}
     assert payload["request_observation"]["phase"] == phase
     assert_closed(processes)

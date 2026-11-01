@@ -103,7 +103,7 @@ def test_real_http_failure_has_typed_projection(tmp_path, status, body, reason):
         with pytest.raises(rt.RuntimeExecutionError) as caught:
             runtime.complete([{"role": "user", "content": SECRET}], timeout=1)
     payload = observer_payload(tmp_path, caught.value)
-    assert payload["schema_version"] == "5"
+    assert payload["schema_version"] == "7"
     assert payload["model_failure"] == {"reason": reason, "response_status": status}
     assert payload["code"] == ("model_http_failed" if status >= 400 else "model_failed")
     assert payload["http_status"] == (status if status >= 400 else None)
@@ -156,7 +156,7 @@ def test_native_subject_retains_bound_v4_and_no_receipt(tmp_path, mode):
         ))
     path = (request.parent / data["receipt_path"]).with_suffix(".failure.json")
     result = json.loads(path.read_bytes())
-    assert result["schema_version"] == "4"
+    assert result["schema_version"] == "7"
     assert result["model_failure"] == {"reason": "invalid_json", "response_status": 200}
     assert result["request_sha256"] == hashlib.sha256(request.read_bytes()).hexdigest()
     assert result["mode"] == mode
@@ -279,7 +279,7 @@ def test_invalid_observed_status_is_null_without_losing_typed_reason(tmp_path, m
     with pytest.raises(rt.RuntimeExecutionError) as caught:
         rt.OpenAICompatibleRuntime("http://local.invalid", "fixture", SECRET).complete([])
     result = observer_payload(tmp_path, caught.value)
-    assert result["schema_version"] == "4"
+    assert result["schema_version"] == "7"
     assert result["model_failure"] == {
         "reason": "invalid_json" if status == 200 else "http_error", "response_status": None,
     }
@@ -454,5 +454,5 @@ def test_deep_second_round_http_failure_keeps_first_independent_score(tmp_path):
     attempt = tmp_path / "trial" / record["attempt"]
     assert not (attempt / "subject/receipts/002.json").exists()
     payload = json.loads((attempt / "diagnostics/subject-002-failure.json").read_bytes())
-    assert payload["schema_version"] == "4" and payload["round_index"] == 2
+    assert payload["schema_version"] == "7" and payload["round_index"] == 2
     assert payload["model_failure"] == {"reason": "invalid_json", "response_status": 200}

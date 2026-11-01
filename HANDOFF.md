@@ -1,6 +1,6 @@
 # 唯一当前状态（2026-11-01）
 
-当前分支为 `codex/ordinary-model-acceptance`，从已合入的 main 继续。
+当前分支为 `codex/failed-request-fingerprint`，从已合入的 main 继续。
 本节是全局待办入口；Feature193 软件切片合入不代表普通模型端到端或生产 RSI 已验收。
 
 - **已关闭的软件集成 P0**：PR207 已实际合 main 为
@@ -22,6 +22,14 @@
   namespace-holder 方向保持停止，不重试或绕过。
 - **P2 后置**：远程 evaluator、多机/分布式服务扩展与模型训练不是本轮必要交付，
   不因历史路线图自动新增需求。
+
+本轮补齐普通模型调查所需的失败 HTTP 请求体指纹：只保留实际序列化 body 的
+字节数和 SHA-256，不保存正文或密钥，不改请求/预算/重试。新 schema7 保留旧
+schemas1–6 和部分用量边界，普通/深度失败均不调评分。独审后首批659pass/3个
+新测试假设错误，未改产品代码，仅修正测试并补验6项全过；原失败批次保留。
+Ruff/compileall/diff 通过，最终 CI/合入待完成。详见
+[失败请求指纹规格](specs/061-subject-failure-diagnostics/failed-request-fingerprint.md)。
+这不是超时修复，也不回填旧实跑指纹；全局 P0 与真实 P1 继续开放。
 
 > 以下为历史时点快照，旧 Current/当前、pending、expected-only 不作当前待开发清单。
 > 原文和原证据状态完整保留；失败、取消、中间预测清单及真实运行时边界不因后继合入改写。
