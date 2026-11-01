@@ -1,12 +1,13 @@
-# 唯一当前状态（2026-11-01）
+# 唯一当前状态（2026-11-02）
 
-当前分支为 `codex/failed-request-fingerprint`，从已合入的 main 继续。
+当前分支为 `codex/ordinary-model-completion`，从已合入的 main 继续。
 本节是全局待办入口；Feature193 软件切片合入不代表普通模型端到端或生产 RSI 已验收。
 
-- **已关闭的软件集成 P0**：PR207 已实际合 main 为
-  `e19be0d12365c34b514e8346f82cb84a208df475`，精确受测 tree 为
-  `a8c35bedbe9f5766d30efcb8278c3e41e059c635`。原45项 CI 全成功，45份原ZIP
-  的独审29项检查通过；Python3.11/3.12/3.13 每版27,839pass+原134skip，69新增全过。
+- **已关闭的软件集成 P0**：PR209 已实际合 main 为
+  `5c62ca270d78c605ca189399c8b8caadcd11e1b7`，精确受测 tree 为
+  `febb48196250768cb01e66c51b9f499b17e3f0a7`。原45项 CI 全成功，45份原ZIP
+  的独审28项检查通过；Python3.11/3.12/3.13 每版27,960pass+原134skip，121新增全过。
+  同源码 main push 的重复 CI 已取消，不作通过证据。
 - **仍开放的全局 P0**：普通模型在复制 train-delay case 上的真实本地端到端验收。
   原单次600秒尝试在第四次模型请求等待响应头时超时，未生成 `schedule.json`，仍为失败；
   A/B 合成协议诊断通过只说明小型消息/工具历史兼容，不能替代 case 验收。
@@ -15,6 +16,10 @@
   未调用评分。没有外层超时，原件和旧失败均保留。详见
   [本轮实跑记录](docs/ordinary-model-acceptance-20261101.md)及
   [普通模型原实跑记录](docs/normal-model-smoke-20261025.md)。
+  当前正在准备独立的50分钟/40工具调用长跑，使用新的 profile、manifest 和 attempt，
+  同模型/同case/160,000已观测tokens，单次零重试；只有完成receipt和有效提交才评分。
+  这不重开旧attempt，不把加时视为旧超时修复。见
+  [长跑验收规格](specs/061-subject-failure-diagnostics/ordinary-model-long-run-acceptance.md)。
 - **P1 真实依赖仍开放**：实际 worker 的不可变输入消费、完整 source/toolchain/driver
   保护及外部 writer 排除，随后才是 accepted image/live owner、首个 scheduler context、
   生产 native RSI CLI 和复制本地 case 验收。既有 stager/gateway/recovery 不重做；
@@ -27,9 +32,11 @@
 字节数和 SHA-256，不保存正文或密钥，不改请求/预算/重试。新 schema7 保留旧
 schemas1–6 和部分用量边界，普通/深度失败均不调评分。独审后首批659pass/3个
 新测试假设错误，未改产品代码，仅修正测试并补验6项全过；原失败批次保留。
-Ruff/compileall/diff 通过，最终 CI/合入待完成。详见
+Ruff/compileall/diff 及最终 CI/合入已完成。详见
 [失败请求指纹规格](specs/061-subject-failure-diagnostics/failed-request-fingerprint.md)。
 这不是超时修复，也不回填旧实跑指纹；全局 P0 与真实 P1 继续开放。
+客户端原日志已定位；当前模型地址与旧公开文档不同，既有配置及公开入口调查未取得
+服务端日志，不能据404推断key无效或服务无日志。新长跑不依赖旧文档管理接口。
 
 > 以下为历史时点快照，旧 Current/当前、pending、expected-only 不作当前待开发清单。
 > 原文和原证据状态完整保留；失败、取消、中间预测清单及真实运行时边界不因后继合入改写。
