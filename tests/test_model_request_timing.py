@@ -74,7 +74,7 @@ def test_transport_phase_timing_and_original_cause(tmp_path, monkeypatch, at_bod
     error, _ = invoke(monkeypatch, response, None if at_body else cause)
     assert error.__cause__ is cause
     payload = observer_payload(tmp_path, error)
-    assert payload["schema_version"] == "4"
+    assert payload["schema_version"] == "7"
     assert payload["request_observation"] == {
         "phase": "read_response_body" if at_body else "open_response",
         "elapsed_ms": 2500, "request_timeout_ms": 1234,
@@ -171,7 +171,7 @@ def test_invalid_timeout_discards_timing_without_changing_forwarded_value(tmp_pa
     clock(monkeypatch)
     error, _ = invoke(monkeypatch, Response(), timeout=timeout)
     payload = observer_payload(tmp_path, error)
-    assert payload["schema_version"] == "3" and "request_observation" not in payload
+    assert payload["schema_version"] == "7" and "request_observation" not in payload
     assert payload["model_failure"] == {"reason": "invalid_json", "response_status": 200}
 
 
@@ -185,7 +185,7 @@ def test_invalid_clock_never_masks_failure_or_valid_v3(tmp_path, monkeypatch, re
     clock(monkeypatch, readings)
     error, _ = invoke(monkeypatch, Response())
     payload = observer_payload(tmp_path, error)
-    assert payload["schema_version"] == "3" and "request_observation" not in payload
+    assert payload["schema_version"] == "7" and "request_observation" not in payload
     assert payload["model_failure"]["reason"] == "invalid_json"
     assert SECRET not in json.dumps(payload)
 
@@ -284,7 +284,7 @@ def test_failed_observation_construction_preserves_original_failure(tmp_path, mo
     error, _ = invoke(monkeypatch, Response())
     if real_type is not None:
         monkeypatch.setattr(rt, "ModelRequestObservation", real_type)
-    assert observer_payload(tmp_path, error)["schema_version"] == "3"
+    assert observer_payload(tmp_path, error)["schema_version"] == "7"
 
 
 def test_success_has_identical_wire_fields_and_no_end_clock_or_state(monkeypatch):

@@ -14,13 +14,14 @@ from pathlib import Path
 from urllib.error import HTTPError
 
 from .agent_loop import AgentInputRequired, ProfileBudgetFailure
-from .http_transport import TransportObservation, normalize_transport_observation
+from .http_transport import MAX_REQUEST_BYTES, TransportObservation, normalize_transport_observation
 from .model_profile import BudgetFailureEvidence, UsageSnapshot
 from .runtime import (
     MAX_REQUEST_OBSERVATION_MS,
     MODEL_FAILURE_REASONS,
     ModelFailureEvidence,
     ModelRequestFailure,
+    ModelRequestFingerprint,
     ModelRequestObservation,
     RuntimeExecutionError,
 )
@@ -185,11 +186,24 @@ def _normalize_request_observation(value: object, reason: object) -> dict[str, o
     return dict(value)
 
 
+def _normalize_request_fingerprint(value: object) -> dict[str, object]:
+    if type(value) is not dict or set(value) != {"body_bytes", "body_sha256"}:
+        raise ValueError("invalid model request fingerprint fields")
+    if not _integer(value["body_bytes"], 1, MAX_REQUEST_BYTES):
+        raise ValueError("invalid model request body size")
+    digest = value["body_sha256"]
+    if type(digest) is not str or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError("invalid model request body digest")
+    return dict(value)
+
+
 def normalize_diagnostic(value: object) -> dict[str, object]:
     """Accept only the fixed score-free vocabulary, without arbitrary error strings."""
     if not isinstance(value, dict) or "schema_version" not in value:
         raise ValueError("invalid diagnostic fields")
     version = value.get("schema_version")
+    if type(version) is str and version == "7":
+        return _normalize_fingerprinted_diagnostic(value)
     if type(version) is str and version == "6":
         return _normalize_accepted_usage_diagnostic(value)
     if type(version) is not str or version not in {"1", "2", "3", "4", "5"}:
@@ -266,6 +280,39 @@ def _normalize_accepted_usage_diagnostic(value: dict[str, object]) -> dict[str, 
         raise ValueError("inconsistent accepted usage response count")
     return {**legacy, "schema_version": "6", "accepted_usage": usage,
             "usage_completeness": "partial"}
+
+
+def _normalize_fingerprinted_diagnostic(value: dict[str, object]) -> dict[str, object]:
+    """Wrap one valid model-failure projection; never promote its authority."""
+    if "request_fingerprint" not in value:
+        raise ValueError("missing model request fingerprint")
+    legacy = {key: item for key, item in value.items() if key != "request_fingerprint"}
+    if "accepted_usage" in legacy or "usage_completeness" in legacy:
+        legacy = normalize_diagnostic({**legacy, "schema_version": "6"})
+    else:
+        for version in ("3", "4", "5"):
+            if set(legacy) == _FIELDS | _ADDITIONAL_FIELDS[version]:
+                legacy = normalize_diagnostic({**legacy, "schema_version": version})
+                break
+        else:
+            raise ValueError("invalid fingerprinted diagnostic fields")
+    if legacy["stage"] != "model" or "model_failure" not in legacy:
+        raise ValueError("invalid fingerprinted failure classification")
+    return {**legacy, "schema_version": "7", "request_fingerprint":
+            _normalize_request_fingerprint(value["request_fingerprint"])}
+
+
+def _with_request_fingerprint(
+    payload: dict[str, object], fingerprint: dict[str, object] | None,
+) -> dict[str, object]:
+    if fingerprint is not None:
+        try:
+            return normalize_diagnostic({
+                **payload, "schema_version": "7", "request_fingerprint": fingerprint,
+            })
+        except (TypeError, ValueError):
+            pass
+    return payload
 
 
 def _relative_parts(relative: str) -> list[str]:
@@ -450,7 +497,8 @@ class SubjectDiagnosticObserver:
                 try:
                     usage = _project_usage(accepted_usage)
                     payload = normalize_diagnostic({
-                        **payload, "schema_version": "6", "accepted_usage": usage,
+                        **payload, "schema_version": "7" if "request_fingerprint" in payload else "6",
+                        "accepted_usage": usage,
                         "usage_completeness": "partial",
                     })
                 except (TypeError, ValueError):
@@ -468,6 +516,7 @@ class SubjectDiagnosticObserver:
         model_failure = None
         request_observation = None
         transport_observation = None
+        request_fingerprint = None
         model_failure_checked = False
         current: BaseException | None = error
         seen: set[int] = set()
@@ -487,6 +536,16 @@ class SubjectDiagnosticObserver:
                     # Malformed owned evidence cannot prevent the legacy failure projection.
                     pass
                 if model_failure is not None:
+                    try:
+                        fingerprint = current.request_fingerprint
+                        if type(fingerprint) is ModelRequestFingerprint:
+                            request_fingerprint = _normalize_request_fingerprint({
+                                "body_bytes": fingerprint.body_bytes,
+                                "body_sha256": fingerprint.body_sha256,
+                            })
+                    except (TypeError, ValueError, AttributeError):
+                        # Optional identity cannot replace the original failure classification.
+                        pass
                     try:
                         observation = current.observation
                         if type(observation) is ModelRequestObservation:
@@ -556,17 +615,19 @@ class SubjectDiagnosticObserver:
                     })
                     if transport_observation is not None:
                         try:
-                            return normalize_diagnostic({
+                            return _with_request_fingerprint(normalize_diagnostic({
                                 **timed, "schema_version": "5",
                                 "transport_observation": transport_observation,
-                            })
+                            }), request_fingerprint)
                         except (TypeError, ValueError):
                             pass
-                    return timed
+                    return _with_request_fingerprint(timed, request_fingerprint)
             except (TypeError, ValueError):
                 pass
             try:
-                return normalize_diagnostic({**payload, "schema_version": "3", "model_failure": model_failure})
+                return _with_request_fingerprint(normalize_diagnostic({
+                    **payload, "schema_version": "3", "model_failure": model_failure,
+                }), request_fingerprint)
             except (TypeError, ValueError):
                 pass
         return payload

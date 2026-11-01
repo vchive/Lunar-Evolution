@@ -1,6 +1,6 @@
 # 当前发布工作台账（2026-11-01）
 
-本节是唯一当前优先级入口。当前分支 `codex/ordinary-model-acceptance` 从已合 main 继续；
+本节是唯一当前优先级入口。当前分支 `codex/failed-request-fingerprint` 从已合 main 继续；
 Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 
 | 优先级 | 当前状态与必要下一步 |
@@ -12,6 +12,13 @@ Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 
 `production_admission=false`、`online_publication=false`。当前没有可脱离上述真实 P1
 边界独立完成的必要 Feature193 编码块；这不取消普通模型端到端 P0。
+
+当前普通模型调查补丁已开发：失败请求体仅记录字节数/SHA-256，schema7 复用
+既有诊断与 normal/deep 收集边界，不改请求、预算、重试或评分。首批659pass/
+3个新测试预期错误后，产品代码未变；修正测试的6项补验全过，原批次仍记失败。
+Ruff/compileall/diff 通过，121新增测试，最终 CI/main 门待完成；新模型请求为0。
+见[规格与验证](../specs/061-subject-failure-diagnostics/failed-request-fingerprint.md)。
+该补丁不关闭响应头停滞的根因调查或 E2E P0。
 
 > 以下为历史时点快照，旧 Current/当前、pending、expected-only 不作当前待开发清单。
 > 原文及原证据完整保留；不把中间预测清单改称实跑通过，也不改写旧失败或生产准入边界。
