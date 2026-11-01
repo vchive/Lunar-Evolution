@@ -15,8 +15,9 @@ directly. That evaluator expects numeric arrival/departure matrices.
 The resulting interface mismatch can reject an answer because of its format.
 An absent fixed-name submission alone does not prove that no semantic answer
 was produced. It also does not explain the earlier response-header stalls.
-The ongoing [unchanged-input long run](ordinary-model-long-run-acceptance.md)
-must retain its original inputs, helper, limits and outcome.
+The [unchanged-input long run](ordinary-model-long-run-acceptance.md)
+retains its original inputs, helper, limits and failed outcome. It ended after
+the fifth request timed out, before any completed receipt or local score.
 
 The existing `PublicFile` ledger, `entrypoint` and `run_subject_adapter` already
 support an explicitly published task contract. No provider protocol, runtime

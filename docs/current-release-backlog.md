@@ -10,11 +10,15 @@ Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 | P1 | 实际 worker 的不可变输入消费、完整 source/toolchain/driver 保护及外部 writer 排除，随后是 accepted image/live owner、首 scheduler context、生产 native RSI CLI 和复制本地 case 验收。复用已有 stager/gateway/recovery；已被自动审查拒绝的 namespace-holder 方向保持停止，不重试或绕过。 |
 | P2 后置 | 远程 evaluator、多机/分布式服务扩展及模型训练不属于本轮必要交付，不从历史路线图新增需求。 |
 
-本轮按用户已有长跑授权，已启动同模型/同case的独立普通验收：3,000秒、40工具调用、
+本轮按用户已有长跑授权，已完成同模型/同case的独立普通验收：3,000秒、40工具调用、
 160,000已观测tokens、一个新attempt零重试，同步冻结新profile。既有CLI已支持这些
 条件；这不需要新增runtime机制，也不把更大预算解释为旧600秒失败的修复。完成receipt
 及有效提交后才调用一次本地评分。见[独立长跑规格](../specs/061-subject-failure-diagnostics/ordinary-model-long-run-acceptance.md)。
-结果仍待终态与独立原件验收，见[本轮记录](ordinary-model-long-run-acceptance-20261102.md)。
+结果为失败：4轮响应/8工具结果后，第5次请求等待响应头2,935.404秒超时；subject
+总3,001.085719秒、rc2，原child回收/EOF确认，无outer-watchdog信号。保留12,358
+tokens部分用量，失败请求用量/费用未知；无完成receipt和固定提交，评分跳过。
+48项独立证据检查通过，验收本身仍失败。schema7请求指纹已实际保留，history完整
+配对；尚未确定客户端缺陷或服务端根因。见[本轮记录](ordinary-model-long-run-acceptance-20261102.md)。
 
 另有明确的验收接口缺口：原公开任务未指定文件名和JSON字段，普通主体提示允许由
 extractor识别答案文件，而当前helper只选择固定schedule文件并直接调用evaluator。

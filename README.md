@@ -164,7 +164,7 @@ CI 在 Ubuntu 上覆盖 Python 3.11、3.12 和 3.13。[Linux 开发指南](docs/
 
 ## 当前发布边界
 
-provider-free DRS/BRS 控制与恢复路径已实现；PR209 已合入 main（`5c62ca27`），原45项 CI 全部成功并通过独立审查。普通模型在复制 train-delay case 上的端到端验收仍是 P0：[此前600秒验收](docs/ordinary-model-acceptance-20261101.md)完成8轮模型/11个工具结果后，第9次请求等待响应头超时，没有提交文件，未调用评分。独立的[50分钟长跑验收](docs/ordinary-model-long-run-acceptance-20261102.md)正在进行；它使用新预算和新 attempt，不能改写旧失败。
+provider-free DRS/BRS 控制与恢复路径已实现；PR209 已合入 main（`5c62ca27`），原45项 CI 全部成功并通过独立审查。普通模型在复制 train-delay case 上的端到端验收仍是 P0：[此前600秒验收](docs/ordinary-model-acceptance-20261101.md)等待响应头超时；独立的[50分钟长跑验收](docs/ordinary-model-long-run-acceptance-20261102.md)也在4轮响应、8个工具结果后因第5次请求超时失败，没有完成提交或评分。长跑的48项独立证据检查通过，验收本身仍失败；服务端根因尚未确定。
 
 当前直接评分入口还存在[公开输出契约缺口](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)：原题未指定固定文件名和 JSON 字段，评分 helper 却要求固定格式。补充格式说明将作为独立 case 变体验证；当前长跑和原 benchmark 保持不变。
 

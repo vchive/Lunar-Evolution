@@ -1,7 +1,8 @@
 # Ordinary-model long-run acceptance — 2026-11-02
 
-Status: the one fresh attempt was dispatched on 2026-11-02 at 02:13:07 Beijing
-time; result pending. Conditions were specified before preparation or inference.
+Status: the single attempt failed; original evidence independently audited.
+It ran on 2026-11-02 from 02:13:07 to 03:03:09 Beijing time. Conditions were
+specified before preparation or inference.
 This is a new ordinary-model
 functional acceptance, using the user's previously authorized 40–50 minute
 execution allowance. It does not reopen either historical 600-second attempt.
@@ -106,7 +107,7 @@ namespace-holder mechanism or production/publication authority is introduced.
 - [x] Freeze the fresh product, inputs, profile, interpreter and helper manifest.
 - [x] Complete independent exact-byte review; reuse the unchanged reviewed supervisor.
 - [x] Dispatch the single new attempt after the reviewed manifest and pushed registration.
-- [ ] Audit original evidence and report this long-run result separately.
+- [x] Audit original evidence and report this long-run result separately.
 
 ## Frozen preparation
 
@@ -140,3 +141,33 @@ The registration was committed and pushed as
 one-shot authorization were created. The launch observation is
 `2026-11-01T18:13:07.414622+00:00` (2026-11-02 Beijing time).
 See the [separate run record](../../docs/ordinary-model-long-run-acceptance-20261102.md).
+
+## Observed result
+
+The subject returned rc2 in 3,001.085719 seconds, without an outer-watchdog
+timeout or signal. Four successful model responses and eight completed tool
+results preceded a fifth model request whose `open_response` phase timed out
+after 2,935.404 seconds. The last local transport milestone was
+`wait_response_headers`; this does not establish the server's execution state
+or cancellation. The retained history has complete tool-result pairs and no
+pending result. No completed receipt or fixed submission was produced, so the
+local evaluator was not invoked and scores remain null.
+
+Accepted usage is partial: 7,999 input, 4,359 output and 12,358 total tokens
+over four responses. Failed-request consumption and cost remain unknown.
+Schema 7 records the failed serialized body as 11,837 bytes and its SHA256,
+without retaining the body. More time did not complete this attempt; the
+observations establish neither a client defect nor the server-side cause.
+
+The original child was reaped and pipe EOF verified; complete process-group
+cleanup remains unproven. All 2,808 files/308 directories, eleven copied case
+files, raw and normalized profile bindings and 239 loaded module origins
+matched. Independent terminal audit passed all 48 evidence checks, while
+deriving `acceptance_passed=false` and `actual_attempt_status=failed`. Its
+12,724-byte report SHA256 is
+`5202e0b66e8e2725c13892846a83f7d87ecc98317f23c961d1f16f30d5bccc41`.
+
+The [public direct-evaluation contract gap](ordinary-direct-evaluation-contract.md)
+was identified separately and the active attempt was not changed. Its new
+four-case offline interface check does not replace this failed real attempt.
+Ordinary-model E2E remains open; production/publication authority remains false.
