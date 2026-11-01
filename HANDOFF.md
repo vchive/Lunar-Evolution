@@ -21,6 +21,12 @@
   这不重开旧attempt，不把加时视为旧超时修复。见
   [长跑验收规格](specs/061-subject-failure-diagnostics/ordinary-model-long-run-acceptance.md)。
   实际结果尚待完成与独审，见[新运行记录](docs/ordinary-model-long-run-acceptance-20261102.md)。
+  另已确认直接评分的公开契约缺口：原instruction未指定文件名/JSON字段，主体提示
+  允许由extractor识别答案文件，而当前helper只认固定schedule文件并直接评分。
+  不据固定文件缺失推断没有语义答案，也不据此解释响应头停滞。先用既有
+  PublicFile/entrypoint准备独立public-task变体；一次4用例provider-free接口检查已过，
+  三负例均在fake调用前拒绝，真实变体尚未运行。不改当前长跑、原case或benchmark，
+  见[契约规格](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)。
 - **P1 真实依赖仍开放**：实际 worker 的不可变输入消费、完整 source/toolchain/driver
   保护及外部 writer 排除，随后才是 accepted image/live owner、首个 scheduler context、
   生产 native RSI CLI 和复制本地 case 验收。既有 stager/gateway/recovery 不重做；

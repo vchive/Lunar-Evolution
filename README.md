@@ -164,7 +164,9 @@ CI 在 Ubuntu 上覆盖 Python 3.11、3.12 和 3.13。[Linux 开发指南](docs/
 
 ## 当前发布边界
 
-provider-free DRS/BRS 控制与恢复路径已实现；PR207 已合入 main（`e19be0d1`），原45项 CI 全部成功并通过独立审查。普通模型在复制 train-delay case 上的端到端验收仍是 P0：[最新单次、零重试验收](docs/ordinary-model-acceptance-20261101.md)完成8轮模型/11个工具结果后，第9次请求等待响应头超时，没有提交文件；本轮未调用评分，旧失败记录完整保留。
+provider-free DRS/BRS 控制与恢复路径已实现；PR209 已合入 main（`5c62ca27`），原45项 CI 全部成功并通过独立审查。普通模型在复制 train-delay case 上的端到端验收仍是 P0：[此前600秒验收](docs/ordinary-model-acceptance-20261101.md)完成8轮模型/11个工具结果后，第9次请求等待响应头超时，没有提交文件，未调用评分。独立的[50分钟长跑验收](docs/ordinary-model-long-run-acceptance-20261102.md)正在进行；它使用新预算和新 attempt，不能改写旧失败。
+
+当前直接评分入口还存在[公开输出契约缺口](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)：原题未指定固定文件名和 JSON 字段，评分 helper 却要求固定格式。补充格式说明将作为独立 case 变体验证；当前长跑和原 benchmark 保持不变。
 
 真实 native producer 仍有独立 P1：实际 worker 的不可变输入消费、完整 source/toolchain/driver 保护及外部 writer 排除仍受阻，随后才是 accepted runtime、首个 scheduler context、生产 RSI CLI 和复制本地 case 验收。已有 stager、gateway 和 recovery 不重复建设；OpenEvolve/Shinka 源码准备和 detached evidence reader 不会授予生产准入。具体依赖与边界以[发布工作台账](docs/current-release-backlog.md)为准。
 

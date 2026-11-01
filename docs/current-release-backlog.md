@@ -16,6 +16,13 @@ Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 及有效提交后才调用一次本地评分。见[独立长跑规格](../specs/061-subject-failure-diagnostics/ordinary-model-long-run-acceptance.md)。
 结果仍待终态与独立原件验收，见[本轮记录](ordinary-model-long-run-acceptance-20261102.md)。
 
+另有明确的验收接口缺口：原公开任务未指定文件名和JSON字段，普通主体提示允许由
+extractor识别答案文件，而当前helper只选择固定schedule文件并直接调用evaluator。
+因此，固定文件缺失不能直接等同于没有语义答案；该缺口也不解释响应头停滞。
+本轮用既有PublicFile/entrypoint准备独立公开格式变体，一次4用例provider-free
+接线检查已通过，三个负例均在fake调用前拒绝；真实变体尚未运行。不改当前长跑、
+原case或benchmark。见[公开契约规格](../specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)。
+
 `production_admission=false`、`online_publication=false`。当前没有可脱离上述真实 P1
 边界独立完成的必要 Feature193 编码块；这不取消普通模型端到端 P0。
 
