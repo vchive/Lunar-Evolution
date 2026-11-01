@@ -1,7 +1,8 @@
 # Ordinary-model long-run acceptance — 2026-11-02
 
-Status: prepared and independently reviewed; not yet dispatched. Conditions
-were specified before preparation or inference. This is a new ordinary-model
+Status: the one fresh attempt was dispatched on 2026-11-02 at 02:13:07 Beijing
+time; result pending. Conditions were specified before preparation or inference.
+This is a new ordinary-model
 functional acceptance, using the user's previously authorized 40–50 minute
 execution allowance. It does not reopen either historical 600-second attempt.
 
@@ -104,7 +105,7 @@ namespace-holder mechanism or production/publication authority is introduced.
 - [x] Specify the separate long-run conditions before preparing or dispatching.
 - [x] Freeze the fresh product, inputs, profile, interpreter and helper manifest.
 - [x] Complete independent exact-byte review; reuse the unchanged reviewed supervisor.
-- [ ] Dispatch the single new attempt; preserve the original terminal outcome.
+- [x] Dispatch the single new attempt after the reviewed manifest and pushed registration.
 - [ ] Audit original evidence and report this long-run result separately.
 
 ## Frozen preparation
@@ -133,3 +134,9 @@ completion, in addition to the original canonical receipt/profile validator.
 
 These preparation results authorize no success claim. Original postrun facts
 must be reported separately after the single actual dispatch.
+
+The registration was committed and pushed as
+`0c87fac9b341c736cdfdad3b2b84306bbaf11a3a` before the root execution gate and
+one-shot authorization were created. The launch observation is
+`2026-11-01T18:13:07.414622+00:00` (2026-11-02 Beijing time).
+See the [separate run record](../../docs/ordinary-model-long-run-acceptance-20261102.md).

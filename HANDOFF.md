@@ -16,10 +16,11 @@
   未调用评分。没有外层超时，原件和旧失败均保留。详见
   [本轮实跑记录](docs/ordinary-model-acceptance-20261101.md)及
   [普通模型原实跑记录](docs/normal-model-smoke-20261025.md)。
-  当前正在准备独立的50分钟/40工具调用长跑，使用新的 profile、manifest 和 attempt，
+  当前已启动独立的50分钟/40工具调用长跑，使用新的 profile、manifest 和 attempt，
   同模型/同case/160,000已观测tokens，单次零重试；只有完成receipt和有效提交才评分。
   这不重开旧attempt，不把加时视为旧超时修复。见
   [长跑验收规格](specs/061-subject-failure-diagnostics/ordinary-model-long-run-acceptance.md)。
+  实际结果尚待完成与独审，见[新运行记录](docs/ordinary-model-long-run-acceptance-20261102.md)。
 - **P1 真实依赖仍开放**：实际 worker 的不可变输入消费、完整 source/toolchain/driver
   保护及外部 writer 排除，随后才是 accepted image/live owner、首个 scheduler context、
   生产 native RSI CLI 和复制本地 case 验收。既有 stager/gateway/recovery 不重做；
