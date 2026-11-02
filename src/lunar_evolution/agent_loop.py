@@ -365,7 +365,10 @@ class AgentLoopRuntime:
             )
             try:
                 self._check_continuation()
-                turn = self.model.complete(request_messages, self.tools.schemas(), remaining)
+                turn = self.model.complete(
+                    request_messages, self.tools.schemas(), remaining,
+                    **self._completion_options(),
+                )
                 self._check_continuation()
             except AgentInputRequired:
                 if ledger is not None:
@@ -642,6 +645,7 @@ class AgentLoopRuntime:
             (),
             self._remaining_timeout(started, effective_timeout)
             if self.profile is not None else timeout,
+            **self._completion_options(),
         )
         self._check_continuation()
         if self.profile is not None:
@@ -725,6 +729,13 @@ class AgentLoopRuntime:
                         return False
                     pending.add(call_id)
         return not pending
+
+    def _completion_options(self) -> dict[str, int]:
+        # Keep legacy injected runtimes' call signatures untouched unless the
+        # caller explicitly enables the new provider policy. Never retry without it.
+        if self.profile is None or self.profile.max_completion_tokens is None:
+            return {}
+        return {"max_completion_tokens": self.profile.max_completion_tokens}
 
     def _profile_timeout(self, timeout: float | None) -> float | None:
         if self.profile is None:

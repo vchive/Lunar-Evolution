@@ -70,6 +70,7 @@ class ModelProfile:
     max_cost_micros: int | None = None
     input_cost_per_1k_micros: int | None = None
     output_cost_per_1k_micros: int | None = None
+    max_completion_tokens: int | None = None
 
     def __post_init__(self) -> None:
         _profile_text(self.name, "model profile name")
@@ -108,9 +109,15 @@ class ModelProfile:
             raise ValueError("max_cost_micros requires input and output token prices")
         if self.max_total_tokens == 0 or self.max_cost_micros == 0:
             raise ValueError("token and cost ceilings must be positive when supplied")
+        if self.max_completion_tokens is not None and (
+            isinstance(self.max_completion_tokens, bool)
+            or not isinstance(self.max_completion_tokens, int)
+            or not 1 <= self.max_completion_tokens <= 1_000_000
+        ):
+            raise ValueError("max_completion_tokens must be an integer between 1 and 1000000 or null")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "name": self.name,
             "model": self.model,
             "thinking_budget": self.thinking_budget,
@@ -121,6 +128,10 @@ class ModelProfile:
             "input_cost_per_1k_micros": self.input_cost_per_1k_micros,
             "output_cost_per_1k_micros": self.output_cost_per_1k_micros,
         }
+        # Omit an unset limit to preserve canonical identities of existing profiles.
+        if self.max_completion_tokens is not None:
+            value["max_completion_tokens"] = self.max_completion_tokens
+        return value
 
     @classmethod
     def from_dict(cls, value: object) -> ModelProfile:
@@ -142,6 +153,7 @@ class ModelProfile:
             "max_cost_micros",
             "input_cost_per_1k_micros",
             "output_cost_per_1k_micros",
+            "max_completion_tokens",
         }
         unknown = set(value) - allowed
         if unknown:
