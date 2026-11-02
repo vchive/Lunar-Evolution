@@ -78,6 +78,24 @@ A separate two-test supplement passed; the original 555-case batch was not
 repeated. Ruff, compileall and diff checks passed. Full three-version CI remains a
 separate final-source gate, not implied by this local batch.
 
+The first complete CI attempt on head `e5f3e57f` exposed a missed source-pin
+dependency: the fixed OpenEvolve preparer still bound the previous full HTTP
+transport source. Python3.13 current-5 reported one failure and 26 setup errors;
+the Shinka preparer shares this binding. Preserve that original failed attempt.
+The correction updates only the exact full-source bytes/SHA256 after reviewing
+that its two extracted transport constants and the generated broker bytes are
+unchanged. Full-source drift rejection and the historical generated-broker
+assertions stay enabled; no new accepted source set or relaxed check is added.
+Independent comparison confirmed the historical generated broker remains
+8,143 bytes with SHA256
+`5c0474648bf173f0d24a0fcc12e6d1eedc0d9b4169c3cab4d22def2ed38d43b0`,
+with all 17 extracted records unchanged. One three-complete-file supplement
+passed 119 tests, zero failure/error/skip, in 0.647 seconds. The corrected
+transport source pin is 28,611 bytes and SHA256
+`b6e2966b622f3d9708d0c5953b1908fe9f17d19479a66d344475192ef15c6ce6`.
+The original complete CI failure is not overwritten by this supplement; a new
+complete CI on the corrected final source is still required.
+
 The reviewed cleanup removed 969 flat CI expansion directories only after
 rechecking their complete bytes against retained original ZIP members. It
 removed 10,359,791,616 allocated bytes (about 9.65 GiB); no original archive,
