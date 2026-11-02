@@ -1,7 +1,7 @@
 # Capped ordinary-model benchmark case acceptance
 
-Status: prepared and independently reviewed, 2026-11-02. Two new attempts;
-dispatch follows the pushed registration and exact one-shot authorization.
+Status: both single real attempts failed on transport errors, 2026-11-02.
+Original-evidence audits passed; no completed receipt, evaluator or score.
 
 ## Scope
 
@@ -104,10 +104,44 @@ train source deliberately preserves the earlier copied variant and private
 cached bytecode; the hospital source is copied directly from the external
 case. Neither issue was a model, evaluator or product-test failure.
 
+## Actual execution
+
+Registration commit `19b40179e11917d75f1d0a8be8faf5830f4a7d86` was pushed
+before both launches at `2026-11-02T11:52:58Z`. Each ran once, without retry.
+Train ended rc2 in 141.094818 seconds after two accepted model responses/four
+tool results; hospital ended rc2 in 140.329087 seconds after three/nine.
+Their next requests failed with schema7 `model/model_failed`, reason
+`transport_error`, in `open_response`; the last local milestone was
+`wait_response_headers`, with no observed response status. Failed requests
+took 129.302 and 126.993 seconds, well below their approximately 2,989/2,988
+seconds of remaining allowance at dispatch. Neither outer watchdog fired.
+
+Accepted partial usage is 3,558 and 6,145 tokens respectively. Triggering
+usage/billing remains unknown. No completed receipt or submission exists;
+both evaluators were correctly skipped. Original children were reaped and
+pipe EOF verified; all source/case/profile checks matched.
+
+The independently prepared, root-reviewed terminal audit executed once per
+case and classified both original results as failed. Its script SHA256 is
+`a33329af15d618379054f0c67a81ade1dd06383fd92cb55d0912f142c8a2bede`.
+Original report SHA256s are
+`91768765654a1409ff862599a0efa8e5a06cb0482d9bea65723c15a5502ac28a`
+(train) and
+`5b05cc866d50b94eaaa4184b72e6381455ac14933735e74b4d8318de0801e0e8`
+(hospital). Audit success validates the failed records, not E2E acceptance.
+An independent 48-check original crosscheck passed, report SHA256
+`c05a16640eb3a6db04f6ea3d0b56fd262803252f67016b1a27f5f83d1c865610`.
+Separate static in-memory reconstruction exactly matched both failed-body
+fingerprints, including cap16384 and paired tool history. Its report SHA256 is
+`6cc753ce9974e8011a0a37331dd31efe3207ba1ba65f7f6b90001cdcd09509da`.
+No body was retained or model request repeated; these matching candidates do
+not prove original wire capture, endpoint receipt or gateway enforcement.
+See the [actual run record](../../docs/capped-benchmark-case-acceptance-20261102.md).
+
 ## Tasks
 
 - [x] Select two cases and specify public format, budgets and acceptance gates.
 - [x] Freeze and independently review both new preparations.
-- [ ] Push the exact registration and launch each attempt once.
-- [ ] Preserve and independently review terminal evidence and conditional scores.
-- [ ] Publish actual per-case results and update the current release entry points.
+- [x] Push the exact registration and launch each attempt once.
+- [x] Preserve and independently review terminal evidence and conditional scores.
+- [x] Publish actual per-case results and update the current release entry points.
