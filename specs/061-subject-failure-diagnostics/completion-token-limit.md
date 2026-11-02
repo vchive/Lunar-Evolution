@@ -1,7 +1,7 @@
 # Explicit per-request completion-token limit
 
-Status: implemented and locally verified, 2026-11-02; final-source complete
-CI and main integration remain pending.
+Status: implemented, independently reviewed and verified by final-source complete
+CI; merged through PR214 on 2026-11-02. This closeout changes documentation only.
 
 ## Problem and scope
 
@@ -9,7 +9,7 @@ The [independent direct-contract attempt](../../docs/ordinary-direct-contract-ac
 received nine responses. Its ninth added 65,536 output tokens and raised
 observed aggregate usage from 100,651 to 174,152, beyond the fixed 160,000
 stop threshold. The existing ledger correctly rejected the response after it
-arrived. The request currently sends no completion-token limit.
+arrived. That attempt sent no completion-token limit.
 
 Add an explicitly configured per-request generation limit using the existing
 model profile and OpenAI-compatible runtime. This helps bound a single long
@@ -73,8 +73,8 @@ migration, endpoint probing, production RSI permission or automatic real run.
 - [x] Implement profile and transport policy with default identity preserved.
 - [x] Implement ordinary and isolated profile propagation.
 - [x] Independently review implementation and focused tests.
-- [ ] Execute focused/static checks and final-source complete regression.
-- [ ] Publish exact results and integrate after gates pass.
+- [x] Execute focused/static checks and final-source complete regression.
+- [x] Publish exact results and integrate after gates pass.
 
 MVP boundary remains explicit: local task/loop/population/provider-free RSI
 control is a technical MVP. Reliable real-model task completion and measured
@@ -95,6 +95,38 @@ concatenations and one nested context-manager style issue. A test-only style
 correction preserves the normalized AST and context-manager acquisition/release
 order; product code is unchanged. Corrected Ruff over `src tests tools`,
 compileall and `git diff --check` pass. The original focused batch is retained,
-not rerun or relabeled as covering a new behavior. Final CI will test the exact
-corrected source. Evidence is in primary ignored
+not rerun or relabeled as covering a new behavior. Final CI tested the exact
+corrected source described below. Evidence is in primary ignored
 `.lunar-evolution/validation/completion-token-limit-20261102/`.
+
+## Final CI and integration
+
+PR214 head `1bc380e069016e7b794dc2dfd9871f73706e42b8` completed original run
+`41403780073`, attempt 1, with all 45 jobs successful. The actual CI merge was
+`c4312610c89a8c06d3e405c0e936f677e717f8d2`, with parents
+`44ae4be1de8cc031a3bd1364f158ab24eb0ffe8f` and the PR head. Its tree
+`6e0d11c03422cf581ed004d79516e575b67210d8` equals the head tree.
+
+Python 3.11.17, 3.12.15 and 3.13.17 each reported 28,200 current cases:
+28,066 pass and the same 134 skips as the preserved PR211 baseline. All 47
+new cases passed, with no baseline node removals. History passed 2,294 + 24
+cases with zero skips and no retries. All 83 derived focused groups passed,
+including 65 zero-skip groups, bound to the original reports and source.
+
+All 45 original ZIPs and audit evidence are preserved under primary ignored
+`.lunar-evolution/validation/completion-token-limit-20261102/ci/`:
+
+- Original ZIP audit SHA256:
+  `03ef59ce1cc71140372d639bdfea283821cfc918c7794a291be09d78ee1391ee`.
+- Independent original evidence review SHA256:
+  `5eb4459787c4a3c7beb5a28779e43671ebc1eec5be468b3f71b1a12d9767d122`.
+- Root verified-merge receipt SHA256:
+  `7db001e8a5f377098f9925228ffdf7d0ba3c6af83baecd021df279cc4bc08ef8`.
+
+PR214 actually merged as main `6adc850a203f6cb35106941ea5469d342eb83392`;
+root verification confirmed the same exact tested tree. An initial independent-review report
+timestamp serialization failure was preserved; correcting report generation
+did not rerun tests or change product code. This documentation-only closeout
+reuses the unchanged software regression evidence and adds no model run or
+end-to-end acceptance. The historical failures, aggregate-budget boundary and
+technical MVP/P0/P1 distinctions above remain unchanged.

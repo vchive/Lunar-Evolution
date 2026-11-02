@@ -1,8 +1,13 @@
 # 当前发布工作台账（2026-11-02）
 
 从PR213/main `44ae4be1`继续的[显式单次输出上限](../specs/061-subject-failure-diagnostics/completion-token-limit.md)
-已实现并通过一次455项本地集中回归（47新增全过、零skip）；修正三处测试格式后
-Ruff/compileall/diff通过，完整CI及合main待完成。缺省wire/profile身份保持，
+已通过PR214合入main `6adc850a203f6cb35106941ea5469d342eb83392`，精确受测tree
+`6e0d11c03422cf581ed004d79516e575b67210d8`。一次455项本地集中回归通过
+（47新增全过、零skip）；修正三处测试格式后Ruff/compileall/diff通过。
+原CI41403780073/attempt1全45项成功，三版每版28,066pass+同134skip（28,200项），
+47新增全过且无基线删除；history2294+24零skip无重试，83focused/65零skip门、
+45原ZIP首审03ef59ce…/独审5eb44597…及root合并核验7db001e8…通过。
+当前文档关闭复用未变软件的原回归证据，没有新增模型或E2E验收。缺省wire/profile身份保持，
 启用后截断响应不执行工具或授予成功；它不替代累计预算，也未关闭真实E2E P0。
 本地任务/工具循环/演化控制与provider-free RSI已具备技术MVP；真实模型可靠性和
 演化收益仍需独立验收，native RSI P1不提升为本地CLI前提。
@@ -19,7 +24,7 @@ Ruff/compileall/diff通过，完整CI及合main待完成。缺省wire/profile身
 清单及独审在主区ignored `.lunar-evolution/validation/project-cleanup-20261102/`。
 此工作不改变下方P0/P1验收状态。
 
-本节是唯一当前优先级入口，以已合 main 的 PR211 为软件状态基线；
+本节是唯一当前优先级入口，以已合 main 的 PR214 为当前软件状态基线；
 Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 
 | 优先级 | 当前状态与必要下一步 |
