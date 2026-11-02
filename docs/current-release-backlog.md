@@ -1,14 +1,21 @@
 # 当前发布工作台账（2026-11-03）
 
-当前软件基线为main a7db4f99（PR217/218已合入）。本轮
+当前软件基线为PR219实际合main的 `55a1cf29f5fe3fb1c521fd145fbe8687fa15891b`，
+精确受测tree `2e1b83409ed0f1ce73f98a4fb06ca26f0b6d2565`。本轮
 [诊断切片](../specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)
-已实现并通过独立源码/测试审查。冻结1513db8a的一次18文件集中focused实际866全过，
-零fail/error/skip/retry，新增96+60全部通过；240实际加载模块与冻结Git blob匹配。
-Ruff/compileall/diff通过，最终CI/main门仍开放。
+已实现、独审并合入。一次18文件focused866全过，新增96+60全过，240实际加载模块
+匹配；Ruff/compileall/diff通过。原CI41482342347/attempt1全45success，三版每版
+28308pass+同134skip，新增156全过且无旧键移除，history2294+24零skip/retry、
+83focused/65zero-skip通过。45原ZIP主审5e2572d7…、独审1289e7f7…和root合并核验
+476ef3fb…通过。当前仅同步文档关闭状态，复用未变软件的原回归证据。
 schema8只保留input_required时已接纳的小计；六种工具解析标签只进入可选失败日志。
 原schema1–7、失败/评分边界与零重试保持，旧测试不改。
 没有新推理或评分，原四次DeepSeek失败及其缺失字段不能回填。全局真实模型E2E
 P0、真实native RSI P1仍开放；远程评测/多机服务/模型训练仍后置，authority保持false。
+下一P0先具体化独立公开执行环境契约：用现有PublicFile/entrypoint声明解释器能力，
+冻结与cwd无关的subject PATH，并保持独立评分环境；随后才登记新attempt。
+本轮只有已独审的后续草案，未执行新能力检查或实跑。PR217只读耗时分析另存ignored
+证据目录，后续调度优化需单独验证，不能用历史算术估算代替本轮CI。
 
 > 以下为PR217/218及更早时点记录；历史pending/当前措辞不覆盖上述最新状态。
 

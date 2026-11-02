@@ -1,6 +1,6 @@
 # Follow-up diagnostics from the DeepSeek attempts
 
-Status: implementation and focused/static validation complete; final CI/merge pending
+Status: implementation, focused/static/final-source CI and merge complete
 (2026-11-03). Development starts from main a7db4f99 after PR217/218; the
 original attempts and their missing historical values remain unchanged.
 
@@ -64,7 +64,7 @@ Do not rerun historical inference or scoring to validate these diagnostics.
 - [x] Establish actual gaps and inspect existing ownership/data flow read-only.
 - [x] Independently review the scoped schema/log contract; recheck final code scope before editing.
 - [x] Implement both bounded diagnostics with compatibility/privacy tests.
-- [ ] Run the combined focused and final-source checks; review original evidence.
+- [x] Run the combined focused and final-source checks; review original evidence.
 
 ## Implementation scope
 
@@ -90,8 +90,42 @@ compileall and git diff --check passed; the temporary compile cache was removed.
 The batch included both new files and the existing usage, collection, runtime,
 logging, session and receipt compatibility suites. Original artifacts use primary ignored
 `.lunar-evolution/validation/model-failure-followups-20261102/` (UTC preparation
-date); final CI identities and actual counts will be recorded after execution.
+date); actual final CI identities and counts are recorded below.
 No new inference, benchmark scoring or historical attempt rerun is included.
+
+## Final-source CI and verified merge
+
+PR219 head 784f9aeec7477f05cfe594e51701ef84856c4ab9 completed original run
+41482342347/attempt1 with all 45 jobs successful. The tested merge was
+bbecd10550d113cc679618c71d94e26d9d5a3926, tree
+2e1b83409ed0f1ce73f98a4fb06ca26f0b6d2565, with parents
+a7db4f99dda5e9321a740fcee271324cbc8118c4 and the PR head.
+Python 3.11.17, 3.12.15 and 3.13.17 each executed 28,442 current cases:
+28,308 passed plus the exact same 134 baseline skips. All 96+60 new cases
+passed, with no old nodes removed. Historical 2,294+24 cases passed with zero
+skips or retries; all 83 derived focused groups, including 65 zero-skip gates,
+passed. No tests were rerun for the evidence review or this status-only update.
+
+The 45 original ZIPs total 21,843,596 bytes. Root and independent reviews directly
+checked the current and PR217 baseline ZIPs, official artifact hashes/sizes,
+members/CRC, exact node keys and skip reasons, history, derived focused input
+hashes and source/import identities. Original artifacts and reports remain in
+the primary ignored validation directory above, under ci/:
+
+- audit-report.json SHA256:
+  5e2572d70cf43aa03f53b1262a6e7a23b71bb908a3bb81a95e413f7071f5327e.
+- independent-final-source-and-original-zips-review-v1.json SHA256:
+  1289e7f74c78cd85b1f343b5192309705527bad439d9008654abe64d3ebe1ee7.
+- verified-main-merge-v1.json SHA256:
+  476ef3fba71b5d6580480d479bf77d0d001d0d1c1aeeae2a51413d725a61b305.
+
+PR219 actually merged as main 55a1cf29f5fe3fb1c521fd145fbe8687fa15891b.
+The remote commit's tree exactly matches the tested tree, with the original base
+and PR head as parents. Subsequent documentation closure reuses this software CI;
+it does not add inference, scoring or broader acceptance claims.
+Same-tree main push run41496972912 was later observed completed/cancelled and is
+not acceptance evidence. Its first bounded cancellation wait did not observe
+the terminal state; the later read-only observation is retained separately.
 
 This is a P0 observability follow-up, not a fix for general model reliability.
 The ordinary-model E2E P0 and real native RSI P1 remain open.

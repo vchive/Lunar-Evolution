@@ -1,16 +1,26 @@
 # 唯一当前状态（2026-11-03）
 
-从已合main a7db4f99继续本轮[诊断SDD](specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)：
-schema8仅保留runtime/input_required时已接纳的部分用量，六种固定工具解析分类
-仅进入可选失败日志。三产品文件和两独立测试文件已完成并经独立源码/测试审查；
-旧测试、schema1–7、解析/请求/预算/零重试/暂停与评分门保持。审查补齐坏snapshot
-方法异常仍回退schema1的边界。冻结1513db8a的一次18文件集中focused实际866全过，
-零fail/error/skip/retry；新增96+60全部通过，240实际加载模块与冻结Git blob匹配。
-Ruff/compileall/diff通过，编译临时缓存已移除；最终CI/main仍待完成。
-原件保留在主区ignored validation/model-failure-followups-20261102/local。
-没有新模型调用、评分或旧attempt重跑。
+[诊断SDD](specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)
+已通过PR219合main `55a1cf29f5fe3fb1c521fd145fbe8687fa15891b`，精确受测tree
+`2e1b83409ed0f1ce73f98a4fb06ca26f0b6d2565`。schema8仅保留runtime/input_required
+时已接纳的部分用量，六种工具解析分类仅进入可选失败日志。旧schema1–7、解析/
+请求/预算/零重试/暂停与评分门保持；坏snapshot仍回退schema1，旧测试不改。
+冻结1513db8a的一次18文件focused实际866全过，新增96+60全部通过、零fail/error/
+skip/retry，240加载模块匹配；Ruff/compileall/diff通过，临时编译缓存已移除。
+最终head784f9aee的原CI41482342347/attempt1全45success，Python3.11.17/3.12.15/
+3.13.17每版28442项=28308pass+同134skip，156新增全过且无旧键移除；history2294+24
+零skip/retry，83focused/65zero-skip通过。45原ZIP共21843596字节，主审5e2572d7…、
+独审1289e7f7…及root实际main/tree核验476ef3fb…通过。
+同树main push41496972912已completed/cancelled，不作通过证据。
+原件保留在主区ignored `.lunar-evolution/validation/model-failure-followups-20261102/`。
+当前仅同步关闭状态，复用上述软件验证；没有新模型调用、评分或旧attempt重跑。
 原DeepSeek四次失败、缺失的历史用量/解析分支及旧网络根因不因新诊断而改变；
 真实E2E P0和native RSI P1仍开放，生产准入/在线发布保持false。
+下一轮先以现有PublicFile/entrypoint固定公开执行环境，分别绑定subject PATH和评分环境，
+再准备新的独立attempt；已独审的后续草案仅在上述ignored目录
+`next-e2e-environment-contract-draft-v2.md`，尚未执行新能力检查或实跑。
+另有PR217原件的只读耗时分析 `ci-duration-readonly-analysis-v1.json`，定位分片不均与
+排队；它不是本轮测量或已验证的调度优化。
 
 > 以下保留2026-11-02及更早历史记录，旧“当前/尚未实现”等按原时点理解。
 
