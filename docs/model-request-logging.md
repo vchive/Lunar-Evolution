@@ -28,4 +28,12 @@ CLI 的开关只在当前 subject 调用内使用专用 stderr handler，结束�
 不修改 root logger。日志属于诊断信息，不替代原 receipt、usage ledger 或评分。
 历史失败不会回填这些字段。
 
+传输失败可附带固定的 `transport_error_category`：`peer_closed`、
+`connection_reset`、`connection_refused`、`connection_aborted`、`broken_pipe`、
+`dns_error`、`tls_error`、`timeout` 或 `os_error`。它来自本地捕获的异常类型，
+不包含异常文字。未识别或不可信的分类省略；HTTP 错误及父进程 deadline 不推测
+分类。字段不改变原 `reason`，也不进入 receipt。`peer_closed` 只表示未收到
+响应头便观察到连接关闭，不能据此确定是网关、上游还是网络设备关闭了连接。
+具体兼容边界见[分类规格](../specs/061-subject-failure-diagnostics/transport-error-category.md)。
+
 验证和实现边界见[规格](../specs/061-subject-failure-diagnostics/live-request-progress.md)。

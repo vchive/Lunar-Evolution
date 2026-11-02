@@ -27,8 +27,11 @@ from urllib.request import Request, urlopen
 
 from .http_transport import (
     MAX_REQUEST_BYTES,
+    TransportErrorCategory,
     TransportFailure,
     TransportObservation,
+    _transport_error_category_value,
+    classify_transport_error,
     exchange,
     validate_timeout,
 )
@@ -131,6 +134,7 @@ class ModelRequestFailure(RuntimeExecutionError):
         self.observation: ModelRequestObservation | None = None
         self.transport_observation: TransportObservation | None = None
         self.request_fingerprint: ModelRequestFingerprint | None = None
+        self.transport_error_category: TransportErrorCategory | None = None
 
 
 def _request_fingerprint(body: object) -> ModelRequestFingerprint | None:
@@ -773,7 +777,14 @@ class OpenAICompatibleRuntime:
                                 "url_error": URLError("HTTP transport failed"),
                             }.get(failure.cause, OSError("HTTP transport failed"))
                             message = "could not reach model endpoint: HTTP transport failed"
-                        raise ModelRequestFailure(message, failure.reason, failure.status) from cause
+                        projected = ModelRequestFailure(message, failure.reason, failure.status)
+                        try:
+                            category = failure.transport_error_category
+                            if _transport_error_category_value(category) is not None:
+                                projected.transport_error_category = category
+                        except Exception:  # noqa: BLE001, S110 - preserve the original failure
+                            pass
+                        raise projected from cause
                     status, raw = response.status, response.body
                     transport_observation = _transport_detail(response)
                     observed_status = _observed_response_status(status)
@@ -794,10 +805,12 @@ class OpenAICompatibleRuntime:
                 ) from exc
             except (TimeoutError, URLError, OSError) as exc:
                 detail = self._redact(str(exc))
-                raise ModelRequestFailure(
+                failure = ModelRequestFailure(
                     f"could not reach model endpoint: {detail}", _transport_failure_reason(exc),
                     observed_status,
-                ) from exc
+                )
+                failure.transport_error_category = classify_transport_error(exc)
+                raise failure from exc
             phase = "validate_response"
             if status < 200 or status >= 300:
                 raise ModelRequestFailure(

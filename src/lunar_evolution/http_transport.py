@@ -14,9 +14,12 @@ import math
 import os
 import re
 import selectors
+import socket
+import ssl
 import sys
 import threading
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen, TimeoutExpired
 from time import monotonic
@@ -47,6 +50,66 @@ _CAUSE_REASONS = {
     "url_error": "transport_error", "os_error": "transport_error",
     "local_error": "transport_error", "http_error": "http_error",
 }
+
+
+class TransportErrorCategory(Enum):
+    """Fixed local exception types, never a remote root-cause claim."""
+
+    PEER_CLOSED = "peer_closed"
+    CONNECTION_RESET = "connection_reset"
+    CONNECTION_REFUSED = "connection_refused"
+    CONNECTION_ABORTED = "connection_aborted"
+    BROKEN_PIPE = "broken_pipe"
+    DNS_ERROR = "dns_error"
+    TLS_ERROR = "tls_error"
+    TIMEOUT = "timeout"
+    OS_ERROR = "os_error"
+
+
+_TRANSPORT_ERROR_CATEGORIES = {category.value: category for category in TransportErrorCategory}
+
+
+def _transport_error_category_value(value: object) -> str | None:
+    if type(value) is TransportErrorCategory:
+        for label, category in _TRANSPORT_ERROR_CATEGORIES.items():
+            if value is category:
+                return label
+    return None
+
+
+def classify_transport_error(error: BaseException) -> TransportErrorCategory | None:
+    """Inspect bounded typed causes without reading exception prose or provider fields."""
+    current, seen, os_error = error, set(), False
+    try:
+        for _ in range(8):
+            if not isinstance(current, BaseException) or id(current) in seen:
+                break
+            seen.add(id(current))
+            if isinstance(current, HTTPError):
+                return None
+            if isinstance(current, http.client.RemoteDisconnected):
+                return TransportErrorCategory.PEER_CLOSED
+            if isinstance(current, TimeoutError):
+                return TransportErrorCategory.TIMEOUT
+            if isinstance(current, (socket.gaierror, socket.herror)):
+                return TransportErrorCategory.DNS_ERROR
+            if isinstance(current, ssl.SSLError):
+                return TransportErrorCategory.TLS_ERROR
+            if isinstance(current, ConnectionResetError):
+                return TransportErrorCategory.CONNECTION_RESET
+            if isinstance(current, ConnectionRefusedError):
+                return TransportErrorCategory.CONNECTION_REFUSED
+            if isinstance(current, ConnectionAbortedError):
+                return TransportErrorCategory.CONNECTION_ABORTED
+            if isinstance(current, BrokenPipeError):
+                return TransportErrorCategory.BROKEN_PIPE
+            if isinstance(current, OSError) and not isinstance(current, URLError):
+                os_error = True
+            reason = current.reason if type(current) is URLError else None
+            current = reason if isinstance(reason, BaseException) else current.__cause__
+    except Exception:  # noqa: BLE001 - optional classification cannot replace the failure
+        return None
+    return TransportErrorCategory.OS_ERROR if os_error else None
 
 
 @dataclass(frozen=True)
@@ -86,12 +149,17 @@ class TransportFailure(Exception):
 
     def __init__(
         self, phase="open_response", reason="transport_error", status=None,
-        cause="local_error", body=b"", observation=None,
+        cause="local_error", body=b"", observation=None, *,
+        transport_error_category: TransportErrorCategory | None = None,
     ):
+        if (transport_error_category is not None
+                and _transport_error_category_value(transport_error_category) is None):
+            raise ValueError("invalid transport error category")
         super().__init__("HTTP transport failed")
         self.phase, self.reason, self.status = phase, reason, status
         self.cause, self.body = cause, body
         self.observation = observation
+        self.transport_error_category = transport_error_category
 
 
 def validate_timeout(timeout: object) -> float:
@@ -205,12 +273,21 @@ def _decode_result(raw: bytes) -> TransportResponse:
     if phase is None:
         raise ValueError("missing transport phase")
     item = _load(lines[-1])
-    if type(item) is not dict or set(item) != _TERMINAL_FIELDS or item["kind"] != "terminal":
+    if (type(item) is not dict
+            or set(item) not in (_TERMINAL_FIELDS, _TERMINAL_FIELDS | {"transport_error_category"})
+            or item["kind"] != "terminal"):
         raise ValueError("invalid transport terminal")
+    category = None
+    if "transport_error_category" in item:
+        label = item["transport_error_category"]
+        if type(label) is not str or label not in _TRANSPORT_ERROR_CATEGORIES:
+            raise ValueError("invalid transport error category")
+        category = _TRANSPORT_ERROR_CATEGORIES[label]
     if item["status"] != phase[1] or type(item["status"]) is not type(phase[1]):
         raise ValueError("inconsistent transport status")
     if item["outcome"] == "response":
-        if phase[0] != "read_response_body" or item["reason"] is not None or item["cause"] is not None:
+        if (phase[0] != "read_response_body" or item["reason"] is not None
+                or item["cause"] is not None or category is not None):
             raise ValueError("inconsistent transport response")
         return TransportResponse(item["status"], _bytes(item["body"], MAX_BODY_BYTES),
                                  progress.observation)
@@ -220,14 +297,15 @@ def _decode_result(raw: bytes) -> TransportResponse:
     if reason is None or item["reason"] != reason:
         raise ValueError("inconsistent transport failure reason")
     if reason == "http_error":
-        if phase[0] != "read_http_error_body":
+        if phase[0] != "read_http_error_body" or category is not None:
             raise ValueError("HTTP failure without observed status")
         body = _bytes(item["body"], MAX_ERROR_BYTES)
     else:
         if phase[0] not in {"open_response", "read_response_body"} or item["body"] != "":
             raise ValueError("invalid transport failure body or phase")
         body = b""
-    raise TransportFailure(phase[0], reason, phase[1], item["cause"], body, progress.observation)
+    raise TransportFailure(phase[0], reason, phase[1], item["cause"], body, progress.observation,
+                           transport_error_category=category)
 
 
 def _deadline_failure(raw: bytes) -> TransportFailure:
@@ -442,10 +520,16 @@ def _emit(value):
     sys.stdout.buffer.flush()
 
 
-def _terminal(status, body, *, cause=None):
-    _emit({"kind": "terminal", "outcome": "failure" if cause else "response",
-           "reason": _CAUSE_REASONS[cause] if cause else None, "cause": cause,
-           "status": status, "body": base64.b64encode(body).decode("ascii")})
+def _terminal(status, body, *, cause=None, transport_error_category=None):
+    value = {"kind": "terminal", "outcome": "failure" if cause else "response",
+             "reason": _CAUSE_REASONS[cause] if cause else None, "cause": cause,
+             "status": status, "body": base64.b64encode(body).decode("ascii")}
+    if transport_error_category is not None:
+        category = _transport_error_category_value(transport_error_category)
+        if category is None or cause is None or cause == "http_error":
+            raise ValueError("invalid transport error category")
+        value["transport_error_category"] = category
+    _emit(value)
 
 
 def _transport_cause(error):
@@ -664,7 +748,8 @@ def _worker(lifeline):
             raw = b""
         _terminal(status, raw, cause="http_error")
     except (TimeoutError, URLError, OSError) as error:
-        _terminal(status, b"", cause=_transport_cause(error))
+        _terminal(status, b"", cause=_transport_cause(error),
+                  transport_error_category=classify_transport_error(error))
     else:
         _terminal(status, raw)
 
