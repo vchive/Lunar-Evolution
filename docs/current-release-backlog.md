@@ -2,9 +2,15 @@
 
 当前在推进[固定传输异常分类](../specs/061-subject-failure-diagnostics/transport-error-category.md)
 及[独立 DeepSeek 两例验收](../specs/061-subject-failure-diagnostics/deepseek-benchmark-case-acceptance.md)。
-软件已focused验证，完整CI和main集成待完成；新case准备完成但尚未启动。
-新profile只改变模型，保留16384/160000tokens、40工具、3000秒及零重试。
-旧失败保留，P0/P1状态尚未关闭。
+软件已focused验证；PR217首轮完整CI发现fixed-profile旧transport pin集成遗漏，
+已精确修正共享pin且生成broker不变，纠正后的回归/新CI及main集成待完成。
+[两例实际结果](deepseek-benchmark-case-acceptance-20261102.md)
+均失败：列车19次HTTP200后观测160571tokens超预算；手术室第18次HTTP200的
+工具调用校验失败。两例无传输失败，无完成receipt/评分；47项原件检查仅确认失败。
+另已在检查评分接口前按公开输入复杂度选定钢卷裁切，准备独立的
+[较小功能smoke](../specs/061-subject-failure-diagnostics/deepseek-steel-case-acceptance.md)，
+尚未dispatch，模型及16384/160000tokens、40工具、3000秒、零重试不变。
+旧失败保留，P0/P1状态尚未关闭；下方为既有记录。
 
 最新[两例真实普通模型验收](capped-benchmark-case-acceptance-20261102.md)已执行完，
 复制列车重排/手术室排程均失败：新profile配置单次生成上限16,384（含推理）、

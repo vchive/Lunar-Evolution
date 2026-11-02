@@ -1,6 +1,7 @@
 # DeepSeek ordinary-model benchmark acceptance
 
-Status: prepared, not yet dispatched (2026-11-02).
+Status: both single attempts executed and failed (2026-11-02).
+No completed receipt, submission, evaluator or score.
 
 The user explicitly authorized a DeepSeek run while diagnosing the earlier
 transport failures. The configured gateway's same-host authenticated GET models
@@ -69,6 +70,25 @@ validation; no OS isolation or private-evaluator-inaccessibility claim.
 
 - [x] Define the model, cases, budgets, acceptance gates and fresh identities.
 - [x] Prepare source archive, copied cases, profiles and one-shot helpers.
-- [ ] Independently review exact preparations, push registration and launch once.
-- [ ] Preserve and independently review actual results and conditional scores.
-- [ ] Publish actual outcomes and integrate software after its complete CI.
+- [x] Independently review exact preparations, push registration and launch once.
+- [x] Preserve and independently review actual results and conditional scores.
+- [x] Publish actual outcomes; software complete CI/main integration is separate.
+
+## Actual execution
+
+Registration `24098669f4430ed5af84b8d34623e058d3ece6f4` was pushed before
+both launches at `2026-11-02T13:00:37.966Z`. Train ended rc2 after
+415.635339833796 seconds: 19 HTTP200 requests, 18 accepted rounds/21 tools,
+144,050 accepted partial tokens; the next 16,521 brought observed usage to
+160,571, exceeding 160,000. Schema2 runtime/budget_exceeded preserves the
+triggering round as unaccepted. Hospital ended rc2 in 109.0237058326602
+seconds: 17 accepted rounds/24 tools and 114,715 partial tokens; request18
+returned HTTP200 but failed tool-call validation in 6,415ms (schema7
+invalid_tool_calls). Its precise parser branch and triggering usage were
+not retained. No transport failure occurred; no evaluator was invoked.
+
+The 47-check independent original-terminal review passed, SHA256
+`caf6001b5eea78aa2880dc1c81162b2eba40788681366e69bd1c5702f8c8f72b`.
+All source/case/profile/import/process/old-evidence checks passed; this
+validates failed records, not functional E2E. See the
+[actual result record](../../docs/deepseek-benchmark-case-acceptance-20261102.md).

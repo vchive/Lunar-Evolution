@@ -74,4 +74,44 @@ source hashes were unchanged; other passing files were not rerun. Ruff across
 src/tests/tools, compileall and diff checks passed. Original artifacts are in the
 primary workspace's ignored `validation/transport-error-category-20261102/local`.
 
-Complete final-source CI and the new real DeepSeek attempts remain pending.
+Initial complete CI for PR217/head `24098669` failed on fixed-profile source
+pins as recorded below; corrected final-source CI is still required.
+The two real DeepSeek attempts have finished as independent failures: train
+exceeded observed-token budget; hospital rejected an HTTP200 tool call. Neither
+had a transport error. These outcomes do not identify the historical network
+failure or establish E2E success; see the
+[actual result record](../../docs/deepseek-benchmark-case-acceptance-20261102.md).
+
+## Fixed-profile integration correction
+
+The first full CI revealed a real integration regression: the fixed OpenEvolve
+preparer still pins the previous complete `http_transport.py`, and the Shinka
+generator consumes that projection. Its deliberate source-drift gate rejects
+the new diagnostic source. Preserve the original failed run `41449062257` and
+its per-job evidence; it is not passing final CI.
+
+Update the reviewed exact byte count/SHA256 pins and, where necessary, the
+explicit broker source-segment/import dependency projection to include the new
+enum/classifier helpers. Keep drift refusal, selected-source exactness, broker
+transport policy and native admission/publication gates intact. Never bypass
+the pins or admit external/native execution. Review both fixed-profile
+generators and run their relevant complete focused files; run Ruff, compileall
+and diff checks. This correction requires new final-source CI. Previously
+passing transport files need not rerun unless their source changes.
+
+The pending steel ordinary-model smoke uses the already frozen f3257898 source
+and does not invoke either fixed-profile producer preparer or generated broker.
+The identified pin regression is therefore tracked separately from this local
+ordinary receipt/submission/evaluator validation. Retain its exact execution
+identity; do not describe it as execution of the later corrected source.
+
+Correction changed only two constants in
+`tools/openevolve_fixed_profile/prepare.py`: 32,605 bytes and SHA256
+`f6a3b35d1acb5c12fb8185755d812c9cfc6b34ac0f9560c6e753f7ce8318e995`.
+Shinka consumes the shared guard. Independent static inspection confirmed only
+MAX_REQUEST_BYTES/MAX_RESULT_BYTES are selected from transport, so no new enum
+dependency enters the target broker. Generated broker remains 8,143 bytes,
+SHA256 `5c0474648bf173f0d24a0fcc12e6d1eedc0d9b4169c3cab4d22def2ed38d43b0`.
+One combined six-file fixed-profile batch passed all 241 tests in 2.015019
+seconds, zero failure/error/skip/retry. Ruff, compileall and diff checks passed.
+Transport product source and its already passing focused files did not change.
