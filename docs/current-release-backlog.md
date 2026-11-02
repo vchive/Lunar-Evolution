@@ -1,5 +1,11 @@
 # 当前发布工作台账（2026-11-02）
 
+当前在推进[固定传输异常分类](../specs/061-subject-failure-diagnostics/transport-error-category.md)
+及[独立 DeepSeek 两例验收](../specs/061-subject-failure-diagnostics/deepseek-benchmark-case-acceptance.md)。
+软件已focused验证，完整CI和main集成待完成；新case准备完成但尚未启动。
+新profile只改变模型，保留16384/160000tokens、40工具、3000秒及零重试。
+旧失败保留，P0/P1状态尚未关闭。
+
 最新[两例真实普通模型验收](capped-benchmark-case-acceptance-20261102.md)已执行完，
 复制列车重排/手术室排程均失败：新profile配置单次生成上限16,384（含推理）、
 累计160,000tokens，40工具/3,000秒，各一次零重试。2/3轮响应、4/9工具结果后，
