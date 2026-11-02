@@ -1,11 +1,16 @@
 # 唯一当前状态（2026-11-02）
 
-当前续开发已提交固定传输异常分类 `f3257898`，尚未合 main：保留原reason、
+固定传输异常分类已通过PR217合main：`761f03156f99b87f6a1cb2e284c9974a34bdf192`，
+精确受测tree `738dc187771e0a39b80b41fb394fa5da80f90be2`。保留原reason、
 schema1–7、wire、deadline与零重试，仅在可选失败日志中增加固定本地分类。
-16文件集中回归766pass/6个新测试预期失败；产品不变，修正测试后单文件86项
-全过，Ruff/compileall/diff通过。原失败批次完整保留；PR217首轮完整CI发现
-fixed-profile准备器仍pin旧transport源码，OpenEvolve/Shinka因drift gate拒绝。
-已按精确新字节数/SHA更新共享pin，生成broker仍逐字相同，针对性回归及新CI跟进。
+本地首批766pass/6新测试预期失败保留；修正测试后单文件86全过，shared pin修正
+六完整文件241全过，Ruff/compileall/diff通过。原CI41449062257 canceled，
+其fixed-profile旧transport pin失败保留；新pin精确更新，生成broker仍逐字相同。
+最终CI41456264085/attempt1全45success，Python3.11.17/3.12.15/3.13.17每版
+28286项=28152pass+同134skip，86新增全过、无旧键移除；history2294+24零skip/
+失败/重试，83focused/65zero-skip通过。45原ZIP主审96cdaf24…、独审b62e4fb9…
+及root实际main/tree核验f446f0c0…通过。模型验收结论仍与软件CI分开。
+同树main push41470957628已completed/cancelled，不作通过证据。
 按用户授权，`deepseek-chat` 两例已独立实跑并失败：列车19次HTTP200后观测
 累计160571超过160000预算；18轮接纳144050tokens、21工具，415.635340秒。
 手术室17轮接纳114715tokens、24工具后，第18次HTTP200工具调用校验失败
@@ -30,6 +35,8 @@ solution/evaluator，tokens及费用未知。原历史显示login-shell Python3.
 所有环境缺依赖或已确认runtime缺陷。原child回收/EOF、source/case/profile/venv及
 240模块来源匹配，独审9ace5397…通过仅确认失败。见[扩展实际结果](docs/deepseek-steel-extended-acceptance-20261102.md)。
 本实验不再增加预算，旧失败均保留；下一验收先明确公开执行环境契约。
+下一软件切片的[诊断SDD](specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)
+已独审，尚未实现：input_required已接纳用量、六种工具解析拒绝的可选固定日志。
 真实E2E P0和native RSI P1仍开放。以下保留原历史记录，旧“最新/当前”按原时点理解。
 
 最新两例真实普通模型验收已执行完毕，结果均失败：复制的列车重排与手术室排程

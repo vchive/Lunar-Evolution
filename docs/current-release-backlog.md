@@ -2,8 +2,12 @@
 
 当前在推进[固定传输异常分类](../specs/061-subject-failure-diagnostics/transport-error-category.md)
 及[独立 DeepSeek 两例验收](../specs/061-subject-failure-diagnostics/deepseek-benchmark-case-acceptance.md)。
-软件已focused验证；PR217首轮完整CI发现fixed-profile旧transport pin集成遗漏，
-已精确修正共享pin且生成broker不变，纠正后的回归/新CI及main集成待完成。
+软件已通过PR217合main `761f03156f99b87f6a1cb2e284c9974a34bdf192`，精确受测
+tree `738dc187771e0a39b80b41fb394fa5da80f90be2`。首轮旧source-pin失败及取消
+记录保留；共享pin精确修正、生成broker不变，六完整文件241项通过。最终
+CI41456264085/attempt1全45success，三版每版28152pass+同134skip，86新增
+全过且无旧键移除；history2294+24零skip/失败/重试，83focused/65zero-skip
+通过。45原ZIP主审96cdaf24…、独审b62e4fb9…及root核验f446f0c0…通过。
 [两例实际结果](deepseek-benchmark-case-acceptance-20261102.md)
 均失败：列车19次HTTP200后观测160571tokens超预算；手术室第18次HTTP200的
 工具调用校验失败。两例无传输失败，无完成receipt/评分；47项原件检查仅确认失败。
