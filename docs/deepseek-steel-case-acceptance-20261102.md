@@ -24,7 +24,8 @@ pipe EOF验证，无watchdog信号。预算失败未改写为成功，未调用�
 审查通过仅确认这份失败记录。原件位于主工作区 ignored
 `.lunar-evolution/validation/deepseek-steel-case-20261102/steel_coil_cutting/`。
 
-下一次仅按[独立扩展预算规格](../specs/061-subject-failure-diagnostics/deepseek-steel-extended-acceptance.md)
-另建profile/manifest/attempt：80工具、100万观测tokens，模型、3,000秒、16,384
-生成上限、案例及评分器不变。该新实验保留全部旧失败，不续跑旧attempt；不再
-追加预算升级。真实E2E P0及native RSI P1均未因本记录关闭。
+另按[独立扩展预算规格](../specs/061-subject-failure-diagnostics/deepseek-steel-extended-acceptance.md)
+新建profile/manifest/attempt，80工具、100万观测tokens，模型、3,000秒、16,384
+生成上限、案例及评分器不变。该尝试现已失败：8次HTTP200后模型询问选择哪个
+Python，触发input_required，没有评分。见[扩展实际结果](deepseek-steel-extended-acceptance-20261102.md)。
+全部旧失败保留，不再追加预算升级。真实E2E P0及native RSI P1均未关闭。

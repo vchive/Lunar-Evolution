@@ -22,9 +22,14 @@ invalid_tool_calls，109.023706秒，触发用量/具体解析分支未保留。
 原child回收/EOF、source/case/profile/venv检查通过；原件独审不改变失败结论。见
 [实际结果](docs/deepseek-steel-case-acceptance-20261102.md)及
 [新smoke规格](specs/061-subject-failure-diagnostics/deepseek-steel-case-acceptance.md)。
-另已预先声明且独审一份80工具/100万观测tokens的独立profile，模型/3000秒/
-16384上限和case不变，尚待登记启动；不续跑或替代旧尝试，本实验不再增加预算。
-见[新独立预算规格](specs/061-subject-failure-diagnostics/deepseek-steel-extended-acceptance.md)。
+另已按预先声明且独审的80工具/100万观测tokens独立profile单次运行，模型/3000秒/
+16384上限和case不变。8次HTTP200、8轮/12工具后模型询问选择哪个Python，
+触发schema1 runtime/input_required，42.60591754177585秒/rc2；无完成receipt/
+solution/evaluator，tokens及费用未知。原历史显示login-shell Python3.9缺pandas，
+下一探测已找到Miniforge Python3.13可导入pandas，模型仍ask_user；不据此推断
+所有环境缺依赖或已确认runtime缺陷。原child回收/EOF、source/case/profile/venv及
+240模块来源匹配，独审9ace5397…通过仅确认失败。见[扩展实际结果](docs/deepseek-steel-extended-acceptance-20261102.md)。
+本实验不再增加预算，旧失败均保留；下一验收先明确公开执行环境契约。
 真实E2E P0和native RSI P1仍开放。以下保留原历史记录，旧“最新/当前”按原时点理解。
 
 最新两例真实普通模型验收已执行完毕，结果均失败：复制的列车重排与手术室排程

@@ -16,7 +16,7 @@
 [快速开始](#快速开始) · [运行普通任务](#运行普通任务) · [试跑-rsi-fixture](#试跑-rsi-fixture) · [架构说明](docs/architecture.md) · [发布工作台账](docs/current-release-backlog.md)
 
 当前可用的是本地任务控制、工具循环、本地 population 演化及 provider-free RSI 的技术 MVP；真实模型完成具体任务的可靠性和算法演化收益尚待独立验收。下面的 mock、fixture 和 CI 结果验证软件机制，不代表真实求解质量。
-最近的 [DeepSeek 两例实跑](docs/deepseek-benchmark-case-acceptance-20261102.md)分别因累计预算和工具调用格式校验终止，均未评分；原失败记录保留。
+最近的 [DeepSeek 列车/手术室实跑](docs/deepseek-benchmark-case-acceptance-20261102.md)分别因累计预算和工具调用格式校验终止；[钢卷及独立扩展预算尝试](docs/deepseek-steel-extended-acceptance-20261102.md)又分别因累计预算和请求选择解释器终止。四次均未评分，原失败记录保留。
 
 ## 当前能力
 

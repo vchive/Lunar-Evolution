@@ -1,6 +1,6 @@
 # Independently budgeted DeepSeek steel attempt
 
-Status: specification before preparation, not dispatched (2026-11-02).
+Status: single attempt finished; failed with input_required (2026-11-02).
 
 The original steel attempt ended as schema2 runtime/budget_exceeded after
 22 HTTP200 completed requests; no evaluator ran. Preserve that failure and the
@@ -50,8 +50,8 @@ production_admission=false and online_publication=false remain unchanged.
 
 - [x] Declare the new budget, inputs, boundaries and single-attempt rule.
 - [x] Prepare and independently review the exact new profile/helper/manifest.
-- [ ] Push registration, authorize and launch once.
-- [ ] Review original outcome and publish results without escalation.
+- [x] Push registration, authorize and launch once.
+- [x] Review original outcome and publish results without escalation.
 
 ## Prepared identities
 
@@ -73,3 +73,26 @@ its inventory used Path ordering instead of the reference's relative-string
 ordering. Original preparer/logs and the ordering-only correction remain
 separate; the corrected preparation completed without configuration/model/
 evaluator calls. This was not an inference attempt or retry.
+
+## Actual outcome
+
+Registration859650fe was verified on the remote before authorization. The single
+attempt started2026-11-02T14:14:17.143052Z and ended rc2 after42.60591754177585s.
+All8 requests completedHTTP200, with8 accepted rounds/12tool results; the model
+then asked which Python interpreter to use, triggering schema1 runtime/input_required.
+No completed receipt, solution.csv or evaluator exists; no transport/budget failure
+was observed. The schema1 artifact/log/history has no token counters, so usage and
+fees remain unknown. No further budget escalation or attempt was performed.
+
+The original command history shows login-shell systemPython3.9.6 missing pandas,
+ortools and pulp, while scipy imported and pip listed pandas. The next probe
+explicitly found MiniforgePython3.13 importing pandas, before the model chose
+ask_user. Record environment ambiguity without inferring universally missing
+dependencies, required solver libraries or a confirmed product defect.
+
+Independent original evidence review13,329B/SHA256
+`9ace53976009acb2e62c04cbd08450cefbc473b98d389ee840fa6a801b9a921c`
+passed, confirming this failure, unchanged full inputs/environment/actual module
+origins and prior evidence pins, and original child reaping/EOF without signals.
+See the [actual outcome record](../../docs/deepseek-steel-extended-acceptance-20261102.md).
+P0/nativeRSIP1 and production/publication authority remain unchanged.

@@ -12,8 +12,11 @@
 原预算单次运行也因169992观测tokens超160000终止，22次HTTP200、无评分。见
 [实际结果](deepseek-steel-case-acceptance-20261102.md)。另已独立准备/审查
 [80工具/100万tokens预算尝试](../specs/061-subject-failure-diagnostics/deepseek-steel-extended-acceptance.md)，
-模型/16384上限/3000秒不变，登记后仅运行一次，不续跑旧尝试且不再升级预算。
-旧失败保留，P0/P1状态尚未关闭；下方为既有记录。
+模型/16384上限/3000秒不变。该单次运行现已失败：8次HTTP200、8轮/12工具后
+模型询问选择哪个Python，触发input_required，42.605918秒/rc2、无评分、tokens未知。
+原历史已找到Miniforge可导入pandas，尚不能据此确认runtime缺陷；见[扩展实际结果](deepseek-steel-extended-acceptance-20261102.md)。
+本实验不再增加预算。下一普通验收先明确公开执行环境契约；旧失败保留，
+P0/P1状态尚未关闭，下方为既有记录。
 
 最新[两例真实普通模型验收](capped-benchmark-case-acceptance-20261102.md)已执行完，
 复制列车重排/手术室排程均失败：新profile配置单次生成上限16,384（含推理）、
