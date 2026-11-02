@@ -1,5 +1,15 @@
 # 唯一当前状态（2026-11-02）
 
+本轮从已合main的PR213（`44ae4be1`）继续，开发显式单次输出上限：
+`ModelProfile.max_completion_tokens` 经普通/isolated调用透传至既有HTTP runtime，
+缺省不改变wire或旧profile指纹；启用后`finish_reason=length`在工具提取前拒绝，
+无续写/重试/参数降级。一次13完整文件集中回归455pass/47新增全过，零fail/error/
+skip；三处新测试格式问题修正后Ruff/compileall/diff通过，产品代码未变。
+该切片自身的完整CI及合main尚待完成，P0不因离线测试关闭。见
+[规格与验证](specs/061-subject-failure-diagnostics/completion-token-limit.md)。
+当前属于本地任务/工具循环/演化控制及provider-free RSI技术MVP；真实模型可靠
+求解和演化收益仍未验收。native RSI P1单列，不是本地CLI MVP前置条件。
+
 本轮可选实时模型请求日志已通过 PR211 合入 main：
 `ff32c769709e1967252abe3ffba652fb0a33fdca`，精确受测 tree
 `c11aca649ffd188f3d774bc0f763266bab70114a`。

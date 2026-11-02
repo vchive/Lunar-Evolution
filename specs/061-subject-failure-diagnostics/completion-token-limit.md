@@ -1,6 +1,7 @@
 # Explicit per-request completion-token limit
 
-Status: specified before implementation, 2026-11-02.
+Status: implemented and locally verified, 2026-11-02; final-source complete
+CI and main integration remain pending.
 
 ## Problem and scope
 
@@ -69,9 +70,9 @@ migration, endpoint probing, production RSI permission or automatic real run.
 ## Tasks
 
 - [x] Register the evidence-based opt-in contract and compatibility boundary.
-- [ ] Implement profile and transport policy with default identity preserved.
-- [ ] Implement ordinary and isolated profile propagation.
-- [ ] Independently review implementation and focused tests.
+- [x] Implement profile and transport policy with default identity preserved.
+- [x] Implement ordinary and isolated profile propagation.
+- [x] Independently review implementation and focused tests.
 - [ ] Execute focused/static checks and final-source complete regression.
 - [ ] Publish exact results and integrate after gates pass.
 
@@ -79,3 +80,21 @@ MVP boundary remains explicit: local task/loop/population/provider-free RSI
 control is a technical MVP. Reliable real-model task completion and measured
 algorithm-evolution benefits are not yet independently accepted. Native RSI
 P1 is a separate runtime dependency, not a prerequisite for the local CLI MVP.
+
+## Local result
+
+Implementation commit `f1797a5d` passed one batch of thirteen complete related
+test files on Python 3.13: 455 tests in 18.148 seconds, including all 47 new
+cases, with zero failures/errors/skips. Original JUnit SHA256 is
+`18ec0829ca3208edff941439df85c223fcb1bab7d421b677b3e8cf4eabd4e5c2`.
+Independent source reviews found no blocker. The tests use synthetic localhost
+HTTP or injected runtimes; no real model or evaluator was called.
+
+Initial Ruff found two missing parentheses around implicit test-string
+concatenations and one nested context-manager style issue. A test-only style
+correction preserves the normalized AST and context-manager acquisition/release
+order; product code is unchanged. Corrected Ruff over `src tests tools`,
+compileall and `git diff --check` pass. The original focused batch is retained,
+not rerun or relabeled as covering a new behavior. Final CI will test the exact
+corrected source. Evidence is in primary ignored
+`.lunar-evolution/validation/completion-token-limit-20261102/`.

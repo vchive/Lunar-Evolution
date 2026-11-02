@@ -1,5 +1,12 @@
 # 当前发布工作台账（2026-11-02）
 
+从PR213/main `44ae4be1`继续的[显式单次输出上限](../specs/061-subject-failure-diagnostics/completion-token-limit.md)
+已实现并通过一次455项本地集中回归（47新增全过、零skip）；修正三处测试格式后
+Ruff/compileall/diff通过，完整CI及合main待完成。缺省wire/profile身份保持，
+启用后截断响应不执行工具或授予成功；它不替代累计预算，也未关闭真实E2E P0。
+本地任务/工具循环/演化控制与provider-free RSI已具备技术MVP；真实模型可靠性和
+演化收益仍需独立验收，native RSI P1不提升为本地CLI前提。
+
 本轮可选[实时请求日志](model-request-logging.md)已通过 PR211 合 main 为
 `ff32c769709e1967252abe3ffba652fb0a33fdca`，精确受测 tree
 `c11aca649ffd188f3d774bc0f763266bab70114a`。默认关闭，原HTTP请求、deadline

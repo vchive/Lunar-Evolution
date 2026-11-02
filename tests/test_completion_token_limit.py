@@ -95,9 +95,11 @@ def local_model(*responses):
 @pytest.mark.parametrize("legacy,expected,digest", [
     (
         {"name": "fixture-profile", "model": "fixture-model"},
-        '{"input_cost_per_1k_micros":null,"max_cost_micros":null,"max_steps":40,'
-        '"max_total_tokens":null,"model":"fixture-model","name":"fixture-profile",'
-        '"output_cost_per_1k_micros":null,"thinking_budget":0,"timeout_seconds":900.0}',
+        (
+            '{"input_cost_per_1k_micros":null,"max_cost_micros":null,"max_steps":40,'
+            '"max_total_tokens":null,"model":"fixture-model","name":"fixture-profile",'
+            '"output_cost_per_1k_micros":null,"thinking_budget":0,"timeout_seconds":900.0}'
+        ),
         "fc0a1800552733a27264d2841ec6b68abc4a83c28140d4a2376420c052864995",
     ),
     (
@@ -107,9 +109,11 @@ def local_model(*responses):
             "max_cost_micros": 500, "input_cost_per_1k_micros": 10,
             "output_cost_per_1k_micros": 20,
         },
-        '{"input_cost_per_1k_micros":10,"max_cost_micros":500,"max_steps":9,'
-        '"max_total_tokens":200,"model":"fixture-model","name":"旧边界",'
-        '"output_cost_per_1k_micros":20,"thinking_budget":7,"timeout_seconds":10.0}',
+        (
+            '{"input_cost_per_1k_micros":10,"max_cost_micros":500,"max_steps":9,'
+            '"max_total_tokens":200,"model":"fixture-model","name":"旧边界",'
+            '"output_cost_per_1k_micros":20,"thinking_budget":7,"timeout_seconds":10.0}'
+        ),
         "77e77c73f322fe552cd08aa8ccf5681a8df641c4154a175d7a1fbd41d69cf325",
     ),
 ])
@@ -217,11 +221,14 @@ def test_capped_length_rejects_before_extraction_and_emits_fixed_failure(capsys,
         payload["choices"][0] = {"text": SECRET, "finish_reason": "length"}
     # The cap failure wins before extracting tools, provider identity or usage.
     payload["model"], payload["usage"] = {}, SECRET
-    with local_model((200, payload)) as (endpoint, calls), model_request_log_to_stderr(True):
-        with pytest.raises(rt.ModelRequestFailure) as caught:
-            rt.OpenAICompatibleRuntime(endpoint, "fixture-model", SECRET).complete(
-                [{"role": "user", "content": SECRET}], max_completion_tokens=32,
-            )
+    with (
+        local_model((200, payload)) as (endpoint, calls),
+        model_request_log_to_stderr(True),
+        pytest.raises(rt.ModelRequestFailure) as caught,
+    ):
+        rt.OpenAICompatibleRuntime(endpoint, "fixture-model", SECRET).complete(
+            [{"role": "user", "content": SECRET}], max_completion_tokens=32,
+        )
     error = caught.value
     assert error.evidence == rt.ModelFailureEvidence("invalid_response_shape", 200)
     assert error.observation.phase == "validate_response"
