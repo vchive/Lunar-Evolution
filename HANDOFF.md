@@ -17,8 +17,14 @@ invalid_tool_calls，109.023706秒，触发用量/具体解析分支未保留。
 另按公开输入复杂度选择钢卷裁切作较小功能smoke；独立公开输出契约及输入
 已准备/独审，原pandas评分器保持字节不变，另备95MiB hash-locked评测venv，
 启动、评测前及评测后均校验。首依赖import30秒超时原件保留，后续preflight通过，
-均非case执行。尚未dispatch，不替代上述失败，也不改预算。见
+均非case执行。原预算已单次实跑并失败：22次HTTP200，观测169992超160000，
+21轮接纳155656tokens/28工具，117.462909秒，无完成receipt/提交/评分。
+原child回收/EOF、source/case/profile/venv检查通过；原件独审不改变失败结论。见
+[实际结果](docs/deepseek-steel-case-acceptance-20261102.md)及
 [新smoke规格](specs/061-subject-failure-diagnostics/deepseek-steel-case-acceptance.md)。
+另已预先声明且独审一份80工具/100万观测tokens的独立profile，模型/3000秒/
+16384上限和case不变，尚待登记启动；不续跑或替代旧尝试，本实验不再增加预算。
+见[新独立预算规格](specs/061-subject-failure-diagnostics/deepseek-steel-extended-acceptance.md)。
 真实E2E P0和native RSI P1仍开放。以下保留原历史记录，旧“最新/当前”按原时点理解。
 
 最新两例真实普通模型验收已执行完毕，结果均失败：复制的列车重排与手术室排程

@@ -9,7 +9,10 @@
 工具调用校验失败。两例无传输失败，无完成receipt/评分；47项原件检查仅确认失败。
 另已在检查评分接口前按公开输入复杂度选定钢卷裁切，准备独立的
 [较小功能smoke](../specs/061-subject-failure-diagnostics/deepseek-steel-case-acceptance.md)，
-尚未dispatch，模型及16384/160000tokens、40工具、3000秒、零重试不变。
+原预算单次运行也因169992观测tokens超160000终止，22次HTTP200、无评分。见
+[实际结果](deepseek-steel-case-acceptance-20261102.md)。另已独立准备/审查
+[80工具/100万tokens预算尝试](../specs/061-subject-failure-diagnostics/deepseek-steel-extended-acceptance.md)，
+模型/16384上限/3000秒不变，登记后仅运行一次，不续跑旧尝试且不再升级预算。
 旧失败保留，P0/P1状态尚未关闭；下方为既有记录。
 
 最新[两例真实普通模型验收](capped-benchmark-case-acceptance-20261102.md)已执行完，
