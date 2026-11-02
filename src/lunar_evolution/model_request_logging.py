@@ -12,7 +12,11 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from time import monotonic
 
-from .http_transport import MAX_REQUEST_BYTES, normalize_transport_observation
+from .http_transport import (
+    MAX_REQUEST_BYTES,
+    _transport_error_category_value,
+    normalize_transport_observation,
+)
 
 LOGGER_NAME = "lunar_evolution.model_requests"
 _LOGGER = logging.getLogger(LOGGER_NAME)
@@ -195,6 +199,15 @@ class ModelRequestLog:
                             "body_bytes": fingerprint.body_bytes,
                             "body_sha256": fingerprint.body_sha256,
                         }
+                    if reason in {"transport_error", "transport_timeout"}:
+                        try:
+                            category = _transport_error_category_value(
+                                failure.transport_error_category,
+                            )
+                        except Exception:  # noqa: BLE001 - omit only malformed optional detail
+                            category = None
+                        if category is not None:
+                            fields["transport_error_category"] = category
                 fields["reason"] = reason
             self._emit("model_request_" + outcome, **fields)
         except Exception:  # noqa: BLE001 - preserve original outcome, including bad clocks
