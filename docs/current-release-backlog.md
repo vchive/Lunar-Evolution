@@ -18,6 +18,10 @@
 本实验不再增加预算。下一普通验收先明确公开执行环境契约；旧失败保留，
 P0/P1状态尚未关闭，下方为既有记录。
 
+下一软件切片已[限定诊断范围](../specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)，
+尚未实现：保留input_required时已有的已接纳用量，并只在可选日志中区分六种
+工具解析拒绝。它不改变暂停/解析/重试行为，不恢复旧尝试缺失的tokens或分支。
+
 最新[两例真实普通模型验收](capped-benchmark-case-acceptance-20261102.md)已执行完，
 复制列车重排/手术室排程均失败：新profile配置单次生成上限16,384（含推理）、
 累计160,000tokens，40工具/3,000秒，各一次零重试。2/3轮响应、4/9工具结果后，
