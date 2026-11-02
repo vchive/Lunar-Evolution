@@ -1,6 +1,7 @@
 # DeepSeek steel-cutting local smoke
 
-Status: prospective case selection and preparation, not dispatched (2026-11-02).
+Status: single original-budget attempt executed and failed (2026-11-02).
+Schema2 runtime/budget_exceeded; no completed receipt/submission/evaluation.
 
 The two newly registered DeepSeek scheduling attempts failed independently:
 train reached its observed-token threshold; hospital rejected an HTTP200 tool
@@ -65,8 +66,8 @@ isolation claim. `production_admission=false`, `online_publication=false`.
 
 - [x] Select a smaller case on public input complexity before scoring inspection.
 - [x] Define the exact public output contract and prepare frozen identities.
-- [ ] Independently review, push registration and launch once.
-- [ ] Review original terminal evidence and publish actual outcome.
+- [x] Independently review, push registration and launch once.
+- [x] Review original terminal evidence and publish actual outcome.
 
 ## Prepared identities
 
@@ -107,4 +108,10 @@ that separate producer preparation integration is being corrected. This
 ordinary smoke invokes neither preparer nor generated broker. Its execution
 stays pinned to f3257898, not the later corrected source; do not substitute
 its result for fixed-profile regression or production/native RSI acceptance.
-Root registration/authorization and one actual dispatch remain pending.
+Registration93831e75 was pushed before the one launch at
+2026-11-02T13:51:48.247337Z. It ended rc2 in117.46290920861065 seconds:
+22HTTP200 completions, 21 accepted rounds/28tools, 155,656 accepted partial
+tokens; observed169,992 exceeded160,000. No evaluator ran. Independent
+terminal review SHA256:
+`43c4d7d59114909b1a63df8354a1e27ebbda6dd0b9aef01b7cdf0d0c6773200b`.
+See the [actual result](../../docs/deepseek-steel-case-acceptance-20261102.md).

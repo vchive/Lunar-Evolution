@@ -2,15 +2,29 @@
 
 当前在推进[固定传输异常分类](../specs/061-subject-failure-diagnostics/transport-error-category.md)
 及[独立 DeepSeek 两例验收](../specs/061-subject-failure-diagnostics/deepseek-benchmark-case-acceptance.md)。
-软件已focused验证；PR217首轮完整CI发现fixed-profile旧transport pin集成遗漏，
-已精确修正共享pin且生成broker不变，纠正后的回归/新CI及main集成待完成。
+软件已通过PR217合main `761f03156f99b87f6a1cb2e284c9974a34bdf192`，精确受测
+tree `738dc187771e0a39b80b41fb394fa5da80f90be2`。首轮旧source-pin失败及取消
+记录保留；共享pin精确修正、生成broker不变，六完整文件241项通过。最终
+CI41456264085/attempt1全45success，三版每版28152pass+同134skip，86新增
+全过且无旧键移除；history2294+24零skip/失败/重试，83focused/65zero-skip
+通过。45原ZIP主审96cdaf24…、独审b62e4fb9…及root核验f446f0c0…通过。
 [两例实际结果](deepseek-benchmark-case-acceptance-20261102.md)
 均失败：列车19次HTTP200后观测160571tokens超预算；手术室第18次HTTP200的
 工具调用校验失败。两例无传输失败，无完成receipt/评分；47项原件检查仅确认失败。
 另已在检查评分接口前按公开输入复杂度选定钢卷裁切，准备独立的
 [较小功能smoke](../specs/061-subject-failure-diagnostics/deepseek-steel-case-acceptance.md)，
-尚未dispatch，模型及16384/160000tokens、40工具、3000秒、零重试不变。
-旧失败保留，P0/P1状态尚未关闭；下方为既有记录。
+原预算单次运行也因169992观测tokens超160000终止，22次HTTP200、无评分。见
+[实际结果](deepseek-steel-case-acceptance-20261102.md)。另已独立准备/审查
+[80工具/100万tokens预算尝试](../specs/061-subject-failure-diagnostics/deepseek-steel-extended-acceptance.md)，
+模型/16384上限/3000秒不变。该单次运行现已失败：8次HTTP200、8轮/12工具后
+模型询问选择哪个Python，触发input_required，42.605918秒/rc2、无评分、tokens未知。
+原历史已找到Miniforge可导入pandas，尚不能据此确认runtime缺陷；见[扩展实际结果](deepseek-steel-extended-acceptance-20261102.md)。
+本实验不再增加预算。下一普通验收先明确公开执行环境契约；旧失败保留，
+P0/P1状态尚未关闭，下方为既有记录。
+
+下一软件切片已[限定诊断范围](../specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)，
+尚未实现：保留input_required时已有的已接纳用量，并只在可选日志中区分六种
+工具解析拒绝。它不改变暂停/解析/重试行为，不恢复旧尝试缺失的tokens或分支。
 
 最新[两例真实普通模型验收](capped-benchmark-case-acceptance-20261102.md)已执行完，
 复制列车重排/手术室排程均失败：新profile配置单次生成上限16,384（含推理）、

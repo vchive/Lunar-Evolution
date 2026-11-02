@@ -72,10 +72,12 @@ refusal propagation and compare complete schema7 projections with/without catego
 One corrected-file batch passed all 86 cases, zero skips/errors/failures. Product
 source hashes were unchanged; other passing files were not rerun. Ruff across
 src/tests/tools, compileall and diff checks passed. Original artifacts are in the
-primary workspace's ignored `validation/transport-error-category-20261102/local`.
+primary workspace's ignored
+`.lunar-evolution/validation/transport-error-category-20261102/local`.
 
 Initial complete CI for PR217/head `24098669` failed on fixed-profile source
-pins as recorded below; corrected final-source CI is still required.
+pins as recorded below. Corrected final-source CI and main integration have now
+passed; see the final evidence below.
 The two real DeepSeek attempts have finished as independent failures: train
 exceeded observed-token budget; hospital rejected an HTTP200 tool call. Neither
 had a transport error. These outcomes do not identify the historical network
@@ -115,3 +117,39 @@ SHA256 `5c0474648bf173f0d24a0fcc12e6d1eedc0d9b4169c3cab4d22def2ed38d43b0`.
 One combined six-file fixed-profile batch passed all 241 tests in 2.015019
 seconds, zero failure/error/skip/retry. Ruff, compileall and diff checks passed.
 Transport product source and its already passing focused files did not change.
+
+## Final CI and main integration
+
+Corrected run41456264085/attempt1 finished2026-11-02T15:12:55Z with all45jobs
+successful. Head93831e75ea6ef2737e057806ad33511bae9a5770, tested merge
+5f5def08c0e622db950b3aa19d230790d2892471 and tree
+738dc187771e0a39b80b41fb394fa5da80f90be2 match exact original provenance.
+Python3.11.17/3.12.15/3.13.17 each have28,286 current nodes:28,152passed and
+the original134skips, no removed baseline nodes, all86new cases passed.
+History2294+frozen24 passed without skip/failure/retry;83focused groups and
+65zero-skip gates passed from the original reports without reexecution.
+
+All45original ZIPs,21,771,962bytes, passed officialsize/digest/CRC/member,
+source/import/parents, partition-union, exact test inventory and baseline skip
+checks. Strict report SHA256:
+`96cdaf2428017e4c5f14c90d0bf3dd2174bc4a596d3ee8e6df03def4f0669589`.
+Independent direct-ZIP/source review SHA256:
+`b62e4fb9be19dcbd9e378523c6513d7895602fbbfb51cd14cfaf7fdda3ace23d`.
+The independent reviewer's first metadata checker hit Python3.9 datetime.UTC
+incompatibility only while writing its report; original tooling failure was
+retained, and a timezone.utc-only correction completed the read-only review.
+No product test, model call or primary audit was repeated for that correction.
+
+PR217 merged2026-11-02T15:22:30Z as
+761f03156f99b87f6a1cb2e284c9974a34bdf192. Root verified actual remote main,
+the exact tested tree and parents41d090e2/93831e75. Merge receipt SHA256:
+`f446f0c06c545cb655fc87f40dbb191d4dcde7903bbf71202cbefe2a51ea1b2d`.
+Originals are under primary ignored
+.lunar-evolution/validation/transport-error-category-20261102/ci-corrected/.
+The duplicate same-tree main push41470957628 is completed/cancelled and is
+not used as passing evidence; the original successful PR run is retained.
+
+The earlier run41449062257 remains completed/cancelled with34successful,
+5failed and6cancelled jobs and its separate45original ZIPs; it is not passing
+evidence. Ordinary-model E2E/nativeRSI and production/publication claims remain
+open/false, independent of this software integration result.
