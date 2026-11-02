@@ -32,6 +32,7 @@ MAX_ERROR_BYTES = 2000
 MAX_TIMEOUT_SECONDS = 86400
 MAX_TRANSPORT_OBSERVATION_MS = 10**12
 MAX_TRANSPORT_MILESTONES = 256
+_PROGRESS_INTERVAL_SECONDS = 30
 _OBSERVATION_FIELDS = {"last_milestone", "http_exchange_index", "elapsed_ms"}
 _MILESTONES = (
     "worker_ready", "prepare_request", "connect", "send_request",
@@ -308,7 +309,65 @@ def _configuration(*, fixed_destination=False):
     }
 
 
-def exchange(request: Request, timeout: float) -> TransportResponse:
+def _observe_progress(observer, raw, started):
+    """Offer only validated local progress; optional observation never owns an outcome."""
+    try:
+        if type(raw) is not bytes or len(raw) > MAX_RESULT_BYTES:
+            return
+        progress = _Progress()
+        offset = 0
+        # TimeoutExpired.output is the complete accumulated stdout, not a new chunk.
+        # Reparse its bounded small prefix instead of appending it to earlier output.
+        for _ in range(MAX_TRANSPORT_MILESTONES + 3):
+            end = raw.find(b"\n", offset, offset + 513)
+            if end < 0:
+                break
+            frame = _load(raw[offset:end])
+            if type(frame) is dict and frame.get("kind") == "terminal":
+                break
+            progress.accept(frame)
+            offset = end + 1
+        ended = monotonic()
+        if (type(started) not in (int, float) or type(ended) not in (int, float)
+                or not math.isfinite(started) or not math.isfinite(ended) or ended < started):
+            return
+        elapsed = math.floor((ended - started) * 1000)
+        if not 0 <= elapsed <= MAX_TRANSPORT_OBSERVATION_MS:
+            return
+        observation = progress.observation
+        phase, status = progress.phase or ("open_response", None)
+        observer({
+            "phase": phase, "status": status,
+            "last_milestone": observation.last_milestone if observation is not None else None,
+            "http_exchange_index": observation.http_exchange_index if observation is not None else None,
+            "milestone_elapsed_ms": observation.elapsed_ms if observation is not None else None,
+            "elapsed_ms": elapsed,
+        })
+    except Exception:  # noqa: BLE001 - optional progress cannot replace the HTTP outcome
+        return
+
+
+def _communicate_progress(process, encoded, deadline, started, observer):
+    output = b""
+    first = True
+    while True:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise _deadline_failure(output)
+        try:
+            timeout = min(remaining, _PROGRESS_INTERVAL_SECONDS)
+            if first:
+                first = False
+                return process.communicate(input=encoded, timeout=timeout)[0]
+            return process.communicate(timeout=timeout)[0]
+        except TimeoutExpired as exc:
+            output = exc.output or b""
+            if monotonic() >= deadline:
+                raise _deadline_failure(output) from None
+            _observe_progress(observer, output, started)
+
+
+def exchange(request: Request, timeout: float, *, observer=None) -> TransportResponse:
     seconds = validate_timeout(timeout)
     if os.name != "posix" or not hasattr(os, "pipe"):
         raise TransportFailure()
@@ -338,7 +397,10 @@ def exchange(request: Request, timeout: float) -> TransportResponse:
         if remaining <= 0:
             raise _deadline_failure(b"")
         try:
-            output, _ = process.communicate(input=encoded, timeout=remaining)
+            if observer is None:
+                output, _ = process.communicate(input=encoded, timeout=remaining)
+            else:
+                output = _communicate_progress(process, encoded, deadline, deadline - seconds, observer)
         except TimeoutExpired as exc:
             output = exc.output or b""
             raise _deadline_failure(output) from None
