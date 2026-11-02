@@ -18,6 +18,7 @@ import subprocess
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from time import monotonic
 from typing import Protocol
@@ -105,6 +106,28 @@ class ModelFailureEvidence:
     response_status: int | None
 
 
+class ToolCallErrorCategory(Enum):
+    """Fixed observations of existing parser rejections, never response content."""
+
+    BATCH_NOT_LIST = "batch_not_list"
+    CALL_NOT_OBJECT = "call_not_object"
+    FUNCTION_OR_NAME_INVALID = "function_or_name_invalid"
+    ARGUMENTS_INVALID_JSON = "arguments_invalid_json"
+    ARGUMENTS_NOT_OBJECT = "arguments_not_object"
+    DUPLICATE_CALL_ID = "duplicate_call_id"
+
+
+_TOOL_CALL_ERROR_CATEGORIES = {category.value: category for category in ToolCallErrorCategory}
+
+
+def _tool_call_error_category_value(value: object) -> str | None:
+    if type(value) is ToolCallErrorCategory:
+        for label, category in _TOOL_CALL_ERROR_CATEGORIES.items():
+            if value is category:
+                return label
+    return None
+
+
 MAX_REQUEST_OBSERVATION_MS = 10**12
 
 
@@ -128,13 +151,17 @@ class ModelRequestFingerprint:
 class ModelRequestFailure(RuntimeExecutionError):
     """A terminal model failure carrying an optional, independently validated projection."""
 
-    def __init__(self, message: str, reason: str, response_status: int | None = None) -> None:
+    def __init__(
+        self, message: str, reason: str, response_status: int | None = None, *,
+        tool_call_error_category: ToolCallErrorCategory | None = None,
+    ) -> None:
         super().__init__(message)
         self.evidence = ModelFailureEvidence(reason, response_status)
         self.observation: ModelRequestObservation | None = None
         self.transport_observation: TransportObservation | None = None
         self.request_fingerprint: ModelRequestFingerprint | None = None
         self.transport_error_category: TransportErrorCategory | None = None
+        self.tool_call_error_category = tool_call_error_category
 
 
 def _request_fingerprint(body: object) -> ModelRequestFingerprint | None:
@@ -992,6 +1019,7 @@ class OpenAICompatibleRuntime:
         if not isinstance(raw, list):
             raise ModelRequestFailure(
                 "model returned malformed tool calls", "invalid_tool_calls", response_status,
+                tool_call_error_category=ToolCallErrorCategory.BATCH_NOT_LIST,
             )
         calls: list[ToolCall] = []
         seen_ids: set[str] = set()
@@ -999,6 +1027,7 @@ class OpenAICompatibleRuntime:
             if not isinstance(item, dict):
                 raise ModelRequestFailure(
                     "model returned malformed tool call", "invalid_tool_calls", response_status,
+                    tool_call_error_category=ToolCallErrorCategory.CALL_NOT_OBJECT,
                 )
             function = item.get("function")
             if (
@@ -1009,6 +1038,7 @@ class OpenAICompatibleRuntime:
                 raise ModelRequestFailure(
                     "model returned a tool call without a function name", "invalid_tool_calls",
                     response_status,
+                    tool_call_error_category=ToolCallErrorCategory.FUNCTION_OR_NAME_INVALID,
                 )
             raw_arguments = function.get("arguments", {})
             if isinstance(raw_arguments, str):
@@ -1017,10 +1047,12 @@ class OpenAICompatibleRuntime:
                 except json.JSONDecodeError as exc:
                     raise ModelRequestFailure(
                         "model returned malformed tool arguments", "invalid_tool_calls", response_status,
+                        tool_call_error_category=ToolCallErrorCategory.ARGUMENTS_INVALID_JSON,
                     ) from exc
             if not isinstance(raw_arguments, dict):
                 raise ModelRequestFailure(
                     "model tool arguments must be a JSON object", "invalid_tool_calls", response_status,
+                    tool_call_error_category=ToolCallErrorCategory.ARGUMENTS_NOT_OBJECT,
                 )
             call_id = item.get("id")
             call_id = call_id if isinstance(call_id, str) and call_id else f"call-{index + 1}"
@@ -1028,6 +1060,7 @@ class OpenAICompatibleRuntime:
             if id_key in seen_ids:
                 raise ModelRequestFailure(
                     "model returned duplicate tool call IDs", "invalid_tool_calls", response_status,
+                    tool_call_error_category=ToolCallErrorCategory.DUPLICATE_CALL_ID,
                 )
             seen_ids.add(id_key)
             calls.append(

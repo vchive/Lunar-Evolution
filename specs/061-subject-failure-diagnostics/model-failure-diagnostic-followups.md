@@ -1,7 +1,8 @@
 # Follow-up diagnostics from the DeepSeek attempts
 
-Status: scoped design, not implemented or validated (2026-11-02).
-PR217 remains frozen; this document supplies no new software acceptance.
+Status: implementation complete, focused/final-source validation pending
+(2026-11-03). Development starts from main a7db4f99 after PR217/218; the
+original attempts and their missing historical values remain unchanged.
 
 ## Evidence and goal
 
@@ -62,8 +63,30 @@ Do not rerun historical inference or scoring to validate these diagnostics.
 
 - [x] Establish actual gaps and inspect existing ownership/data flow read-only.
 - [x] Independently review the scoped schema/log contract; recheck final code scope before editing.
-- [ ] Implement both bounded diagnostics with compatibility/privacy tests.
+- [x] Implement both bounded diagnostics with compatibility/privacy tests.
 - [ ] Run the combined focused and final-source checks; review original evidence.
+
+## Implementation scope
+
+Three product files implement the slice: subject_diagnostics.py adds the
+independent schema8 projection/validator; runtime.py attaches ToolCallErrorCategory
+at the six original rejection sites; model_request_logging.py emits only the
+owned fixed label from bounded plain-key instance metadata. Existing parser
+conditions and usage/extraction order remain unchanged. A malformed optional
+category cannot suppress the terminal reason. Legacy schema1–7 paths are retained.
+
+New coverage is isolated in test_subject_input_required_usage.py and
+test_tool_call_error_categories.py; existing test files are unchanged. The
+independent downstream/pin audit found that collectors already delegate to the
+shared normalizer, while fixed producer generators pin only producer_broker_ipc.py
+and http_transport.py. Neither pinned source changes in this slice.
+
+Focused regression is planned as one combined batch including both new files and
+the existing usage, collection, runtime, logging, session and receipt compatibility
+suites. Artifacts use primary ignored
+`.lunar-evolution/validation/model-failure-followups-20261102/` (UTC preparation
+date); final CI identities and actual counts will be recorded after execution.
+No new inference, benchmark scoring or historical attempt rerun is included.
 
 This is a P0 observability follow-up, not a fix for general model reliability.
 The ordinary-model E2E P0 and real native RSI P1 remain open.

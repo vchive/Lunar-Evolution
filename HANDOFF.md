@@ -1,4 +1,17 @@
-# 唯一当前状态（2026-11-02）
+# 唯一当前状态（2026-11-03）
+
+从已合main a7db4f99继续本轮[诊断SDD](specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)：
+schema8仅保留runtime/input_required时已接纳的部分用量，六种固定工具解析分类
+仅进入可选失败日志。三产品文件和两独立测试文件已完成并经独立源码/测试审查；
+旧测试、schema1–7、解析/请求/预算/零重试/暂停与评分门保持。审查补齐坏snapshot
+方法异常仍回退schema1的边界，Ruff/diff通过；集中focused与最终CI/main仍待完成，
+96+60新增项当前仅为静态计数。没有新模型调用、评分或旧attempt重跑。
+原DeepSeek四次失败、缺失的历史用量/解析分支及旧网络根因不因新诊断而改变；
+真实E2E P0和native RSI P1仍开放，生产准入/在线发布保持false。
+
+> 以下保留2026-11-02及更早历史记录，旧“当前/尚未实现”等按原时点理解。
+
+## 2026-11-02 软件与实跑记录
 
 固定传输异常分类已通过PR217合main：`761f03156f99b87f6a1cb2e284c9974a34bdf192`，
 精确受测tree `738dc187771e0a39b80b41fb394fa5da80f90be2`。保留原reason、

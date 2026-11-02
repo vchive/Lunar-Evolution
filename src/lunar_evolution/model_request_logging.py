@@ -179,6 +179,7 @@ class ModelRequestLog:
                     ModelFailureEvidence,
                     ModelRequestFailure,
                     ModelRequestFingerprint,
+                    _tool_call_error_category_value,
                 )
 
                 reason = "local_error"
@@ -208,6 +209,19 @@ class ModelRequestLog:
                             category = None
                         if category is not None:
                             fields["transport_error_category"] = category
+                    if reason == "invalid_tool_calls":
+                        try:
+                            # Read owned instance storage only: optional objects and class
+                            # properties must never supply diagnostic prose or callbacks.
+                            metadata = object.__getattribute__(failure, "__dict__")
+                            value = (metadata.get("tool_call_error_category")
+                                     if type(metadata) is dict and len(metadata) <= 16
+                                     and all(type(key) is str for key in metadata) else None)
+                            category = _tool_call_error_category_value(value)
+                        except Exception:  # noqa: BLE001 - omit only malformed optional detail
+                            category = None
+                        if category is not None:
+                            fields["tool_call_error_category"] = category
                 fields["reason"] = reason
             self._emit("model_request_" + outcome, **fields)
         except Exception:  # noqa: BLE001 - preserve original outcome, including bad clocks
