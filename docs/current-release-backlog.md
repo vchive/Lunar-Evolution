@@ -1,13 +1,18 @@
 # 当前发布工作台账（2026-11-02）
 
-本轮新增可选的[实时请求日志](model-request-logging.md)，默认关闭，原HTTP请求、
-deadline和零重试不变；13文件集中验证555pass/零skip，正式三版整体CI及集成
-尚待完成，见[开发规格](../specs/061-subject-failure-diagnostics/live-request-progress.md)。
-已清理969个与保留原ZIP逐字节一致的纯CI展开目录，移除约9.65GiB分配量；
-原归档、审计报告、源码和配置完整保留，恢复清单在ignored
-`validation/project-cleanup-20261102/`。此工作不改变下方P0/P1验收状态。
+本轮可选[实时请求日志](model-request-logging.md)已通过 PR211 合 main 为
+`ff32c769709e1967252abe3ffba652fb0a33fdca`，精确受测 tree
+`c11aca649ffd188f3d774bc0f763266bab70114a`。默认关闭，原HTTP请求、deadline
+和零重试不变。修正轮CI41376210045全45项成功；Python3.11.17/3.12.15/3.13.17
+每版28,019pass+原134skip、59新增全过，history2294+24零skip无重试，
+83focused/65零skip门及45原ZIP独审通过。首轮pin失败/取消记录独立保留，见
+[最终规格与证据](../specs/061-subject-failure-diagnostics/live-request-progress.md)。
+已清理969个原ZIP可恢复的纯CI展开目录及25个可重建缓存/build路径，合计
+10,393,341,952分配字节，约9.68GiB；原归档、审计报告、源码和配置保留，
+清单及独审在主区ignored `.lunar-evolution/validation/project-cleanup-20261102/`。
+此工作不改变下方P0/P1验收状态。
 
-本节是唯一当前优先级入口。当前分支 `codex/ordinary-model-completion` 从已合 main 继续；
+本节是唯一当前优先级入口，以已合 main 的 PR211 为软件状态基线；
 Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 
 | 优先级 | 当前状态与必要下一步 |
@@ -17,7 +22,7 @@ Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 | P1 | 实际 worker 的不可变输入消费、完整 source/toolchain/driver 保护及外部 writer 排除，随后是 accepted image/live owner、首 scheduler context、生产 native RSI CLI 和复制本地 case 验收。复用已有 stager/gateway/recovery；已被自动审查拒绝的 namespace-holder 方向保持停止，不重试或绕过。 |
 | P2 后置 | 远程 evaluator、多机/分布式服务扩展及模型训练不属于本轮必要交付，不从历史路线图新增需求。 |
 
-本轮按用户已有长跑授权，已完成同模型/同case的独立普通验收：3,000秒、40工具调用、
+本轮按用户已有长跑授权，已完成同模型/同case的独立普通验收尝试，结果失败：3,000秒、40工具调用、
 160,000已观测tokens、一个新attempt零重试，同步冻结新profile。既有CLI已支持这些
 条件；这不需要新增runtime机制，也不把更大预算解释为旧600秒失败的修复。完成receipt
 及有效提交后才调用一次本地评分。见[独立长跑规格](../specs/061-subject-failure-diagnostics/ordinary-model-long-run-acceptance.md)。

@@ -1,15 +1,22 @@
 # 唯一当前状态（2026-11-02）
 
-本轮在 `codex/model-progress-logging` 增加可选实时模型请求日志：
+本轮可选实时模型请求日志已通过 PR211 合入 main：
+`ff32c769709e1967252abe3ffba652fb0a33fdca`，精确受测 tree
+`c11aca649ffd188f3d774bc0f763266bab70114a`。
 `effect-subject --model-request-log` 输出固定JSON至stderr，30秒本地进度观察，
 关联ID/UTC/阶段/耗时及既有失败指纹；默认silent、HTTP wire/原deadline/零重试
-与schema1–7不变。一次13文件555pass，零fail/error/skip；Ruff/compileall/diff通过，
-最终三版整体CI及合入仍待完成，见[规格](specs/061-subject-failure-diagnostics/live-request-progress.md)。
-普通模型P0和真实native RSI P1仍开放。另已核验清理969个可从原ZIP恢复的纯CI
-展开目录，移除约9.65GiB分配量；原ZIP/审计报告/源码/配置保留，恢复清单及删除
-记录在ignored `validation/project-cleanup-20261102/`。以下长跑失败结论不变。
+与schema1–7不变。修正轮 CI41376210045/attempt1 全45项成功；三版每版
+28,019pass+原134skip，59新增全过，history2294+24零skip且无重试，
+83focused/65零skip门通过。45原ZIP/source独审719833ae…及root合并核验
+2415c348…通过。首轮41372324599的源码pin失败和取消记录独立保留；本地
+555项、2项边界补验及119项pin补验分别通过。Ruff/compileall/diff通过，见
+[规格与最终证据](specs/061-subject-failure-diagnostics/live-request-progress.md)。
+普通模型P0和真实native RSI P1仍开放。已清理969个原ZIP可恢复的纯CI展开目录
+及25个可重建缓存/build路径，合计10,393,341,952分配字节，约9.68GiB。原ZIP、
+审计报告、源码和配置保留；恢复清单与独审在主区ignored
+`.lunar-evolution/validation/project-cleanup-20261102/`。以下长跑失败结论不变。
 
-当前分支为 `codex/ordinary-model-completion`，从已合入的 main 继续。
+本节以已合 main 的 PR211 为软件状态基线；后继只同步状态文档。
 本节是全局待办入口；Feature193 软件切片合入不代表普通模型端到端或生产 RSI 已验收。
 
 - **已关闭的软件集成 P0**：PR209 已实际合 main 为
