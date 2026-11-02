@@ -1,7 +1,8 @@
 # Ordinary direct-evaluation public contract
 
 Status: provider-free interface check passed once, 2026-11-02.
-No real model or evaluator has run with this additional contract.
+A separately registered real variant ran once and failed on observed-token
+budget; no evaluator was invoked. See the [actual result](../../docs/ordinary-direct-contract-acceptance-20261102.md).
 
 ## Problem and existing implementation
 
@@ -88,7 +89,8 @@ This preview does not register or execute a real variant run.
 - [x] Prepare the public-contract preview and provider-free check for review.
 - [x] Complete exact-byte independent review and the single offline interface
   check; retain its actual result.
-- [ ] Separately register, review and execute any real variant acceptance.
+- [x] Separately register, review and execute one real variant acceptance;
+  preserve its failed result and independent terminal-evidence review.
 
 The preview is retained under the primary workspace's ignored
 `.lunar-evolution/validation/ordinary-direct-contract-20261102/preview-Z7Oce8/`.

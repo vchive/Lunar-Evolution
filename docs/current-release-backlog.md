@@ -18,7 +18,7 @@ Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 | 优先级 | 当前状态与必要下一步 |
 | --- | --- |
 | 已关闭的软件集成 P0 | PR209 已实际合 main：`5c62ca270d78c605ca189399c8b8caadcd11e1b7`，精确受测 tree `febb48196250768cb01e66c51b9f499b17e3f0a7`。原45项 CI 全成功，45份ZIP独审28项检查通过；Python3.11/3.12/3.13 每版27,960pass+原134skip，121新增全过。同源码main push的重复CI已取消，不作通过证据。 |
-| 仍开放的全局 P0 | 普通模型在复制 train-delay case 上的真实本地端到端验收仍未通过。e19be0d1 的 fresh 单次、零重试尝试完成8轮模型/11个工具结果后，第9次请求等待响应头超时，未生成提交或完成receipt；本轮评分正确跳过，34,627 tokens部分用量已保留。下一步调查请求/服务停滞原因，不能视为已修复。见[本轮实跑记录](ordinary-model-acceptance-20261101.md)；[旧失败](normal-model-smoke-20261025.md)完整保留，A/B诊断不替代case。 |
+| 仍开放的全局 P0 | 普通模型真实本地端到端验收仍未通过。原输入600秒及50分钟尝试均失败；新公开格式变体的单次运行也因observed tokens 174,152超过160,000而终止，9次请求均完成，无本次请求超时。无完成receipt或评分；独审32项通过只确认失败记录。见[新变体实跑](ordinary-direct-contract-acceptance-20261102.md)、[原输入长跑](ordinary-model-long-run-acceptance-20261102.md)及[旧600秒实跑](ordinary-model-acceptance-20261101.md)。保留各自输入和失败分母，不重跑或替代结果。 |
 | P1 | 实际 worker 的不可变输入消费、完整 source/toolchain/driver 保护及外部 writer 排除，随后是 accepted image/live owner、首 scheduler context、生产 native RSI CLI 和复制本地 case 验收。复用已有 stager/gateway/recovery；已被自动审查拒绝的 namespace-holder 方向保持停止，不重试或绕过。 |
 | P2 后置 | 远程 evaluator、多机/分布式服务扩展及模型训练不属于本轮必要交付，不从历史路线图新增需求。 |
 
@@ -36,8 +36,14 @@ tokens部分用量，失败请求用量/费用未知；无完成receipt和固定
 extractor识别答案文件，而当前helper只选择固定schedule文件并直接调用evaluator。
 因此，固定文件缺失不能直接等同于没有语义答案；该缺口也不解释响应头停滞。
 本轮用既有PublicFile/entrypoint准备独立公开格式变体，一次4用例provider-free
-接线检查已通过，三个负例均在fake调用前拒绝；真实变体尚未运行。不改当前长跑、
-原case或benchmark。见[公开契约规格](../specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)。
+接线检查已通过，三个负例均在fake调用前拒绝。真实变体已单次执行并失败：
+schema2 runtime/budget_exceeded，9次请求均completed；8轮已接纳100,651tokens，
+第9次将observed推至174,152超过160,000，trigger_recorded=false/partial。
+subject1,195.449322秒/rc2/reaped/EOF，无watchdog信号；无完成receipt或评分。
+32项独审通过，2817源码/308目录、12case/3public及240实际加载来源匹配；
+原case11文件和benchmark保持不变，旧响应头超时原因仍未确定。
+见[变体实跑](ordinary-direct-contract-acceptance-20261102.md)及
+[公开契约规格](../specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)。
 
 `production_admission=false`、`online_publication=false`。当前没有可脱离上述真实 P1
 边界独立完成的必要 Feature193 编码块；这不取消普通模型端到端 P0。

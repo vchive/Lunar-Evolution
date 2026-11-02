@@ -44,8 +44,14 @@
   允许由extractor识别答案文件，而当前helper只认固定schedule文件并直接评分。
   不据固定文件缺失推断没有语义答案，也不据此解释响应头停滞。先用既有
   PublicFile/entrypoint准备独立public-task变体；一次4用例provider-free接口检查已过，
-  三负例均在fake调用前拒绝，真实变体尚未运行。不改当前长跑、原case或benchmark，
-  见[契约规格](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)。
+  三负例均在fake调用前拒绝。该独立变体已单次实跑并失败：9次请求均完成，
+  第9次响应将已观测用量推至174,152 tokens，超过原160,000阈值，
+  runtime按budget_exceeded终止；8轮已接纳100,651tokens、14工具结果，
+  subject1,195.449322秒/rc2/reaped/EOF，无watchdog信号。无完成receipt或评分；
+  32项独立证据检查通过只确认失败记录。未发生本次请求超时，不解释旧超时。
+  原11文件/benchmark不变，新12文件/3公开文件有独立身份，不重跑或替代旧失败。
+  见[实际运行记录](docs/ordinary-direct-contract-acceptance-20261102.md)及
+  [契约规格](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)。
 - **P1 真实依赖仍开放**：实际 worker 的不可变输入消费、完整 source/toolchain/driver
   保护及外部 writer 排除，随后才是 accepted image/live owner、首个 scheduler context、
   生产 native RSI CLI 和复制本地 case 验收。既有 stager/gateway/recovery 不重做；

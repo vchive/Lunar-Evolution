@@ -1,6 +1,7 @@
 # Ordinary direct-contract live acceptance
 
-Status: specified before preparation or inference, 2026-11-02.
+Status: single fresh attempt failed on observed-token budget, 2026-11-02;
+independent terminal-evidence audit passed 32/32 checks. No evaluator or score.
 
 ## Scope
 
@@ -65,9 +66,9 @@ included. Native RSI P1 retains its existing environmental prerequisites;
 
 - [x] Specify independent variant conditions and reuse the completed CI.
 - [x] Prepare frozen source, twelve-file case and exact helper manifest.
-- [ ] Independently review and register the exact one-shot dispatch.
-- [ ] Run the single fresh variant attempt with request logging enabled.
-- [ ] Independently audit the terminal evidence and report its actual result.
+- [x] Independently review and register the exact one-shot dispatch.
+- [x] Run the single fresh variant attempt with request logging enabled.
+- [x] Independently audit the terminal evidence and report its actual result.
 
 ## Frozen preparation
 
@@ -93,3 +94,28 @@ pins, the minimal helper difference and inherited execution/scoring gates.
 No helper, configuration loader, model, evaluator or product test executed;
 authorization, launch marker and attempt directory were absent at review.
 The root execution gate and pushed registration must precede actual dispatch.
+
+Registration commit `f676de30f6d3451bd707b866e7a8f7ab6acc78b2` was pushed
+before dispatch. The root execution gate accepted the unchanged preparation as
+`approved_for_single_dispatch`; its SHA256 is
+`64c411aae8b6db47acd5afc05d580cd53b97feb2f7e84d4c9ce8dfe4879b6acb`.
+The sole launch started at `2026-11-02T04:53:25.964010+00:00`
+(12:53:25 Beijing time). The original launcher ended at
+`2026-11-02T05:16:25.486140+00:00`. Subject rc2 after 1,195.449322 seconds
+was `runtime/budget_exceeded`, not a transport timeout: nine logged requests
+completed, but the ninth raised observed usage to 174,152 above 160,000 and
+was not accepted into history. Accepted usage is 100,651 tokens over eight
+rounds; history has eight assistant and fourteen tool records. No completed
+receipt or selected submission exists and the evaluator was not invoked.
+Original child reaping/EOF passed; no watchdog signal was used. Complete
+foreign-process cleanup and billing remain unproven.
+
+The single read-only v4 original-evidence audit passed all 32 checks while
+classifying acceptance as failed. Its 14,011-byte report SHA256 is
+`a7d6c78b4b0f3f6500825ef6ea9ba550144eb3d2f91729b3737d501d5adbe6db`.
+All 2,817 source files/308 directories, twelve case files/three public inputs,
+opaque profile and 240 loaded origins matched. No request, evaluator or test
+was rerun by the audit. Preparation scripts v1–v3 remain unexecuted. See the
+[actual run record](../../docs/ordinary-direct-contract-acceptance-20261102.md)
+for usage, request logs and evidence boundaries. Ordinary E2E P0 and real
+native RSI P1 remain open; the original unchanged-input failures are unchanged.
