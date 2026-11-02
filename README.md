@@ -15,6 +15,8 @@
 
 [快速开始](#快速开始) · [运行普通任务](#运行普通任务) · [试跑-rsi-fixture](#试跑-rsi-fixture) · [架构说明](docs/architecture.md) · [发布工作台账](docs/current-release-backlog.md)
 
+当前可用的是本地任务控制、工具循环、本地 population 演化及 provider-free RSI 的技术 MVP；真实模型完成具体任务的可靠性和算法演化收益尚待独立验收。下面的 mock、fixture 和 CI 结果验证软件机制，不代表真实求解质量。
+
 ## 当前能力
 
 | 能力 | 已具备 | 边界 |
@@ -98,6 +100,10 @@ lunar-evolution solve '分析订单并提出可验证的配送路线' \
 ```
 
 需要认证的服务还要在 shell 或密钥管理器中设置 `LUNAR_EVOLUTION_API_KEY`。如需让模型调用 Lunar 提供的本地工具，显式添加 `--agent-loop`；工具调用受步数、超时、workspace 和产物大小限制。配置变量名称可参考 [`.env.example`](.env.example)，但该文件仅为示例，CLI 不会自动加载它。
+
+需要限制单次生成规模时，可以在 `--model-profile` 文件中显式设置
+`max_completion_tokens`；未设置时请求保持原样。该参数要求网关支持，
+并不替代累计预算或保证任务完成。配置方法与截断处理见[模型输出上限](docs/model-output-limits.md)。
 
 ## 试跑 RSI fixture
 

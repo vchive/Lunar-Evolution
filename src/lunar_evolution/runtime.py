@@ -182,6 +182,13 @@ def _observed_response_status(value: object) -> int | None:
     return value if type(value) is int and 100 <= value <= 599 else None
 
 
+def _validate_max_completion_tokens(value: int | None) -> None:
+    if value is not None and (
+        isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 1_000_000
+    ):
+        raise ValueError("max_completion_tokens must be an integer between 1 and 1000000 or null")
+
+
 def _transport_failure_reason(error: BaseException) -> str:
     current: BaseException | None = error
     seen: set[int] = set()
@@ -683,8 +690,11 @@ class OpenAICompatibleRuntime:
         messages: list[dict[str, object]],
         tools: tuple[dict[str, object], ...] = (),
         timeout: float | None = None,
+        *,
+        max_completion_tokens: int | None = None,
     ) -> ModelTurn:
         """Request one model turn, preserving structured tool calls for the agent loop."""
+        _validate_max_completion_tokens(max_completion_tokens)
         if timeout is not None:
             validate_timeout(timeout)
         from .acceptance_request_budget import active_request_budget
@@ -693,7 +703,10 @@ class OpenAICompatibleRuntime:
         if budget is not None:
             budget.begin()
         try:
-            turn = self._complete(messages, tools, timeout, bounded=timeout is not None)
+            turn = self._complete(
+                messages, tools, timeout, bounded=timeout is not None,
+                max_completion_tokens=max_completion_tokens,
+            )
         except BaseException:
             if budget is not None:
                 budget.fail()
@@ -702,17 +715,26 @@ class OpenAICompatibleRuntime:
             budget.finish(turn.usage)
         return turn
 
-    def _complete_direct(self, messages, tools=(), timeout=None) -> ModelTurn:
+    def _complete_direct(
+        self, messages, tools=(), timeout=None, *, max_completion_tokens: int | None = None,
+    ) -> ModelTurn:
         """Explicit same-process seam for deterministic transport/exception contract tests."""
-        return self._complete(messages, tools, timeout, bounded=False)
+        _validate_max_completion_tokens(max_completion_tokens)
+        return self._complete(
+            messages, tools, timeout, bounded=False, max_completion_tokens=max_completion_tokens,
+        )
 
-    def _complete(self, messages, tools, timeout, *, bounded) -> ModelTurn:
+    def _complete(
+        self, messages, tools, timeout, *, bounded, max_completion_tokens: int | None = None,
+    ) -> ModelTurn:
         body = json.dumps(
             {
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
                 **({"tools": list(tools)} if tools else {}),
+                **({"max_completion_tokens": max_completion_tokens}
+                   if max_completion_tokens is not None else {}),
             },
             ensure_ascii=False,
         ).encode("utf-8")
@@ -787,6 +809,16 @@ class OpenAICompatibleRuntime:
                 raise ModelRequestFailure(
                     "model endpoint returned malformed JSON", "invalid_json", observed_status,
                 ) from exc
+            if max_completion_tokens is not None and isinstance(payload, dict):
+                choices = payload.get("choices")
+                if (
+                    isinstance(choices, list) and choices and isinstance(choices[0], dict)
+                    and choices[0].get("finish_reason") == "length"
+                ):
+                    raise ModelRequestFailure(
+                        "model endpoint returned a truncated completion", "invalid_response_shape",
+                        observed_status,
+                    )
             text, tool_calls = self._extract_turn(payload, response_status=observed_status)
             if not text and not tool_calls:
                 raise ModelRequestFailure(
