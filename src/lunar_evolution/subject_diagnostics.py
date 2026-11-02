@@ -202,6 +202,8 @@ def normalize_diagnostic(value: object) -> dict[str, object]:
     if not isinstance(value, dict) or "schema_version" not in value:
         raise ValueError("invalid diagnostic fields")
     version = value.get("schema_version")
+    if type(version) is str and version == "8":
+        return _normalize_input_required_usage_diagnostic(value)
     if type(version) is str and version == "7":
         return _normalize_fingerprinted_diagnostic(value)
     if type(version) is str and version == "6":
@@ -300,6 +302,25 @@ def _normalize_fingerprinted_diagnostic(value: dict[str, object]) -> dict[str, o
         raise ValueError("invalid fingerprinted failure classification")
     return {**legacy, "schema_version": "7", "request_fingerprint":
             _normalize_request_fingerprint(value["request_fingerprint"])}
+
+
+def _normalize_input_required_usage_diagnostic(value: dict[str, object]) -> dict[str, object]:
+    """Retain accepted usage at an input pause without claiming completed task usage."""
+    extra = {"accepted_usage", "usage_completeness"}
+    if set(value) != _FIELDS | extra or value["usage_completeness"] != "partial":
+        raise ValueError("invalid input-required usage diagnostic fields")
+    legacy = normalize_diagnostic({
+        **{key: value[key] for key in _FIELDS}, "schema_version": "1",
+    })
+    if (legacy["stage"], legacy["code"], legacy["http_status"]) != (
+        "runtime", "input_required", None,
+    ):
+        raise ValueError("invalid input-required usage classification")
+    usage = _normalize_usage(value["accepted_usage"])
+    if usage["rounds"] < 1 or usage["rounds"] != legacy["model_turns"]:
+        raise ValueError("inconsistent accepted usage response count")
+    return {**legacy, "schema_version": "8", "accepted_usage": usage,
+            "usage_completeness": "partial"}
 
 
 def _with_request_fingerprint(
@@ -503,6 +524,18 @@ class SubjectDiagnosticObserver:
                     })
                 except (TypeError, ValueError):
                     # Bad optional subtotals cannot suppress the original legacy diagnostic.
+                    pass
+            elif (payload["stage"], payload["code"], payload["http_status"]) == (
+                "runtime", "input_required", None,
+            ) and type(accepted_usage) is UsageSnapshot:
+                try:
+                    payload = normalize_diagnostic({
+                        **payload, "schema_version": "8",
+                        "accepted_usage": _project_usage(accepted_usage),
+                        "usage_completeness": "partial",
+                    })
+                except Exception:  # noqa: BLE001, S110 - optional errors must not enter logs
+                    # A malformed optional snapshot must preserve the schema1 pause.
                     pass
             context.emit(payload)
         except Exception:  # noqa: BLE001 - classification must not mask the original exception

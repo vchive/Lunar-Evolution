@@ -36,4 +36,18 @@ CLI 的开关只在当前 subject 调用内使用专用 stderr handler，结束�
 响应头便观察到连接关闭，不能据此确定是网关、上游还是网络设备关闭了连接。
 具体兼容边界见[分类规格](../specs/061-subject-failure-diagnostics/transport-error-category.md)。
 
+工具调用格式失败可附带固定的 `tool_call_error_category`：`batch_not_list`、
+`call_not_object`、`function_or_name_invalid`、`arguments_invalid_json`、
+`arguments_not_object` 或 `duplicate_call_id`，分别对应批次、调用对象、函数名称、
+参数 JSON、参数对象及重复 ID 的既有拒绝分支。它仅在原因为 `invalid_tool_calls`
+的可选失败日志中出现，不记录 ID、名称、参数或响应正文；不改变解析、重试或
+receipt。未知或不可信 metadata 只省略分类，原失败原因仍保留。
+
+另一个独立的终态诊断改动是 schema8：任务因 `input_required` 暂停时，
+`*.failure.json` 可以保留此前已接纳响应的 `accepted_usage`，并固定标记
+`usage_completeness: "partial"`。没有有效的已接纳小计时仍使用 schema1。
+这不是完成回执，也不表示任务的完整用量或实际账单；未知费用保留为 null。
+不会保存提问内容或自动回答问题，历史失败不会回填。实现与验证状态见
+[本轮规格](../specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)。
+
 验证和实现边界见[规格](../specs/061-subject-failure-diagnostics/live-request-progress.md)。
