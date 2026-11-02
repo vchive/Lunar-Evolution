@@ -166,7 +166,7 @@ CI 在 Ubuntu 上覆盖 Python 3.11、3.12 和 3.13。[Linux 开发指南](docs/
 
 provider-free DRS/BRS 控制与恢复路径已实现；PR209 已合入 main（`5c62ca27`），原45项 CI 全部成功并通过独立审查。普通模型在复制 train-delay case 上的端到端验收仍是 P0：[此前600秒验收](docs/ordinary-model-acceptance-20261101.md)等待响应头超时；独立的[50分钟长跑验收](docs/ordinary-model-long-run-acceptance-20261102.md)也在4轮响应、8个工具结果后因第5次请求超时失败，没有完成提交或评分。长跑的48项独立证据检查通过，验收本身仍失败；服务端根因尚未确定。
 
-当前直接评分入口还存在[公开输出契约缺口](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)：原题未指定固定文件名和 JSON 字段，评分 helper 却要求固定格式。补充格式说明将作为独立 case 变体验证；当前长跑和原 benchmark 保持不变。
+当前直接评分入口已用独立 case 变体公开[输出契约](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)：原题未指定固定文件名和 JSON 字段，评分 helper 却要求固定格式。[该变体的单次实跑](docs/ordinary-direct-contract-acceptance-20261102.md)仍未完成：9 次请求均返回后，累计观测用量达到 174,152 tokens，超过预设 160,000，控制器按预算终止，没有完成回执或评分。本次没有请求超时；32 项独立证据检查通过只确认失败记录。原输入长跑与 benchmark 保持不变，普通模型端到端 P0 仍开放。
 
 排查长时间等待时，可显式使用 `effect-subject --model-request-log`，将脱敏请求进度写到 stderr。每次请求使用本地关联 ID，按 30 秒间隔报告已知传输阶段和等待时长；原请求、预算和重试策略不变。该功能已随 [PR211](https://github.com/vchive/Lunar-Evolution/pull/211) 合入 main，三版完整 CI 的 45 项任务及独立证据审查通过；这不表示此前模型超时已修复。用法和字段边界见[请求日志说明](docs/model-request-logging.md)。
 
