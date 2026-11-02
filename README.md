@@ -170,6 +170,11 @@ CI 在 Ubuntu 上覆盖 Python 3.11、3.12 和 3.13。[Linux 开发指南](docs/
 
 ## 当前发布边界
 
+新增的[两例真实模型验收](docs/capped-benchmark-case-acceptance-20261102.md)已运行：
+列车重排与小型手术室排程均在完成若干模型和工具交互后，因等待响应头阶段的
+`transport_error` 失败，没有完成回执或评分。这两例启用了单次输出上限，失败发生时
+尚未耗尽运行预算；传输根因和真实任务可靠性仍待确认。
+
 provider-free DRS/BRS 控制与恢复路径已实现；PR209 已合入 main（`5c62ca27`），原45项 CI 全部成功并通过独立审查。普通模型在复制 train-delay case 上的端到端验收仍是 P0：[此前600秒验收](docs/ordinary-model-acceptance-20261101.md)等待响应头超时；独立的[50分钟长跑验收](docs/ordinary-model-long-run-acceptance-20261102.md)也在4轮响应、8个工具结果后因第5次请求超时失败，没有完成提交或评分。长跑的48项独立证据检查通过，验收本身仍失败；服务端根因尚未确定。
 
 当前直接评分入口已用独立 case 变体公开[输出契约](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)：原题未指定固定文件名和 JSON 字段，评分 helper 却要求固定格式。[该变体的单次实跑](docs/ordinary-direct-contract-acceptance-20261102.md)仍未完成：9 次请求均返回后，累计观测用量达到 174,152 tokens，超过预设 160,000，控制器按预算终止，没有完成回执或评分。本次没有请求超时；32 项独立证据检查通过只确认失败记录。原输入长跑与 benchmark 保持不变，普通模型端到端 P0 仍开放。
