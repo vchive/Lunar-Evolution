@@ -4,8 +4,11 @@
 schema8仅保留runtime/input_required时已接纳的部分用量，六种固定工具解析分类
 仅进入可选失败日志。三产品文件和两独立测试文件已完成并经独立源码/测试审查；
 旧测试、schema1–7、解析/请求/预算/零重试/暂停与评分门保持。审查补齐坏snapshot
-方法异常仍回退schema1的边界，Ruff/diff通过；集中focused与最终CI/main仍待完成，
-96+60新增项当前仅为静态计数。没有新模型调用、评分或旧attempt重跑。
+方法异常仍回退schema1的边界。冻结1513db8a的一次18文件集中focused实际866全过，
+零fail/error/skip/retry；新增96+60全部通过，240实际加载模块与冻结Git blob匹配。
+Ruff/compileall/diff通过，编译临时缓存已移除；最终CI/main仍待完成。
+原件保留在主区ignored validation/model-failure-followups-20261102/local。
+没有新模型调用、评分或旧attempt重跑。
 原DeepSeek四次失败、缺失的历史用量/解析分支及旧网络根因不因新诊断而改变；
 真实E2E P0和native RSI P1仍开放，生产准入/在线发布保持false。
 

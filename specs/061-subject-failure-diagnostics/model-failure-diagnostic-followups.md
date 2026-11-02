@@ -1,6 +1,6 @@
 # Follow-up diagnostics from the DeepSeek attempts
 
-Status: implementation complete, focused/final-source validation pending
+Status: implementation and focused/static validation complete; final CI/merge pending
 (2026-11-03). Development starts from main a7db4f99 after PR217/218; the
 original attempts and their missing historical values remain unchanged.
 
@@ -81,9 +81,14 @@ independent downstream/pin audit found that collectors already delegate to the
 shared normalizer, while fixed producer generators pin only producer_broker_ipc.py
 and http_transport.py. Neither pinned source changes in this slice.
 
-Focused regression is planned as one combined batch including both new files and
-the existing usage, collection, runtime, logging, session and receipt compatibility
-suites. Artifacts use primary ignored
+One combined focused batch at frozen source 1513db8a64a8f2bfef4c7bb6e494e453165276d9
+completed in 24.574711041059345 seconds: 866 passed across 18 complete files,
+zero failures/errors/skips/retries, including all 96+60 new cases. The original
+child was reaped without signals, source remained unchanged, and all 240 actually
+loaded package modules matched frozen Git blobs. Ruff across src/tests/tools,
+compileall and git diff --check passed; the temporary compile cache was removed.
+The batch included both new files and the existing usage, collection, runtime,
+logging, session and receipt compatibility suites. Original artifacts use primary ignored
 `.lunar-evolution/validation/model-failure-followups-20261102/` (UTC preparation
 date); final CI identities and actual counts will be recorded after execution.
 No new inference, benchmark scoring or historical attempt rerun is included.

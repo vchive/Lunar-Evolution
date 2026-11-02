@@ -2,9 +2,11 @@
 
 当前软件基线为main a7db4f99（PR217/218已合入）。本轮
 [诊断切片](../specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)
-已实现并通过独立源码/测试审查，正在统一focused验证；最终CI/main门仍开放。
+已实现并通过独立源码/测试审查。冻结1513db8a的一次18文件集中focused实际866全过，
+零fail/error/skip/retry，新增96+60全部通过；240实际加载模块与冻结Git blob匹配。
+Ruff/compileall/diff通过，最终CI/main门仍开放。
 schema8只保留input_required时已接纳的小计；六种工具解析标签只进入可选失败日志。
-原schema1–7、失败/评分边界与零重试保持，旧测试不改；新增156项目前仅静态计数。
+原schema1–7、失败/评分边界与零重试保持，旧测试不改。
 没有新推理或评分，原四次DeepSeek失败及其缺失字段不能回填。全局真实模型E2E
 P0、真实native RSI P1仍开放；远程评测/多机服务/模型训练仍后置，authority保持false。
 
