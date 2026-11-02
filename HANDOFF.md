@@ -1,5 +1,14 @@
 # 唯一当前状态（2026-11-02）
 
+本轮在 `codex/model-progress-logging` 增加可选实时模型请求日志：
+`effect-subject --model-request-log` 输出固定JSON至stderr，30秒本地进度观察，
+关联ID/UTC/阶段/耗时及既有失败指纹；默认silent、HTTP wire/原deadline/零重试
+与schema1–7不变。一次13文件555pass，零fail/error/skip；Ruff/compileall/diff通过，
+最终三版整体CI及合入仍待完成，见[规格](specs/061-subject-failure-diagnostics/live-request-progress.md)。
+普通模型P0和真实native RSI P1仍开放。另已核验清理969个可从原ZIP恢复的纯CI
+展开目录，移除约9.65GiB分配量；原ZIP/审计报告/源码/配置保留，恢复清单及删除
+记录在ignored `validation/project-cleanup-20261102/`。以下长跑失败结论不变。
+
 当前分支为 `codex/ordinary-model-completion`，从已合入的 main 继续。
 本节是全局待办入口；Feature193 软件切片合入不代表普通模型端到端或生产 RSI 已验收。
 

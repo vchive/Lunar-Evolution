@@ -32,6 +32,7 @@ from .http_transport import (
     exchange,
     validate_timeout,
 )
+from .model_request_logging import ModelRequestLog
 
 MAX_ENVELOPE_ARTIFACTS = 32
 MAX_ENVELOPE_BYTES = 256 * 1024
@@ -727,11 +728,13 @@ class OpenAICompatibleRuntime:
         phase = "open_response"
         transport_observation = None
         started = _request_clock()
+        request_log = ModelRequestLog(timeout=timeout, bounded=bounded)
         try:
             try:
                 if bounded:
                     try:
-                        response = exchange(request, timeout)
+                        response = (exchange(request, timeout, observer=request_log.wait)
+                                    if request_log.enabled else exchange(request, timeout))
                     except TransportFailure as failure:
                         phase, observed_status = failure.phase, failure.status
                         transport_observation = _transport_detail(failure)
@@ -802,12 +805,14 @@ class OpenAICompatibleRuntime:
                     observed_status,
                 )
             usage = self._parse_usage(payload.get("usage"), response_status=observed_status)
-            return ModelTurn(
+            turn = ModelTurn(
                 text=text,
                 tool_calls=tool_calls,
                 response_model=response_model.strip() if isinstance(response_model, str) else None,
                 usage=usage,
             )
+            request_log.finish("completed", response_status=observed_status)
+            return turn
         except ModelRequestFailure as exc:
             if type(exc) is ModelRequestFailure:
                 exc.transport_observation = transport_observation
@@ -820,6 +825,10 @@ class OpenAICompatibleRuntime:
                     exc.request_fingerprint = _request_fingerprint(body)
                 except Exception:  # noqa: BLE001, S110 - optional projection preserves original error
                     pass
+            request_log.finish("failed", failure=exc)
+            raise
+        except BaseException:
+            request_log.finish("failed")
             raise
 
     def cancel(self) -> None:

@@ -85,6 +85,7 @@ from .evolution import (
     contract_candidate_runner_fingerprint,
 )
 from .memory import MemoryStore
+from .model_request_logging import model_request_log_to_stderr
 from .models import Run
 from .policy import MasterPolicy, PlanDocument, PlanPatch
 from .producer_handoff import ProducerHandoffError
@@ -837,6 +838,10 @@ def build_parser() -> argparse.ArgumentParser:
     subject_parser.add_argument(
         "--session-history", action="store_true",
         help="retain a bounded local transcript for this fresh subject (no history replay)",
+    )
+    subject_parser.add_argument(
+        "--model-request-log", action="store_true",
+        help="emit bounded model-request progress JSON lines on stderr",
     )
     subject_parser.add_argument(
         "--workflow-config", type=Path,
@@ -5165,18 +5170,19 @@ def _effect_subject(args: argparse.Namespace) -> dict[str, object]:
     if profile is not None and args.model is not None and args.model != profile.model:
         raise ValueError("--model does not match model profile model")
     workflow_path = getattr(args, "workflow_config", None)
-    return run_subject_adapter(
-        args.request,
-        endpoint=args.endpoint,
-        model=args.model,
-        api_key=args.api_key,
-        max_steps=args.max_steps,
-        allow_exec=not args.no_exec,
-        timeout=args.timeout,
-        model_profile=profile,
-        workflow_config=StagedWorkflowConfig.load(workflow_path) if workflow_path else None,
-        session_history=getattr(args, "session_history", False),
-    )
+    with model_request_log_to_stderr(args.model_request_log):
+        return run_subject_adapter(
+            args.request,
+            endpoint=args.endpoint,
+            model=args.model,
+            api_key=args.api_key,
+            max_steps=args.max_steps,
+            allow_exec=not args.no_exec,
+            timeout=args.timeout,
+            model_profile=profile,
+            workflow_config=StagedWorkflowConfig.load(workflow_path) if workflow_path else None,
+            session_history=getattr(args, "session_history", False),
+        )
 
 
 def _effect_harness(args: argparse.Namespace) -> dict[str, object]:

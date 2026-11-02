@@ -168,6 +168,8 @@ provider-free DRS/BRS 控制与恢复路径已实现；PR209 已合入 main（`5
 
 当前直接评分入口还存在[公开输出契约缺口](specs/061-subject-failure-diagnostics/ordinary-direct-evaluation-contract.md)：原题未指定固定文件名和 JSON 字段，评分 helper 却要求固定格式。补充格式说明将作为独立 case 变体验证；当前长跑和原 benchmark 保持不变。
 
+排查长时间等待时，可显式使用 `effect-subject --model-request-log`，将脱敏请求进度写到 stderr。每次请求使用本地关联 ID，按 30 秒间隔报告已知传输阶段和等待时长；原请求、预算和重试策略不变。用法和字段边界见[请求日志说明](docs/model-request-logging.md)。
+
 真实 native producer 仍有独立 P1：实际 worker 的不可变输入消费、完整 source/toolchain/driver 保护及外部 writer 排除仍受阻，随后才是 accepted runtime、首个 scheduler context、生产 RSI CLI 和复制本地 case 验收。已有 stager、gateway 和 recovery 不重复建设；OpenEvolve/Shinka 源码准备和 detached evidence reader 不会授予生产准入。具体依赖与边界以[发布工作台账](docs/current-release-backlog.md)为准。
 
 因此，RSI producer 的 `production_admission=false` 与 `online_publication=false` 仍是当前状态。外部 worker 的认证回执不授予 native 成功、结果发布或远端清理权威。远程 evaluator、多 controller 接管和模型权重训练不属于当前发布范围。哪些证据可以改变这些状态，见[发布工作台账](docs/current-release-backlog.md)。

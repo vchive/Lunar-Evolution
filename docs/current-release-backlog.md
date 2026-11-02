@@ -1,5 +1,12 @@
 # 当前发布工作台账（2026-11-02）
 
+本轮新增可选的[实时请求日志](model-request-logging.md)，默认关闭，原HTTP请求、
+deadline和零重试不变；13文件集中验证555pass/零skip，正式三版整体CI及集成
+尚待完成，见[开发规格](../specs/061-subject-failure-diagnostics/live-request-progress.md)。
+已清理969个与保留原ZIP逐字节一致的纯CI展开目录，移除约9.65GiB分配量；
+原归档、审计报告、源码和配置完整保留，恢复清单在ignored
+`validation/project-cleanup-20261102/`。此工作不改变下方P0/P1验收状态。
+
 本节是唯一当前优先级入口。当前分支 `codex/ordinary-model-completion` 从已合 main 继续；
 Feature193 软件集成完成不关闭独立的普通模型端到端 P0。
 
