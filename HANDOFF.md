@@ -1,4 +1,23 @@
-# 唯一当前状态（2026-11-03，公开执行环境实跑后）
+# 唯一当前状态（2026-11-03，稳定性与空间清理）
+
+本轮[稳定性SDD](specs/061-subject-failure-diagnostics/runtime-input-stability.md)
+已实现三类本地修复：JSON decode的ValueError/RecursionError进入原固定拒绝，
+孤立surrogate模型名进入invalid_model_identity，工具constructor拒绝非法非有限
+时间及非正整数输出上限。无JSON修补/重试/预算增加，不称为PR221实跑根因。
+两个新文件61例：原14文件538批次532pass/6个新recursion夹具失败原件保留；
+夹具改用隔离stdlib Python decoder真实guard后，新30例补验全过0.884139秒。
+产品两提交同字节；旧477与31工具新例在首批全过，不合称538全过。
+Ruff/compileall/diff通过，240/235模块来源匹配，local独审v2 58872c82…通过。
+当前分支codex/runtime-stability-cleanup，完整CI/main集成待完成，预期28503键
+尚非实际CI结果。PR221已合main fab7458a，普通模型失败/P0开放结论不变。
+空间清理已实际删除337处可重建缓存，1处当前Ruff缓存因变化跳过，0partial，
+释放allocated1061830656字节（约0.989GiB）；无worktree删除。原ZIP/源码快照/
+evaluator/venv/.env/失败原件/未提交修改保留。精确清单、逐项动作与receipt在主区
+ignored validation/project-stability-cleanup-20261103/。df变化与该分配量分开报告。
+本轮未调用真实模型、WebAgent、远程evaluator或公司评测平台。
+P0真实普通模型E2E和nativeRSIP1仍开放；production/publication保持false。
+
+## 前一阶段：公开执行环境实跑（2026-11-03）
 
 本轮[执行环境契约](specs/061-subject-failure-diagnostics/ordinary-public-execution-environment.md)
 已实现为独立测量helper：固定subject PATH/解释器指纹、公开入口和独立评分环境，

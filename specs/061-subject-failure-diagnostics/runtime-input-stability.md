@@ -1,6 +1,7 @@
 # Runtime input stability and recoverable artifact cleanup
 
-Status: scoped implementation in progress, 2026-11-03. Baseline is accepted
+Status: implemented/local checks and cleanup complete; final CI pending, 2026-11-03.
+Baseline is accepted
 mainfab7458a (PR221). The user requested system stability and project space
 cleanup. These locally identified robustness defects are not established causes
 of PR221's arguments_invalid_json failure; its missing response cannot be rebuilt.
@@ -79,8 +80,8 @@ recursive project wipe or unrelated worktree removal.
 
 - [x] Audit actual local defects and scope changes.
 - [x] Implement decoder/identity and constructor bounds with focused tests.
-- [ ] Review integrated source; run one focused batch and static checks.
-- [ ] Inventory, review and delete only recoverable project artifacts.
+- [x] Review integrated source; run one focused batch and static checks.
+- [x] Inventory, review and delete only recoverable project artifacts.
 - [ ] Complete final CI/source/evidence checks and integrate main.
 
 Ordinary-model E2E P0 and native RSI P1 remain open. Passing this robustness slice
@@ -98,3 +99,44 @@ fixture is being corrected to exercise the standard-library Python decoder's
 real recursion guard safely; product code and existing tests remain unchanged.
 After that correction, run the affected new test file once and use final CI
 for whole-suite acceptance, without repeating the prior14-file batch.
+
+The fixture-only correction at18834a89 passed the affected30-case new file once,
+in0.8841384998522699 seconds, zero failure/error/skip, rc0/reaped and no signals.
+Product source is byte-identical to6c43f15a; the original31 tool-limit additions
+and477 prior tests passed in the first batch. Do not sum these into a claim of
+a passing538-case execution. Actual product module origins240/235 respectively
+match frozen source/Git blobs; the smaller second set is an identical subset.
+Ruff across src/tests/tools, compileall and diff checks pass; temporary compile
+cache removed. Producer pins bind broker/transport/fixed launch assets, not these
+two changed files, so no generated producer/pin refresh is required.
+Independent local original reviewv2 SHA256:
+`58872c8239a3c6b3fd5b5c69ca0ed7b53b0843702898dbd8f10e42900ff92e15`.
+Originalv1 is retained; v2 corrects only its30-file/30-case wording.
+Evidence: primary ignored validation/runtime-stability-20261103/.
+
+## Actual cache cleanup
+
+Inventory338 exact cache roots across44 related project worktrees; every candidate
+is Gitignored and has no tracked/uncommitted member. No worktree is removed.
+Retain13 editable egg-info directories,2 unknown-origin pycache directories and
+all frozen product/evaluator/venv/raw ZIP/evidence/configuration/Git paths.
+The archive audit found no additional exact recoverable expansion;7 name/size
+matches had different SHA256 content and remain intact.
+
+The reviewed create-only manifest SHA256 is
+`dbaefeac572bb25a9fcc360e31f8d3b944bad5b453a674d93df8c7f80201c9aa`.
+Executor SHA256:
+`c48eb06fcca6edfa37ccb6eb345c3ce83fbc12f174339a9ac8f046845e13498c`.
+Before removal it rechecks each member/root stat, Git status and open paths. It
+unlinks only fixed listed files through no-follow directory descriptors and
+removes only empty pinned directories. New files cannot be recursively consumed.
+Every root's start/result journal is flushed; partial removals are accounted.
+
+One execution removed337 unchanged cache roots, skipped the changed current
+Ruff cache, and had0 partial removals/stop failures. Removed allocation is
+1,061,830,656 bytes (0.9889068603515625GiB). Filesystem available bytes observed
+at execution rose from64,130,441,216 to65,185,705,984; these observations are
+reported separately and not equated with removed allocation. Earlier df changes
+include unrelated concurrent/APFS activity and are not claimed as cleanup gains.
+Original manifests, actions, receipts and review are under primary ignored
+validation/project-stability-cleanup-20261103/.
