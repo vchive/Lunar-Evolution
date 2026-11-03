@@ -1,7 +1,7 @@
 # Ordinary subject: independent public execution environment
 
-Status: prepared and offline checks passed, 2026-11-03. No new model attempt
-has started. PR219/220 are merged; software baseline is main7038fae1, tree
+Status: one new attempt finished, failed with invalid_tool_calls, 2026-11-03.
+PR219/220 are merged; software baseline is main7038fae1, tree
 25e55f36682d357aca05368e30731843a0277fe5. Reuse its completed software validation.
 
 The preceding extended steel attempt stopped at runtime/input_required after
@@ -105,9 +105,9 @@ production_admission=false and online_publication=false.
 - [x] Scope this independent experiment using the reviewed v2 draft.
 - [x] Implement and independently review private helpers and bounded check.
 - [x] Prepare new inputs; complete one fake batch and capability check.
-- [ ] Review concrete frozen manifest and push registration.
-- [ ] Run exactly one new attempt under existing user authorization.
-- [ ] Review originals and publish actual result without rerunning scoring.
+- [x] Review concrete frozen manifest and push registration.
+- [x] Run exactly one new attempt under existing user authorization.
+- [x] Review originals and publish actual result without rerunning scoring.
 
 No new full software CI is needed when tracked changes are documents only and
 the frozen product tree remains the accepted baseline. Run focused measurement
@@ -159,3 +159,22 @@ The outer supervision wrapper's executed original is retained separately as
 run-preparation-v1.executed.py; its later import cleanup was not rerun.
 
 These are preparation/interface results, not real model or RSI acceptance.
+
+## Actual outcome
+
+Registrationa2668db3 was verified remotely before manifest-bound authorization.
+The single attempt began2026-11-03T05:48:05.698813Z and failed rc2 after
+12.861271333415061 subject seconds, original child reaped/EOF and no signals.
+SixHTTP200 responses:five completed and the sixth rejected as invalid_tool_calls,
+with opt-in fixed category arguments_invalid_json. Accepted5rounds/10tools and
+20,135 partial tokens (input19,665/output470), cost unknown; rejected usage unknown.
+Two accepted direct python3.13 commands exited0. Both import observations match.
+No completed receipt/solution/evaluator/score, timeout or budget failure. Source/case/profile/
+evaluation environment checks pass and all240 actual product modules match.
+The existing JSON parser, budget and zero-retry behavior were not changed.
+Original evidence independent review3,705 bytes/SHA256:
+`674eb539250649814e10ed6bea188353d2a4f0fbdf28b49bc22334aff68e631b`.
+The review confirms failure and input/usage/process integrity, not acceptance.
+
+See [actual results](../../docs/ordinary-public-environment-acceptance-20261103.md).
+P0/nativeRSIP1 remain open, and production/publication authority remains false.

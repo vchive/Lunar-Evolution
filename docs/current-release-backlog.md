@@ -1,4 +1,26 @@
-# 当前发布工作台账（2026-11-03）
+# 当前发布工作台账（2026-11-03，环境变体实跑后）
+
+本轮完成[公开执行环境契约](../specs/061-subject-failure-diagnostics/ordinary-public-execution-environment.md)
+测量实现与单次实跑；产品源保持已验收main7038fae1，复用PR219完整CI。
+固定工具PATH/Python指纹、公开入口和独立评分process环境，原14文件/profile/evaluator
+不变。能力probe、一次4adapter/27拒绝/3环境seam检查通过；Ruff/compileall/diff通过。
+[实际结果](ordinary-public-environment-acceptance-20261103.md)失败：第6个HTTP200
+响应的工具参数JSON无效，日志类别arguments_invalid_json；5接纳轮/10工具、
+20135部分tokens/cost未知，subject12.861271秒/rc2/reaped/EOF，无完成回执或评分。
+两次直接python3.13工具命令成功，无本次环境询问/超时/超预算；不解释旧失败。
+
+| 优先级 | 当前必要剩余工作 |
+| --- | --- |
+| P0 | 普通模型真实完成并有效评分的case仍未通过。下一步调查已定位的工具参数JSON协议失败；现有原件无失败参数正文/错误位置/finish_reason，不能推断修复规则或自动放宽解析。保留所有旧失败，不续跑旧attempt或继续加预算。 |
+| P1 | 实际worker不可变输入消费、完整source/toolchain/driver保护和外部writer排除仍缺失，其后是accepted runtime/live owner、scheduler context、生产native RSI CLI与本地case验收。包含软件集成缺口，不仅是机器权限。复用现有stager/gateway/recovery，保持原gate及已拒绝方向停止。 |
+| P2 后置 | 远程evaluator、多机/分布式服务、模型训练不是当前必要交付。 |
+
+production_admission=false、online_publication=false。PR221收尾和合入核验另记。
+本轮独立测量原件在主区ignored validation/ordinary-public-environment-20261103/。
+
+> 以下保留前一阶段及历史原文；其“当前/下一步”等按当时状态理解。
+
+## 诊断切片关闭（2026-11-03）
 
 当前软件基线为PR219实际合main的 `55a1cf29f5fe3fb1c521fd145fbe8687fa15891b`，
 精确受测tree `2e1b83409ed0f1ce73f98a4fb06ca26f0b6d2565`。本轮
