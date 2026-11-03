@@ -223,6 +223,10 @@ def _bounded_process_bytes(
                     cleanup_ok = False
                 break
     finally:
+        # A guard may fail after the leader exits but before normal exit handling.
+        # Its private group can still contain descendants holding the output pipes.
+        if process is not None and cleanup_deadline is None:
+            terminate()
         if selector is not None:
             selector.close()
         for stream in streams:

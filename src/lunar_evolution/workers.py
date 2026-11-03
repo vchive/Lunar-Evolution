@@ -420,7 +420,9 @@ class WorkerService:
             root = self.workspace / "workers" / worker.id / attempt_id
             root.mkdir(parents=True, exist_ok=True)
             adapter.set_process_observer(observe)
-            for name, callback in (("set_continuation_guard", guard), ("set_process_released", released)):
+            for name, callback in (("set_continuation_guard", guard),
+                                   ("set_active_continuation_guard", guard),
+                                   ("set_process_released", released)):
                 setter = getattr(adapter, name, None)
                 if callable(setter):
                     setter(callback)
@@ -477,7 +479,8 @@ class WorkerService:
             try:
                 self._cleanup_attempt(worker.id, attempt_id, self.service_owner_id)
             finally:
-                for name in ("set_process_observer", "set_continuation_guard", "set_process_released"):
+                for name in ("set_process_observer", "set_continuation_guard", "set_process_released",
+                             "set_active_continuation_guard"):
                     setter = getattr(adapter, name, None)
                     if callable(setter):
                         try:

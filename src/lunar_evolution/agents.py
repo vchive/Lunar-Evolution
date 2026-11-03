@@ -468,6 +468,14 @@ class RuntimeAgentAdapter:
         if callable(setter):
             setter(guard)
 
+    def set_active_continuation_guard(self, guard: Callable[[], None] | None) -> None:
+        """Forward polling-safe checks separately from between-stage cleanup guards."""
+        if guard is not None and not callable(guard):
+            raise TypeError("active continuation guard must be callable or None")
+        setter = getattr(self.runtime, "set_active_continuation_guard", None)
+        if callable(setter):
+            setter(guard)
+
     def set_process_released(self, released: ProcessObserver | None) -> None:
         """Forward verified process-release observations when the runtime supports them."""
         if released is not None and not callable(released):

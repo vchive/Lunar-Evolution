@@ -179,7 +179,9 @@ class AgentLoopRuntime:
         self._last_invocation = InvocationDiagnostics()
         self._last_candidate_diagnostic: dict[str, object] | None = None
         self._continuation_guard: Callable[[], None] | None = None
+        self._active_continuation_guard: Callable[[], None] | None = None
         self._cancelled = Event()
+        self.tools.set_active_continuation_guard(self._check_active_continuation)
 
     def set_context(self, run_id: str, task_id: str, goal: str | None = None) -> None:
         """Attach durable identity for memory scoping and observability."""
@@ -228,6 +230,18 @@ class AgentLoopRuntime:
             raise TypeError("continuation guard must be callable or None")
         self._continuation_guard = guard
         self.tools.set_continuation_guard(guard)
+
+    def set_active_continuation_guard(self, guard: Callable[[], None] | None) -> None:
+        """Install a stop check safe to poll while a local command is running."""
+        if guard is not None and not callable(guard):
+            raise TypeError("active continuation guard must be callable or None")
+        self._active_continuation_guard = guard
+
+    def _check_active_continuation(self) -> None:
+        if self._cancelled.is_set():
+            raise SolveExecutionCancelled("solve")
+        if self._active_continuation_guard is not None:
+            self._active_continuation_guard()
 
     def _check_continuation(self) -> None:
         if self._continuation_guard is not None:

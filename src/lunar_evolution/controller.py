@@ -3310,16 +3310,22 @@ class LocalController:
                     if automatic_scope is not None and automatic_scope.verified:
                         observe, release = self.attempt_process_observers(run.id, attempt.id)
                         set_observer(observe)
-                        def guard() -> None:
+                        def active_guard() -> None:
                             current = self.store.get_run(run.id)
                             if current is None or current.status in {RunStatus.CANCELLED, RunStatus.FAILED}:
                                 raise SolveExecutionCancelled("contract")
                             if solve_control is not None:
                                 solve_control.check("contract")
+
+                        def guard() -> None:
+                            active_guard()
                             self.ensure_attempt_process_released(run.id, attempt.id)
                         set_guard = getattr(compiler_runtime, "set_continuation_guard", None)
                         if callable(set_guard):
                             set_guard(guard)
+                        set_active_guard = getattr(compiler_runtime, "set_active_continuation_guard", None)
+                        if callable(set_active_guard):
+                            set_active_guard(active_guard)
                         set_released = getattr(compiler_runtime, "set_process_released", None)
                         if callable(set_released):
                             set_released(release)
@@ -3470,7 +3476,7 @@ class LocalController:
                         del observer_error
                 with self._active_lock:
                     self._active_runtimes.pop(attempt.id, None)
-                for name in ("set_process_released", "set_continuation_guard"):
+                for name in ("set_process_released", "set_continuation_guard", "set_active_continuation_guard"):
                     reset_hook = getattr(compiler_runtime, name, None)
                     if callable(reset_hook):
                         try:
@@ -4476,7 +4482,7 @@ class LocalController:
         """Bind the existing runtime and optional local tools to one automatic attempt."""
         observe, release = self.attempt_process_observers(run_id, attempt_id, parent_id=parent_id)
 
-        def guard() -> None:
+        def active_guard() -> None:
             for target in (run_id, parent_id):
                 if target is None:
                     continue
@@ -4485,19 +4491,24 @@ class LocalController:
                     RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.SUCCEEDED,
                 }:
                     raise SolveExecutionCancelled("runtime")
+
+        def guard() -> None:
+            active_guard()
             self.ensure_attempt_process_released(run_id, attempt_id, parent_id=parent_id)
 
         with self._active_lock:
             self._active_runtimes[attempt_id] = self.runtime
         try:
             for name, callback in (("set_process_observer", observe), ("set_process_released", release),
-                                   ("set_continuation_guard", guard)):
+                                   ("set_continuation_guard", guard),
+                                   ("set_active_continuation_guard", active_guard)):
                 setter = getattr(self.runtime, name, None)
                 if callable(setter):
                     setter(callback)
             yield observe, release
         finally:
-            for name in ("set_process_observer", "set_process_released", "set_continuation_guard"):
+            for name in ("set_process_observer", "set_process_released", "set_continuation_guard",
+                         "set_active_continuation_guard"):
                 setter = getattr(self.runtime, name, None)
                 if callable(setter):
                     try:
