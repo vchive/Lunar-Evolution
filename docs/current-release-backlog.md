@@ -1,4 +1,27 @@
-# 当前发布工作台账（2026-11-03，稳定性切片）
+# 当前发布工作台账（2026-11-04，本地命令取消）
+
+[本轮修复](../specs/061-subject-failure-diagnostics/active-local-command-cancellation.md)
+已完成软件验收：接通执行中的本地命令取消，分开活动检查和阶段清理，保持进程组
+清理证明、原异常和旧调用参数。首批421pass/9fail与随后430pass分开保留；旧CI
+41684789946因9个参数兼容断言失败后取消，32success/4failure/9cancelled原件保留。
+修复后五完整文件123pass、52新增全过，Ruff/compileall/diff与源码来源核验通过。
+最终CI41692008154/attempt1全45success，三版每版28421pass+原134skip，
+52新增/旧61全过；history2294+24零skip/retry、83focused/65zero-skip通过。
+45原ZIP主审ccd8665d…、独审05e8b762…通过；精确受测treea82ef0b0…。
+三Markdown关闭复用同字节软件，实际main合入及完整来源等价核验另记原件。
+
+| 优先级 | 仍开放的必要事项 |
+| --- | --- |
+| 本轮软件集成 | 软件与原件审查已完成，PR223/main身份和文档关闭来源等价见本轮原件。 |
+| P0 | 普通模型真实完成并有效评分的case仍未通过；下一步补参数JSON失败的固定数值诊断，保留旧失败，不自动修补或重试。取消修复不证明该故障根因已解决。 |
+| P1 | 实际worker不可变输入消费、完整构建输入保护和外部writer排除，随后是accepted runtime/live owner、scheduler context与生产native RSI CLI/case验收。 |
+| P2 后置 | 远程evaluator、多机服务和模型训练。 |
+
+production_admission=false、online_publication=false。本轮无模型或评分；原件在
+ignored validation/active-local-command-cancellation-20261104/，旧ci/与新ci-corrected/
+分开保存；此前337缓存清理不重做，临时编译缓存已移除。下方保留历史记录。
+
+## 前一阶段：稳定性切片（2026-11-03）
 
 本轮[稳定性修复](../specs/061-subject-failure-diagnostics/runtime-input-stability.md)
 已开发：两JSON decode异常归类、Unicode模型名拒绝、有限工具预算校验。

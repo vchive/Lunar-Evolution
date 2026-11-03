@@ -230,8 +230,14 @@ def _bounded_process_bytes(
                 stream.close()  # type: ignore[union-attr]
             except OSError:
                 pass
-        if process is not None and process.poll() is None:
+        was_running = process is not None and process.poll() is None
+        if process is not None and cleanup_deadline is None:
+            # An exceptional exit must stop descendants even after the leader exits.
+            # Signal once, then retain the pre-signal reaping requirement below.
+            terminate()
+        elif process is not None and was_running:
             cleanup_ok = _kill_group(process) and cleanup_ok
+        if process is not None and was_running:
             try:
                 process.wait(timeout=PROCESS_CLEANUP_GRACE_SECONDS)
             except subprocess.TimeoutExpired:

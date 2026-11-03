@@ -28,6 +28,14 @@ class ToolError(ValueError):
     """A tool request is invalid or violates the local policy."""
 
 
+class _ActiveContinuationFailure(Exception):
+    """Carry an active stop through runner cleanup and ordinary tool-error handling."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__("active command continuation failed")
+        self.error = error
+
+
 @dataclass(frozen=True)
 class ToolResult:
     output: str
@@ -89,6 +97,7 @@ class LocalToolRegistry:
         self._worker_owner_id: str | None = None
         self._worker_parent_id: str | None = None
         self._continuation_guard: Callable[[], None] | None = None
+        self._active_continuation_guard: Callable[[], None] | None = None
 
     def set_process_observer(self, observer: Callable[[int, int | None], None] | None) -> None:
         self._process_observer = observer
@@ -101,6 +110,20 @@ class LocalToolRegistry:
         if guard is not None and not callable(guard):
             raise TypeError("continuation guard must be callable or None")
         self._continuation_guard = guard
+
+    def set_active_continuation_guard(self, guard: Callable[[], None] | None) -> None:
+        """Install a stop check safe to poll during local command execution."""
+        if guard is not None and not callable(guard):
+            raise TypeError("active continuation guard must be callable or None")
+        self._active_continuation_guard = guard
+
+    def _check_active_continuation(self) -> None:
+        if self._active_continuation_guard is not None:
+            try:
+                self._active_continuation_guard()
+            except Exception as exc:
+                # The runner must clean up before execute restores this exact error.
+                raise _ActiveContinuationFailure(exc) from exc
 
     def set_worker_context(
         self, service=None, owner_id: str | None = None, parent_worker_id: str | None = None,
@@ -390,6 +413,8 @@ class LocalToolRegistry:
             if name == "read_worker_result":
                 return self._read_worker_result(arguments)
             raise ToolError(f"unknown tool: {name}")
+        except _ActiveContinuationFailure as exc:
+            raise exc.error
         except (OSError, sqlite3.Error, ToolError, TypeError, ValueError, RuntimeError) as exc:
             return ToolResult(output=f"tool_error: {type(exc).__name__}: {exc}", success=False)
 
@@ -693,11 +718,16 @@ class LocalToolRegistry:
             timeout = min(timeout, remaining)
         from .candidate_execution_runner import _bounded_process_bytes
 
+        continuation_options = (
+            {"continuation_guard": self._check_active_continuation}
+            if self._active_continuation_guard is not None else {}
+        )
         stdout, stderr, status, returncode, error = _bounded_process_bytes(
             command, cwd=str(workspace),
             environment=(dict(os.environ) if self.command_environment is None else self.command_environment),
             timeout=timeout, output_limit=self.max_output_bytes, capture_limit=self.max_output_bytes,
             process_observer=self._process_observer, process_released=self._process_released,
+            **continuation_options,
         )
         if status == "timed_out":
             return ToolResult(
