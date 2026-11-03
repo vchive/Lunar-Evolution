@@ -51,10 +51,23 @@ class LocalToolRegistry:
         redactions: tuple[str, ...] = (),
         command_environment: dict[str, str] | None = None,
     ) -> None:
-        if command_timeout <= 0:
-            raise ValueError("command_timeout must be positive")
-        if max_output_bytes <= 0:
-            raise ValueError("max_output_bytes must be positive")
+        try:
+            invalid_timeout = (
+                isinstance(command_timeout, bool)
+                or not isinstance(command_timeout, (int, float))
+                or not math.isfinite(command_timeout)
+                or command_timeout <= 0
+            )
+        except OverflowError:
+            invalid_timeout = True
+        if invalid_timeout:
+            raise ValueError("command_timeout must be finite and positive")
+        if (
+            isinstance(max_output_bytes, bool)
+            or not isinstance(max_output_bytes, int)
+            or max_output_bytes <= 0
+        ):
+            raise ValueError("max_output_bytes must be a positive integer")
         self.allow_exec = allow_exec
         self.command_timeout = command_timeout
         self.max_output_bytes = max_output_bytes
