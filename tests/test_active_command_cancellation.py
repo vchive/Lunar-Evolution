@@ -136,7 +136,7 @@ def test_registry_active_guard_can_be_cleared_without_polling_boundary(tmp_path,
     active_calls = []
 
     def run(command, **kwargs):
-        guard = kwargs["continuation_guard"]
+        guard = kwargs.get("continuation_guard")
         passed_guards.append(guard)
         if guard is not None:
             guard()

@@ -110,3 +110,19 @@ retain original size/SHA and baseline bytes, with no overlap with the six change
 application modules. No generator, source pin or old attempt registration was
 refreshed. A future real acceptance must register the new source separately.
 No new model or evaluator call ran; complete software CI and integration remain.
+
+## CI compatibility correction
+
+The first CI run41684789946/attempt1 on head88f1c4b6 exposed nine existing
+`test_command_argv_diagnostic` parameter failures: an unconfigured tools registry
+passed the extra `continuation_guard=None` keyword to the process seam. Original
+JUnit and ZIP remain in the separate ignored `ci/` directory. This is a confirmed
+compatibility defect, not a flaky process result; the failed run is not acceptance.
+
+The correction omits the optional keyword entirely when no active hook is
+installed, and keeps forwarding the wrapper when one exists. The existing exact
+kwargs assertions remain unchanged. Only the new clear-hook fake reads the
+optional key with `get`; its assertions and all52 new cases are unchanged.
+Independent static review confirms AgentLoop still always installs its internal
+active check, preserving cancellation after clearing an external hook. Targeted
+compatibility checks and a fresh final matrix remain required.

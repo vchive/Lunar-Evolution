@@ -718,14 +718,16 @@ class LocalToolRegistry:
             timeout = min(timeout, remaining)
         from .candidate_execution_runner import _bounded_process_bytes
 
+        continuation_options = (
+            {"continuation_guard": self._check_active_continuation}
+            if self._active_continuation_guard is not None else {}
+        )
         stdout, stderr, status, returncode, error = _bounded_process_bytes(
             command, cwd=str(workspace),
             environment=(dict(os.environ) if self.command_environment is None else self.command_environment),
             timeout=timeout, output_limit=self.max_output_bytes, capture_limit=self.max_output_bytes,
             process_observer=self._process_observer, process_released=self._process_released,
-            continuation_guard=(
-                self._check_active_continuation if self._active_continuation_guard is not None else None
-            ),
+            **continuation_options,
         )
         if status == "timed_out":
             return ToolResult(
