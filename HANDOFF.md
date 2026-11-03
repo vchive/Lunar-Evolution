@@ -1,4 +1,28 @@
-# 唯一当前状态（2026-11-03，稳定性与空间清理）
+# 唯一当前状态（2026-11-04，本地命令取消）
+
+本轮[取消修复](specs/061-subject-failure-diagnostics/active-local-command-cancellation.md)
+已完成软件验收：AgentLoop取消可在本地命令执行期间触发，活动停止检查与Controller
+阶段清理分开，保留原进程组终止、回收和release证明。停止异常保留原对象与cause；
+没有active hook时保持原调用参数，旧runtime继续兼容。
+首批22文件为421pass/9fail，修正清理逻辑和spawn入口后另跑同22文件430pass；
+首轮CI41684789946因额外None关键字触发9个旧断言失败，最终completed/cancelled，
+45job为32success/4failure/9cancelled（含3个上游保护拒绝），原件保留。
+兼容修复冻结d807cc617eeb5d435a902c52a24425ac9688dbdd，五完整文件123pass、
+零fail/error/skip，52新增全过，234实际加载模块匹配。Ruff/compileall/diff通过。
+最终CI41692008154/attempt1全45success；Python3.11.17/3.12.15/3.13.17每版
+28555项=28421pass+原134skip，52新增/旧61全过，无旧键删除；history2294+24
+零skip/retry，83focused/65zero-skip通过。45原ZIP共21898389字节，未展开；
+原件主审ccd8665d…及独审05e8b762…通过。精确受测merge5a29e777…/treea82ef0b0…。
+本次关闭仅更新三Markdown，受测软件/测试/workflow/pins保持同字节；来源等价和
+实际PR223/main合入身份另记同目录原件，不把关闭文档tree称为原受测tree。
+证据在主区ignored validation/active-local-command-cancellation-20261104/；旧ci/
+与最终ci-corrected/分开。此前337缓存清理不重做，本轮临时编译缓存已移除。
+普通模型完成并有效评分的P0、nativeRSI P1仍开放；production/publication保持false。
+下一P0先补工具参数JSON失败的固定解码类别/数字位置及归一化finish_reason诊断，
+窄范围草案在本轮ignored目录；不修补JSON、不重试、不回填旧失败。本轮没有模型或评分。
+以下为前一阶段及更早历史，旧“当前/尚未实现”按原时点理解。
+
+## 前一阶段：稳定性与空间清理（2026-11-03）
 
 本轮[稳定性SDD](specs/061-subject-failure-diagnostics/runtime-input-stability.md)
 已实现三类本地修复：JSON decode的ValueError/RecursionError进入原固定拒绝，

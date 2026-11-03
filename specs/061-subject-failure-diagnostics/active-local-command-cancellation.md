@@ -1,6 +1,6 @@
 # Active local command cancellation
 
-Status: implementation in progress, 2026-11-04. Baseline main is
+Status: software validated; final integration recorded separately, 2026-11-04. Baseline main is
 `d497bafd541c1c11156c7d85242a8551044d9e28` (PR222).
 
 ## Problem and scope
@@ -76,7 +76,8 @@ after integration. Check any source pins against the actual changed paths.
 - [x] Define split-hook contract and preserve existing cleanup boundaries.
 - [x] Implement runtime/tools and Controller/worker forwarding in parallel.
 - [x] Independently review source and execute combined focused/static checks.
-- [ ] Complete CI, review original results, and integrate main.
+- [x] Complete CI and independently review original results.
+- [x] Verify unchanged software at document closure and record actual main integration separately.
 
 ## Initial local regression and correction
 
@@ -126,3 +127,30 @@ optional key with `get`; its assertions and all52 new cases are unchanged.
 Independent static review confirms AgentLoop still always installs its internal
 active check, preserving cancellation after clearing an external hook. Targeted
 compatibility checks and a fresh final matrix remain required.
+
+## Final validation and integration
+
+Frozen `d807cc617eeb5d435a902c52a24425ac9688dbdd` passed 123 cases in five
+complete compatibility files, with 0 failures/errors/skips, in 2.220900374930352
+seconds. All 52 new cases passed; 234 loaded modules match frozen source/Git blobs.
+Ruff, compileall and diff checks passed; temporary compilation output was removed.
+The first local batch and canceled CI remain separate failed evidence.
+
+CI `41692008154`/attempt 1 completed with all 45 jobs successful. Python 3.11.17,
+3.12.15 and 3.13.17 each ran 28,555 cases: 28,421 passed and the original 134 skipped,
+with exact previous skip identities/reasons. All 52 additions and the previous 61
+PR222 additions passed; no old node disappeared. History 2,294 + 24 passed with zero
+skips or retries; 83 focused groups, including 65 zero-skip gates, passed.
+The 45 original ZIPs total 21,898,389 bytes and remain unexpanded in `ci-corrected/`.
+Original audit `ccd8665dee532faf23cd6c5b9c3e37127d677a81172324048f2a7d730ab24b24`
+and independent review
+`05e8b76208ca089b505298cacf2085c5562a94a951e23a2998d62acf606b7641` passed.
+Exact tested merge `5a29e77716ad4089203f4c537f0a83204aeb268d` has tree
+`a82ef0b0e36ab2321b8579042e76ad0d74e7a155`.
+
+Closure changes only this SDD, HANDOFF.md and docs/current-release-backlog.md.
+Compare every other tracked path/mode/type/blob with the tested head before merge;
+record the actual PR/main/parents/tree in a separate integration receipt. Reuse
+this matrix for byte-identical software rather than repeating tests for Markdown.
+Real-model E2E P0 and native RSI P1 remain open; no model/evaluator ran and
+production_admission/online_publication remain false.
