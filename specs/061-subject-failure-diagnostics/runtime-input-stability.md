@@ -1,6 +1,6 @@
 # Runtime input stability and recoverable artifact cleanup
 
-Status: implemented/local checks and cleanup complete; final CI pending, 2026-11-03.
+Status: implemented; local checks, cleanup and complete CI passed, 2026-11-03.
 Baseline is accepted
 mainfab7458a (PR221). The user requested system stability and project space
 cleanup. These locally identified robustness defects are not established causes
@@ -11,7 +11,7 @@ No model inference, retry, response repair or scoring is part of this slice.
 
 1. CPython JSON decoding may raise RecursionError for nested input and ValueError
    for an integer exceeding its configured decimal conversion limit. The outer
-   response and string tool-argument decoders currently catch JSONDecodeError only,
+   response and string tool-argument decoders previously caught JSONDecodeError only,
    so these failures bypass ModelRequestFailure and lose fixed request evidence.
    Catch ValueError (including JSONDecodeError) and RecursionError at exactly those
    existing decode boundaries. Preserve invalid_json for outer response and
@@ -27,7 +27,7 @@ No model inference, retry, response repair or scoring is part of this slice.
    response acceptance and usage ordering stay unchanged. Do not redact or alter
    provider strings to force acceptance.
 
-3. LocalToolRegistry constructor currently accepts NaN/infinite command timeouts
+3. LocalToolRegistry constructor previously accepted NaN/infinite command timeouts
    because a positivity comparison alone is insufficient. With no invocation
    deadline these values defeat finite timeout comparison. Noninteger output
    limits can likewise bypass comparisons or fail during capture slicing.
@@ -82,7 +82,8 @@ recursive project wipe or unrelated worktree removal.
 - [x] Implement decoder/identity and constructor bounds with focused tests.
 - [x] Review integrated source; run one focused batch and static checks.
 - [x] Inventory, review and delete only recoverable project artifacts.
-- [ ] Complete final CI/source/evidence checks and integrate main.
+- [x] Complete final CI and original source/evidence checks.
+- [x] Pass independent final original-evidence review; retain actual merge receipts separately.
 
 Ordinary-model E2E P0 and native RSI P1 remain open. Passing this robustness slice
 does not establish provider reliability, benchmark success or native immutable
@@ -95,10 +96,10 @@ Frozen6c43f15a ran one14-file batch:538 tests,532pass/6fail/0error/0skip in
 Python3.13.12's C JSON decoder accepted the chosen nesting depth, so later shape
 checks rejected it correctly. This does not establish a product regression.
 The original batch remains failed and all originals are retained. Only the new
-fixture is being corrected to exercise the standard-library Python decoder's
-real recursion guard safely; product code and existing tests remain unchanged.
-After that correction, run the affected new test file once and use final CI
-for whole-suite acceptance, without repeating the prior14-file batch.
+fixture was corrected to exercise the standard-library Python decoder's
+real recursion guard safely; product code and existing tests remained unchanged.
+The affected new test file was then run once, as recorded below. Final CI provides
+whole-suite acceptance without repeating the prior14-file local batch.
 
 The fixture-only correction at18834a89 passed the affected30-case new file once,
 in0.8841384998522699 seconds, zero failure/error/skip, rc0/reaped and no signals.
@@ -140,3 +141,30 @@ reported separately and not equated with removed allocation. Earlier df changes
 include unrelated concurrent/APFS activity and are not claimed as cleanup gains.
 Original manifests, actions, receipts and review are under primary ignored
 validation/project-stability-cleanup-20261103/.
+
+Independent cleanup-result review passed, SHA256:
+`5bb0500b06496a0d6209195fb478bcd41e548a845179e969e81bb1f9aecb8dee`.
+It checks337 removed roots,33,904 members and457 directories against the exact
+inventory; the changed Ruff root has zero removals and remains intact.
+
+## Complete CI record
+
+PR222 head `77eaee75800c5b96836b15c42603e88ad57777b7` ran CI41628454974,
+attempt1, with45 successful jobs. The actual checkout is merge
+`a13590af596235179701c8044740bb1d5a474fb3`, tree
+`2d652f244143ca318e9ddd194241763996b9c98f`, parents
+fab7458a521590fce29ec024855df504a072aece and the tested head above.
+Python3.11.17/3.12.15/3.13.17 each recorded28,503 current tests:
+28,369pass,134 unchanged baseline skips,0 failures/errors. All61 additions and
+the156 PR219 additions passed; no prior node was removed. Historical2294+24
+passed with zero skips or retries;83 focused groups/65 zero-skip groups passed.
+
+All45 original ZIPs,21,874,772 bytes, remain unexpanded. The original-ZIP audit
+SHA256 is `1952a7a2bec38b3b912c5b0e1d0e080be765c95ef0ade9b77fd212f9924ce7c8`.
+Independent original-ZIP reviewv2 passed, SHA256
+`d6045f3c392958832158bc46a97f13a21826cd46818fddb78fb1e34fefa71eec`.
+That review and final merge/source-equivalence receipts are retained in the
+same ignored CI directory. Closing updates affect only HANDOFF.md, the
+release backlog and this SDD; every other path/mode/blob must match the tested
+head. Record closing and actual merge trees separately from the CI tree.
+This evidence reuse does not rerun tests or change the original CI identities.
