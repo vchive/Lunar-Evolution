@@ -75,7 +75,7 @@ after integration. Check any source pins against the actual changed paths.
 - [x] Inspect main, source, existing cancellation tests and previous audit.
 - [x] Define split-hook contract and preserve existing cleanup boundaries.
 - [x] Implement runtime/tools and Controller/worker forwarding in parallel.
-- [ ] Independently review source and execute combined focused/static checks.
+- [x] Independently review source and execute combined focused/static checks.
 - [ ] Complete CI, review original results, and integrate main.
 
 ## Initial local regression and correction
@@ -96,3 +96,17 @@ script ran pytest at import time, so multiprocessing spawn reentered the suite.
 A separate create-only childv2 puts execution behind `if __name__ == "__main__"`.
 The failed original remains failed; the corrected source/harness need a fresh
 combined run, not a relabelling of the first result.
+
+Frozen `c33b7aad3e479e723b032e2529e5188f396c248f` then ran the same22 files
+once using the corrected entrypoint:430 passed,0 failures/errors/skips,
+23.92281537503004 seconds,rc0,reaped,no watchdog signals. All52 new cases passed;
+existing tests and all test source bytes remained unchanged by the correction.
+The whole original failed batch and successful corrected batch are separate.
+Ruff over src/tests/tools, compileall and git diff --check passed; the newly
+generated compile cache was removed (31,571,862 file bytes).
+
+Fixed producer/build registry inputs are unchanged: the26 unique fixed assets
+retain original size/SHA and baseline bytes, with no overlap with the six changed
+application modules. No generator, source pin or old attempt registration was
+refreshed. A future real acceptance must register the new source separately.
+No new model or evaluator call ran; complete software CI and integration remain.
