@@ -74,6 +74,25 @@ after integration. Check any source pins against the actual changed paths.
 
 - [x] Inspect main, source, existing cancellation tests and previous audit.
 - [x] Define split-hook contract and preserve existing cleanup boundaries.
-- [ ] Implement runtime/tools and Controller/worker forwarding in parallel.
+- [x] Implement runtime/tools and Controller/worker forwarding in parallel.
 - [ ] Independently review source and execute combined focused/static checks.
 - [ ] Complete CI, review original results, and integrate main.
+
+## Initial local regression and correction
+
+Frozen `1f0e05d3e0eee8311418008726483a102bbea53c` ran one22-file batch:
+430 tests,421 passed,9 failed,0 errors/skips,31.772470499854535 seconds. Originals
+remain under ignored validation/active-local-command-cancellation-20261104/local/.
+Eight failures concern new/previous active cleanup and the existing deterministic
+reap-wait assertion. A single instrumented local runner probe showed two group
+kill attempts; the second returned false even though subsequent group-exit proof
+was true, preventing release. Do not infer an OS errno from that boolean trace.
+
+The correction captures whether the leader still needs reaping before signalling,
+terminates a previously unterminated private group once even after leader exit,
+and retains the existing bounded wait and release conditions. No test assertion
+or cleanup proof is weakened. The ninth failure is the test harness: its child
+script ran pytest at import time, so multiprocessing spawn reentered the suite.
+A separate create-only childv2 puts execution behind `if __name__ == "__main__"`.
+The failed original remains failed; the corrected source/harness need a fresh
+combined run, not a relabelling of the first result.
