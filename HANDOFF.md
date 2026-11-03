@@ -1,4 +1,34 @@
-# 唯一当前状态（2026-11-03，公开执行环境实跑后）
+# 唯一当前状态（2026-11-03，稳定性与空间清理）
+
+本轮[稳定性SDD](specs/061-subject-failure-diagnostics/runtime-input-stability.md)
+已实现三类本地修复：JSON decode的ValueError/RecursionError进入原固定拒绝，
+孤立surrogate模型名进入invalid_model_identity，工具constructor拒绝非法非有限
+时间及非正整数输出上限。无JSON修补/重试/预算增加，不称为PR221实跑根因。
+两个新文件61例：原14文件538批次532pass/6个新recursion夹具失败原件保留；
+夹具改用隔离stdlib Python decoder真实guard后，新30例补验全过0.884139秒。
+产品两提交同字节；旧477与31工具新例在首批全过，不合称538全过。
+Ruff/compileall/diff通过，240/235模块来源匹配，local独审v2 58872c82…通过。
+PR222受测head77eaee75800c5b96836b15c42603e88ad57777b7，原CI41628454974/
+attempt1全45success。三版Python3.11.17/3.12.15/3.13.17每版实际28503项，
+即28369pass+原134skip；61新增与PR219的156旧新增均全过，无旧键移除。
+history2294+24零skip/retry，83focused/65zero-skip通过。45原ZIP共21874772字节，
+未展开；原件主审1952a7a2…及独审d6045f3c…通过。精确受测merge
+a13590af…/tree2d652f24…，最终main合入身份在同目录原件中另记。
+此收尾只更新三Markdown，
+软件/测试/workflow/pins保持受测字节，复用原CI避免重复矩阵。
+PR221已合main fab7458a，普通模型失败/P0开放结论不变。
+空间清理已实际删除337处可重建缓存，1处当前Ruff缓存因变化跳过，0partial，
+释放allocated1061830656字节（约0.989GiB）；无worktree删除。原ZIP/源码快照/
+evaluator/venv/.env/失败原件/未提交修改保留。精确清单、逐项动作与receipt在主区
+ignored validation/project-stability-cleanup-20261103/。df变化与该分配量分开报告。
+清理结果独审5bb0500b…通过，337个根/33904成员/457目录与清单精确匹配。
+本轮未调用真实模型、WebAgent、远程evaluator或公司评测平台。
+P0真实普通模型E2E和nativeRSIP1仍开放；production/publication保持false。
+后续稳定性还需分离活动停止guard和Controller阶段清理guard，再接通本地命令
+执行期间的AgentLoop取消；不能直接转发旧guard，避免误清理合法活动进程。
+这项目前仅有只读审计，未实现，不能由本轮CI声称已覆盖。
+
+## 前一阶段：公开执行环境实跑（2026-11-03）
 
 本轮[执行环境契约](specs/061-subject-failure-diagnostics/ordinary-public-execution-environment.md)
 已实现为独立测量helper：固定subject PATH/解释器指纹、公开入口和独立评分环境，

@@ -845,7 +845,7 @@ class OpenAICompatibleRuntime:
                 )
             try:
                 payload = json.loads(raw.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            except (ValueError, RecursionError) as exc:
                 raise ModelRequestFailure(
                     "model endpoint returned malformed JSON", "invalid_json", observed_status,
                 ) from exc
@@ -866,12 +866,19 @@ class OpenAICompatibleRuntime:
                     observed_status,
                 )
             response_model = payload.get("model")
-            if response_model is not None and (
-                not isinstance(response_model, str)
-                or not response_model.strip()
-                or len(response_model.encode("utf-8")) > 512
-                or "\x00" in response_model
-            ):
+            try:
+                invalid_model_identity = response_model is not None and (
+                    not isinstance(response_model, str)
+                    or not response_model.strip()
+                    or len(response_model.encode("utf-8")) > 512
+                    or "\x00" in response_model
+                )
+            except UnicodeEncodeError as exc:
+                raise ModelRequestFailure(
+                    "model endpoint returned an invalid model identity", "invalid_model_identity",
+                    observed_status,
+                ) from exc
+            if invalid_model_identity:
                 raise ModelRequestFailure(
                     "model endpoint returned an invalid model identity", "invalid_model_identity",
                     observed_status,
@@ -1044,7 +1051,7 @@ class OpenAICompatibleRuntime:
             if isinstance(raw_arguments, str):
                 try:
                     raw_arguments = json.loads(raw_arguments)
-                except json.JSONDecodeError as exc:
+                except (ValueError, RecursionError) as exc:
                     raise ModelRequestFailure(
                         "model returned malformed tool arguments", "invalid_tool_calls", response_status,
                         tool_call_error_category=ToolCallErrorCategory.ARGUMENTS_INVALID_JSON,

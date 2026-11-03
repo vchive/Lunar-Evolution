@@ -1,4 +1,32 @@
-# 当前发布工作台账（2026-11-03，环境变体实跑后）
+# 当前发布工作台账（2026-11-03，稳定性切片）
+
+本轮[稳定性修复](../specs/061-subject-failure-diagnostics/runtime-input-stability.md)
+已开发：两JSON decode异常归类、Unicode模型名拒绝、有限工具预算校验。
+保持原解析接受规则/请求/重试/usage顺序，不据此解释PR221无效JSON根因。
+新增61例已分别通过（首批538=532pass/6fixture失败，随后单文件30pass），
+原失败保留；Ruff/compileall/diff和实际模块来源核验通过。
+PR222原CI41628454974/attempt1全45success，三版每版28503项=
+28369pass+原134skip；61新增与PR219的156旧新增全过，无旧键移除。
+history2294+24零skip/retry、83focused/65zero-skip通过，45原ZIP未展开保留，
+原件主审1952a7a2…及独审d6045f3c…通过；最终main身份另记原件。
+本次收尾只改三Markdown，
+复用软件/测试/workflow/pins不变的原矩阵，不能把新关闭tree称为原受测tree。
+已删除337缓存根的1061830656 allocated bytes，1处变化的缓存跳过，0partial；
+配置/原始归档/验收证据/源码快照/venv和未提交修改保留，无worktree删除。
+
+| 优先级 | 仍开放的必要事项 |
+| --- | --- |
+| 本轮软件集成 | 完整CI、原件主审及独审已过；三Markdown来源等价及最终main核验记录在本轮证据目录。 |
+| P0 | 普通模型真实完成及有效评分的case。PR221已合main fab7458a，单次实跑第6响应因arguments_invalid_json失败；不能由本轮健壮性修复声称已修根因。 |
+| P1 | 实际不可变worker输入消费、完整构建输入保护和外部writer排除，之后是accepted runtime/live owner、scheduler context和生产CLI/case验收。 |
+| 后续稳定性 | AgentLoop取消需要接通正在执行的本地命令；先区分活动停止检查与Controller阶段清理，不能直接复用旧guard。当前仅完成只读审计，尚未实现。 |
+| P2 后置 | 远程evaluator、多机服务和模型训练。 |
+
+没有新模型或评分；production_admission=false、online_publication=false。
+本轮软件证据在ignored validation/runtime-stability-20261103/，清理证据另存
+validation/project-stability-cleanup-20261103/。下方保留先前状态与所有失败分母。
+
+## 前一阶段：环境变体实跑（2026-11-03）
 
 本轮完成[公开执行环境契约](../specs/061-subject-failure-diagnostics/ordinary-public-execution-environment.md)
 测量实现与单次实跑；产品源保持已验收main7038fae1，复用PR219完整CI。
