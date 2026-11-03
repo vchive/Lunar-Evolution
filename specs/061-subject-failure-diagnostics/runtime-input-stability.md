@@ -44,7 +44,10 @@ Existing schemas1–8 and six category labels remain intact.
 
 Develop these disjoint files in parallel; add focused tests before one batched
 regression. Synthetic HTTP responses only for decoding/identity; command process
-seams only for limit validation. Cover actual interpreter decode limits, both
+seams only for limit validation. Cover the real default integer conversion limit
+and the isolated standard-library Python decoder's recursion guard through its
+existing loads seam; do not infer the C decoder's stack limit from Python's
+getrecursionlimit or probe dangerously deep native stacks. Cover both
 direct/bounded seams, normal controls and existing syntax rejection, fixed log
 privacy/default silence, batch atomicity and no usage acceptance. Test invalid
 limits before process launch and preserve valid defaults/deadline behavior.
@@ -83,3 +86,15 @@ recursive project wipe or unrelated worktree removal.
 Ordinary-model E2E P0 and native RSI P1 remain open. Passing this robustness slice
 does not establish provider reliability, benchmark success or native immutable
 worker acceptance. production_admission=false; online_publication=false.
+
+## Local verification record
+
+Frozen6c43f15a ran one14-file batch:538 tests,532pass/6fail/0error/0skip in
+20.19634808320552 seconds. The six failures are new recursion-fixture assumptions:
+Python3.13.12's C JSON decoder accepted the chosen nesting depth, so later shape
+checks rejected it correctly. This does not establish a product regression.
+The original batch remains failed and all originals are retained. Only the new
+fixture is being corrected to exercise the standard-library Python decoder's
+real recursion guard safely; product code and existing tests remain unchanged.
+After that correction, run the affected new test file once and use final CI
+for whole-suite acceptance, without repeating the prior14-file batch.

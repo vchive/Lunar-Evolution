@@ -1,4 +1,9 @@
-"""Real local decoder limits with fixture responses; no provider or tool process."""
+"""Local decoder failures with fixture responses; no provider or tool process.
+
+Recursion uses the isolated stdlib Python decoder at the existing loads seam;
+it does not assume the default C decoder shares Python's recursion threshold.
+Decimal conversion exercises the active default decoder limit unchanged.
+"""
 
 import hashlib
 import json
@@ -6,6 +11,7 @@ import logging
 import socket
 import subprocess
 import sys
+from json.scanner import py_make_scanner
 
 import pytest
 from test_model_failure_evidence import observer_payload
@@ -46,12 +52,31 @@ def private_absent(value):
     assert all(secret not in encoded for secret in (PRIVATE, ENDPOINT, KEY, MESSAGE))
 
 
-def fragment(kind):
-    """Reach CPython's active limits without changing any interpreter setting."""
+def fragment(monkeypatch, kind):
+    """Exercise guarded stdlib decoding without changing interpreter settings."""
     if kind == "recursion":
         depth = sys.getrecursionlimit() + 100
         assert depth < 100_000, "fixture refuses an unexpectedly high recursion limit"
-        return '[' * depth + '0' + ']' * depth, RecursionError
+        damaged = '[' * depth + '0' + ']' * depth
+        decoder = json.JSONDecoder()
+        decoder.scan_once = py_make_scanner(decoder)
+        # C and Python decoder recursion thresholds differ between CPython
+        # versions. The stdlib Python scanner reaches the Python guard without
+        # probing a native C-stack limit or changing any process-wide setting.
+        with pytest.raises(RecursionError):
+            decoder.decode(damaged)
+        original_loads = json.loads
+
+        def isolated_decode(value, *args, **kwargs):
+            if type(value) is str and value == damaged:
+                assert not args and not kwargs
+                return decoder.decode(value)
+            return original_loads(value, *args, **kwargs)
+
+        # Only this exact fixture input uses the isolated Python decoder.
+        # Valid response envelopes, requests and diagnostic JSON keep loads.
+        monkeypatch.setattr(rt.json, "loads", isolated_decode)
+        return damaged, RecursionError
     if kind == "integer":
         digits = sys.get_int_max_str_digits()
         if digits == 0:
@@ -62,8 +87,8 @@ def fragment(kind):
     return '{"' + PRIVATE + '":', json.JSONDecodeError
 
 
-def response(point, kind):
-    damaged, cause = fragment(kind)
+def response(monkeypatch, point, kind):
+    damaged, cause = fragment(monkeypatch, kind)
     if point == "body":
         # Encoding is ordinary UTF-8. json.loads itself must encounter the limit.
         return damaged.encode(), cause
@@ -140,10 +165,10 @@ def assert_failure(error, requests, tmp_path, *, reason, category, message, caus
 @pytest.mark.parametrize("point", ["body", "arguments"])
 @pytest.mark.parametrize("kind", ["recursion", "integer", "syntax"])
 @pytest.mark.parametrize("bounded", [False, True])
-def test_actual_decoder_failures_keep_existing_typed_rejection_and_diagnostics(
+def test_decoder_failures_keep_existing_typed_rejection_and_diagnostics(
     monkeypatch, caplog, tmp_path, point, kind, bounded,
 ):
-    raw, cause = response(point, kind)
+    raw, cause = response(monkeypatch, point, kind)
     runtime, requests = provider(monkeypatch, raw)
     # Cover both logging modes without duplicating every parser case.
     enabled = kind != "syntax"
@@ -243,7 +268,7 @@ def test_rejected_second_response_keeps_only_previous_usage_and_no_batch_effects
         reason, category = "invalid_model_identity", None
     else:
         point, kind = failure.split("_", 1)
-        rejected, _cause = response(point, kind)
+        rejected, _cause = response(monkeypatch, point, kind)
         reason = "invalid_json" if point == "body" else "invalid_tool_calls"
         category = None if point == "body" else rt.ToolCallErrorCategory.ARGUMENTS_INVALID_JSON
     runtime, requests = provider(monkeypatch, first, rejected)
