@@ -1,4 +1,25 @@
-# 唯一当前状态（2026-11-03）
+# 唯一当前状态（2026-11-03，公开执行环境实跑后）
+
+本轮[执行环境契约](specs/061-subject-failure-diagnostics/ordinary-public-execution-environment.md)
+已实现为独立测量helper：固定subject PATH/解释器指纹、公开入口和独立评分环境，
+复用现有PublicFile/entrypoint，无产品源码变更。准备probe确认Python3.13.12/
+pandas3.0.6；一次fake批次4adapter/27拒绝/3环境seam全过、234模块来源匹配。
+Ruff/compileall/diff通过，复用PR219软件CI，未重复全矩阵。
+新manifest04db3c81…已独审，登记a2668db3推送核验后单次DeepSeek实跑。
+结果失败：6次HTTP200中第6次arguments_invalid_json，5接纳轮/10工具，
+subject12.861271秒/rc2/reaped/EOF、无信号/超时/预算终止；两次直接python3.13
+工具命令均exit0。schema7保留20135部分tokens、费用与被拒绝响应用量未知。
+无完成receipt/solution/evaluator/评分，真实E2E P0仍开放。详见[实际结果](docs/ordinary-public-environment-acceptance-20261103.md)。
+下一P0调查已定位的工具参数JSON协议失败；没有失败参数正文/错误位置/finish_reason，
+不能据此选择自动修复规则、回填旧故障或继续增加预算。旧attempt不续跑。
+native RSI P1仍缺实际worker不可变输入消费、完整构建输入保护与外部writer排除，
+随后才有accepted runtime/live owner、scheduler context和生产CLI/复制case验收。
+没有新的独立必要编码小块，既有stager/gateway/recovery不重做，已拒绝方向不重试。
+P2远程评测/多机服务/训练仍后置，production_admission/online_publication保持false。
+原件在主区ignored validation/ordinary-public-environment-20261103/，不清理失败证据。
+本轮PR221结果与最终合入核验另记；下方为之前时点的软件/实跑记录。
+
+## 前一阶段：诊断切片关闭（2026-11-03）
 
 [诊断SDD](specs/061-subject-failure-diagnostics/model-failure-diagnostic-followups.md)
 已通过PR219合main `55a1cf29f5fe3fb1c521fd145fbe8687fa15891b`，精确受测tree
