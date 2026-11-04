@@ -1,3 +1,27 @@
+# 唯一当前状态（2026-11-04，工具参数 JSON 解码诊断）
+
+本轮[解码诊断](specs/061-subject-failure-diagnostics/tool-argument-decode-observations.md)
+已完成软件验收：固定解码类别、Unicode字符数、校验派生的位置/行列，以及实际
+选中choice的归一化finish_reason，仅进入可选失败日志。解析、HTTP字节、usage
+顺序、schema1–8、预算和零重试保持；日志仅含固定标签和数字。
+首批14文件619项为618pass/1个新fixture构造失败，发生在terminal调用前；原件保留。
+改为fresh dict构造后，完整safety64pass，零fail/error/skip；产品两批同字节。
+新增49+64分别通过，240/235实际模块匹配冻结Git，Ruff/compileall/diff及本地独审通过。
+原CI41766909351/attempt1全45success；受测head06f3368b…，merge840ad5ce…，
+tree7f4984ee…；Python3.11.17/3.12.15/3.13.17每版28668项=28534pass+原134skip。
+113新增/PR223旧52全过，无旧键删除；history2294+24零skip/retry，83focused/
+65zero-skip通过。45原ZIP共21964421字节未展开，主审d1e5b10c…、独审580a7aeb…通过。
+本次四Markdown关闭复用同字节软件；关闭tree与原受测tree分开，来源等价及实际
+PR224/main身份在合入原件中核验，不把软件CI称为真实模型或生产RSI验收。
+证据在主区ignored validation/tool-argument-decode-20261104/，local/与
+local-fixture-corrected/分开。独审包装器的UTC前置失败发生在checker启动前，原件
+单存；目标checker仅执行一次通过。1294项临时编译缓存已移除，既有清理不重做，
+原ZIP/源码快照/历史失败保留；producer/build pins保持。
+普通模型真实完成并有效评分的P0、nativeRSI P1仍开放；本轮无模型或评分。
+下一P0同case/model/profile的fresh attempt仅有准备清单和日志捕获链只读核验，
+尚无新manifest/launch/评分；production_admission=false、online_publication=false。
+以下保留历史原文，旧“当前/下一步”等仅按原时点理解。
+
 # 唯一当前状态（2026-11-04，本地命令取消）
 
 本轮[取消修复](specs/061-subject-failure-diagnostics/active-local-command-cancellation.md)

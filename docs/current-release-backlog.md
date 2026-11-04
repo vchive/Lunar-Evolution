@@ -1,3 +1,27 @@
+# 当前发布工作台账（2026-11-04，工具参数 JSON 解码诊断）
+
+[本轮诊断](../specs/061-subject-failure-diagnostics/tool-argument-decode-observations.md)
+已完成软件验收：新增固定解码类型、字符数/位置与所选choice的finish分类，仅扩展
+可选日志。原解析、请求、用量顺序、预算与零重试保持。
+首批619项618pass/1fixture构造失败与随后完整safety64pass分开保留；产品同字节，
+新增49+64分别通过；Ruff/compileall/diff、本地独审和240/235模块来源核验通过。
+原CI41766909351/attempt1全45success，三版每版28534pass+原134skip，113新增及
+PR223旧52全过，无旧键删除；history2294+24零skip/retry、83focused/65zero-skip通过。
+45原ZIP21964421字节未展开，主审d1e5b10c…、独审580a7aeb…通过；精确受测
+head06f3368b…/merge840ad5ce…/tree7f4984ee…。四Markdown关闭的来源等价与
+实际PR224/main身份单独核验，复用经确认同字节的软件CI。
+
+| 优先级 | 仍开放的必要事项 |
+| --- | --- |
+| 本轮软件集成 | 软件与原件审查已完成；四文档关闭等价及最终main身份由本轮原件核验。 |
+| P0 | 普通模型真实完成并有效评分的case。下一fresh同任务/模型/profile仅完成只读准备；尚无新manifest、launch或评分。诊断不重建旧JSON故障根因。 |
+| P1 | 实际worker不可变输入消费、完整构建输入保护及外部writer排除，随后是accepted runtime/live owner、scheduler context与生产native RSI CLI/case验收。 |
+| P2 后置 | 远程evaluator、多机服务和模型训练。 |
+
+production_admission=false、online_publication=false，本轮无模型或评分。原件在主区
+ignored validation/tool-argument-decode-20261104/；原失败/source快照/ZIP保留。
+临时编译缓存已移除，既有清理不重复。下方保留历史原文，其“当前”按原时点理解。
+
 # 当前发布工作台账（2026-11-04，本地命令取消）
 
 [本轮修复](../specs/061-subject-failure-diagnostics/active-local-command-cancellation.md)
