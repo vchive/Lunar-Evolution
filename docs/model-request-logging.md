@@ -43,6 +43,14 @@ CLI 的开关只在当前 subject 调用内使用专用 stderr handler，结束�
 的可选失败日志中出现，不记录 ID、名称、参数或响应正文；不改变解析、重试或
 receipt。未知或不可信 metadata 只省略分类，原失败原因仍保留。
 
+工具参数 JSON 无效时，还可出现 `tool_argument_decode`：
+
+- `decoder_category` 仅为 `json_syntax`、`value_error` 或 `recursion_error`；它描述本地解码异常类型，不判断服务端根因。
+- `argument_characters` 按 Unicode 字符计数；真实语法错误可附带从原串校验并推导的 `position`（从 0 开始）、`line` 和 `column`（从 1 开始）。
+- `finish_reason_category` 来自实际选中的第一条 choice message，只输出固定类别；未知字符串归为 `other_string`，不输出其原值。缺字段或顶层 fallback 不借用其他分支的结束原因。
+
+字段缺失或不可信时省略相应信息，原失败保留。该对象只出现在显式开启的失败日志中，不进入 receipt；不保存参数、异常文字，不修补 JSON 或重试。显式输出上限的原 `length` 提前拒绝仍优先执行。详见[解码诊断规格](../specs/061-subject-failure-diagnostics/tool-argument-decode-observations.md)。
+
 另一个独立的终态诊断改动是 schema8：任务因 `input_required` 暂停时，
 `*.failure.json` 可以保留此前已接纳响应的 `accepted_usage`，并固定标记
 `usage_completeness: "partial"`。没有有效的已接纳小计时仍使用 schema1。
