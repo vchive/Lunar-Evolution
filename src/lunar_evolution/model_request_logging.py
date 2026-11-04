@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from time import monotonic
 
 from .http_transport import (
+    MAX_BODY_BYTES,
     MAX_REQUEST_BYTES,
     _transport_error_category_value,
     normalize_transport_observation,
@@ -39,6 +40,48 @@ def _integer(value, maximum=_MAX_MS):
 
 def _status(value):
     return value is None or type(value) is int and 100 <= value <= 599
+
+
+def _tool_argument_decode_fields(value):
+    """Project only owned, bounded storage; optional detail never owns the outcome."""
+    try:
+        from .runtime import (
+            ToolArgumentDecodeObservation,
+            ToolArgumentDecoderCategory,
+            _tool_argument_decoder_category_value,
+            _tool_argument_finish_reason_category_value,
+        )
+
+        if type(value) is not ToolArgumentDecodeObservation:
+            return {}
+        stored = object.__getattribute__(value, "__dict__")
+        allowed = {"decoder_category", "argument_characters", "position", "line", "column",
+                   "finish_reason_category"}
+        if (type(stored) is not dict or len(stored) > len(allowed)
+                or any(type(key) is not str for key in stored) or not set(stored) <= allowed):
+            return {}
+        fields = {}
+        decoder = stored.get("decoder_category")
+        category = _tool_argument_decoder_category_value(decoder)
+        if category is not None:
+            fields["decoder_category"] = category
+        characters = stored.get("argument_characters")
+        if _integer(characters, MAX_BODY_BYTES):
+            fields["argument_characters"] = characters
+            position, line, column = (stored.get(key) for key in ("position", "line", "column"))
+            if (decoder is ToolArgumentDecoderCategory.JSON_SYNTAX
+                    and _integer(position, characters)
+                    and _integer(line, characters + 1) and line >= 1
+                    and _integer(column, characters + 1) and column >= 1
+                    and line + column <= position + 2
+                    and (line != 1 or column == position + 1)):
+                fields.update(position=position, line=line, column=column)
+        finish = _tool_argument_finish_reason_category_value(stored.get("finish_reason_category"))
+        if finish is not None:
+            fields["finish_reason_category"] = finish
+        return fields
+    except Exception:  # noqa: BLE001 - malformed optional storage cannot suppress terminal evidence
+        return {}
 
 
 @contextmanager
@@ -222,6 +265,15 @@ class ModelRequestLog:
                             category = None
                         if category is not None:
                             fields["tool_call_error_category"] = category
+                        if category == "arguments_invalid_json":
+                            try:
+                                detail = _tool_argument_decode_fields(
+                                    metadata.get("tool_argument_observation"),
+                                )
+                            except Exception:  # noqa: BLE001 - retain existing failure evidence
+                                detail = {}
+                            if detail:
+                                fields["tool_argument_decode"] = detail
                 fields["reason"] = reason
             self._emit("model_request_" + outcome, **fields)
         except Exception:  # noqa: BLE001 - preserve original outcome, including bad clocks

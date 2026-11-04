@@ -27,6 +27,7 @@ from urllib.parse import urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 from .http_transport import (
+    MAX_BODY_BYTES,
     MAX_REQUEST_BYTES,
     TransportErrorCategory,
     TransportFailure,
@@ -128,6 +129,153 @@ def _tool_call_error_category_value(value: object) -> str | None:
     return None
 
 
+class ToolArgumentDecoderCategory(Enum):
+    """Owned labels for exact exceptions at the existing argument decode boundary."""
+
+    JSON_SYNTAX = "json_syntax"
+    VALUE_ERROR = "value_error"
+    RECURSION_ERROR = "recursion_error"
+
+
+class ToolArgumentFinishReasonCategory(Enum):
+    """Bounded observations from only the choice whose message was selected."""
+
+    STOP = "stop"
+    LENGTH = "length"
+    TOOL_CALLS = "tool_calls"
+    FUNCTION_CALL = "function_call"
+    CONTENT_FILTER = "content_filter"
+    NULL = "null"
+    OTHER_STRING = "other_string"
+    INVALID_TYPE = "invalid_type"
+
+
+_TOOL_ARGUMENT_DECODER_CATEGORIES = (
+    ("json_syntax", ToolArgumentDecoderCategory.JSON_SYNTAX),
+    ("value_error", ToolArgumentDecoderCategory.VALUE_ERROR),
+    ("recursion_error", ToolArgumentDecoderCategory.RECURSION_ERROR),
+)
+_TOOL_ARGUMENT_FINISH_REASON_CATEGORIES = (
+    ("stop", ToolArgumentFinishReasonCategory.STOP),
+    ("length", ToolArgumentFinishReasonCategory.LENGTH),
+    ("tool_calls", ToolArgumentFinishReasonCategory.TOOL_CALLS),
+    ("function_call", ToolArgumentFinishReasonCategory.FUNCTION_CALL),
+    ("content_filter", ToolArgumentFinishReasonCategory.CONTENT_FILTER),
+    ("null", ToolArgumentFinishReasonCategory.NULL),
+    ("other_string", ToolArgumentFinishReasonCategory.OTHER_STRING),
+    ("invalid_type", ToolArgumentFinishReasonCategory.INVALID_TYPE),
+)
+
+
+def _tool_argument_decoder_category_value(value: object) -> str | None:
+    if type(value) is ToolArgumentDecoderCategory:
+        for label, category in _TOOL_ARGUMENT_DECODER_CATEGORIES:
+            if value is category:
+                return label
+    return None
+
+
+def _tool_argument_finish_reason_category_value(value: object) -> str | None:
+    if type(value) is ToolArgumentFinishReasonCategory:
+        for label, category in _TOOL_ARGUMENT_FINISH_REASON_CATEGORIES:
+            if value is category:
+                return label
+    return None
+
+
+@dataclass(frozen=True)
+class ToolArgumentDecodeObservation:
+    """Content-free optional detail; readers must independently validate its storage."""
+
+    decoder_category: ToolArgumentDecoderCategory | None = None
+    argument_characters: int | None = None
+    position: int | None = None
+    line: int | None = None
+    column: int | None = None
+    finish_reason_category: ToolArgumentFinishReasonCategory | None = None
+
+
+def _tool_argument_decode_observation(
+    arguments: object, error: BaseException,
+) -> ToolArgumentDecodeObservation | None:
+    """Inspect only exact built-in input and owned plain storage, never exception prose."""
+    try:
+        decoder_category = None
+        if type(error) is json.JSONDecodeError:
+            decoder_category = ToolArgumentDecoderCategory.JSON_SYNTAX
+        elif type(error) is ValueError:
+            decoder_category = ToolArgumentDecoderCategory.VALUE_ERROR
+        elif type(error) is RecursionError:
+            decoder_category = ToolArgumentDecoderCategory.RECURSION_ERROR
+        characters = None
+        if type(arguments) is str and len(arguments) <= MAX_BODY_BYTES:
+            characters = len(arguments)
+        position = line = column = None
+        if decoder_category is ToolArgumentDecoderCategory.JSON_SYNTAX and characters is not None:
+            metadata = object.__getattribute__(error, "__dict__")
+            if (type(metadata) is dict and len(metadata) <= 16
+                    and all(type(key) is str for key in metadata)
+                    and metadata.get("doc") is arguments):
+                offset = metadata.get("pos")
+                if type(offset) is int and 0 <= offset <= characters:
+                    position = offset
+                    line = str.count(arguments, "\n", 0, offset) + 1
+                    column = offset - str.rfind(arguments, "\n", 0, offset)
+        return ToolArgumentDecodeObservation(decoder_category, characters, position, line, column)
+    except Exception:  # noqa: BLE001 - optional observation must preserve the original rejection
+        return None
+
+
+def _add_tool_argument_finish_reason(failure: object, choice: object) -> None:
+    """Enrich the same rejected failure without consulting any unselected response branch."""
+    try:
+        if type(failure) is not ModelRequestFailure or type(choice) is not dict:
+            return
+        if (len(choice) > 16 or not all(type(key) is str for key in choice)
+                or "finish_reason" not in choice):
+            return
+        metadata = object.__getattribute__(failure, "__dict__")
+        if (type(metadata) is not dict or len(metadata) > 16
+                or not all(type(key) is str for key in metadata)
+                or metadata.get("tool_call_error_category")
+                is not ToolCallErrorCategory.ARGUMENTS_INVALID_JSON):
+            return
+        evidence = metadata.get("evidence")
+        if type(evidence) is not ModelFailureEvidence:
+            return
+        evidence_fields = object.__getattribute__(evidence, "__dict__")
+        if (type(evidence_fields) is not dict or len(evidence_fields) > 2
+                or not all(type(key) is str for key in evidence_fields)):
+            return
+        reason = evidence_fields.get("reason")
+        if type(reason) is not str or reason != "invalid_tool_calls":
+            return
+        observation = metadata.get("tool_argument_observation")
+        if type(observation) is not ToolArgumentDecodeObservation:
+            return
+        observed = object.__getattribute__(observation, "__dict__")
+        if (type(observed) is not dict or len(observed) > 6
+                or not all(type(key) is str for key in observed)):
+            return
+        value = choice["finish_reason"]
+        if value is None:
+            category = ToolArgumentFinishReasonCategory.NULL
+        elif type(value) is str:
+            category = ToolArgumentFinishReasonCategory.OTHER_STRING
+            for label, registered in _TOOL_ARGUMENT_FINISH_REASON_CATEGORIES[:5]:
+                if value == label:
+                    category = registered
+                    break
+        else:
+            category = ToolArgumentFinishReasonCategory.INVALID_TYPE
+        metadata["tool_argument_observation"] = ToolArgumentDecodeObservation(
+            observed.get("decoder_category"), observed.get("argument_characters"),
+            observed.get("position"), observed.get("line"), observed.get("column"), category,
+        )
+    except Exception:  # noqa: BLE001 - keep the same failure and cause if metadata is malformed
+        return
+
+
 MAX_REQUEST_OBSERVATION_MS = 10**12
 
 
@@ -162,6 +310,7 @@ class ModelRequestFailure(RuntimeExecutionError):
         self.request_fingerprint: ModelRequestFingerprint | None = None
         self.transport_error_category: TransportErrorCategory | None = None
         self.tool_call_error_category = tool_call_error_category
+        self.tool_argument_observation: ToolArgumentDecodeObservation | None = None
 
 
 def _request_fingerprint(body: object) -> ModelRequestFingerprint | None:
@@ -948,9 +1097,17 @@ class OpenAICompatibleRuntime:
                 message = choice.get("message")
                 if isinstance(message, dict):
                     text = OpenAICompatibleRuntime._content_to_text(message.get("content"))
-                    return text, OpenAICompatibleRuntime._parse_tool_calls(
-                        message.get("tool_calls"), response_status=response_status,
-                    )
+                    try:
+                        calls = OpenAICompatibleRuntime._parse_tool_calls(
+                            message.get("tool_calls"), response_status=response_status,
+                        )
+                    except ModelRequestFailure as failure:
+                        try:
+                            _add_tool_argument_finish_reason(failure, choice)
+                        except Exception:  # noqa: BLE001, S110 - preserve failure without prose logging
+                            pass
+                        raise
+                    return text, calls
                 text = OpenAICompatibleRuntime._content_to_text(choice.get("text"))
                 if text:
                     return text, ()
@@ -1052,10 +1209,17 @@ class OpenAICompatibleRuntime:
                 try:
                     raw_arguments = json.loads(raw_arguments)
                 except (ValueError, RecursionError) as exc:
-                    raise ModelRequestFailure(
+                    failure = ModelRequestFailure(
                         "model returned malformed tool arguments", "invalid_tool_calls", response_status,
                         tool_call_error_category=ToolCallErrorCategory.ARGUMENTS_INVALID_JSON,
-                    ) from exc
+                    )
+                    try:
+                        failure.tool_argument_observation = _tool_argument_decode_observation(
+                            raw_arguments, exc,
+                        )
+                    except Exception:  # noqa: BLE001, S110 - preserve rejection without prose logging
+                        pass
+                    raise failure from exc
             if not isinstance(raw_arguments, dict):
                 raise ModelRequestFailure(
                     "model tool arguments must be a JSON object", "invalid_tool_calls", response_status,
