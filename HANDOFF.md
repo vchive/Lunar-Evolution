@@ -1,3 +1,24 @@
+# 唯一当前状态（2026-11-04，解码诊断后独立 case）
+
+本轮[真实case验收](docs/ordinary-json-diagnostic-acceptance-20261104.md)失败，P0仍开放。
+第3次HTTP200工具参数JSON无效；新增固定诊断实际捕获json_syntax、390字符、
+position12/line1/column13、finish_reason=tool_calls。没有参数正文，不能推断具体
+字符或服务端根因。2接纳轮/5工具、schema7部分tokens4720（4543+177），费用及
+被拒绝响应用量未知。Subject5.261406秒/rc2/reaped/EOF，无超时/信号/预算终止；
+无完成receipt/solution/evaluator/评分。单次零重试，无修补或额外预算。
+冻结source85ff5f68…/tree4943c9a4…/2846文件308目录，manifest7410bytes/f2c6714e…；
+旧case15/public6/profile212/五helper同字节，原失败不续跑/覆盖。登记5037ec0a
+已push核验后绑定授权；实际request与独立预期相同，240实际模块和输入前后保持。
+一次4adapter/27拒绝/3环境seam全过，Ruff/compileall/diff通过，复用PR224软件CI。
+实际原件独审32项通过，仅确认失败记录，报告SHA b38e44b3…；准备/实际原件在
+主区ignored validation/ordinary-tool-argument-diagnostics-20261104/。
+本轮只集成测量文档；最终来源等价和实际main身份另记原件，不能称为新的软件CI。
+NativeRSIP1仍缺实际worker不可变输入消费、完整构建保护及外部writer排除，之后
+才有accepted runtime/live owner、scheduler context和生产CLI；仍有软件集成缺口。
+P2远程评测/多机服务/训练保持后置，production_admission=false、online_publication=false。
+原ZIP/source快照/每次失败保留，既有清理不重做，仅移除本轮临时编译缓存。
+以下保留前一阶段及历史原文，旧“当前/下一步”等仅按其时点理解。
+
 # 唯一当前状态（2026-11-04，工具参数 JSON 解码诊断）
 
 本轮[解码诊断](specs/061-subject-failure-diagnostics/tool-argument-decode-observations.md)

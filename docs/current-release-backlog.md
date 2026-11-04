@@ -1,3 +1,25 @@
+# 当前发布工作台账（2026-11-04，解码诊断后独立 case）
+
+[本轮真实结果](ordinary-json-diagnostic-acceptance-20261104.md)失败：第三HTTP200
+的工具参数JSON无效，实际诊断json_syntax/390字符/position12/line1/column13/
+finish_reason=tool_calls。Subject5.261406秒/rc2/reaped/EOF，无超时/预算终止，
+2轮/5工具/4720部分tokens；无完成receipt、提交、evaluator或评分。费用及拒绝
+响应用量未知，不修JSON、不重试、不加预算、不覆盖旧失败。
+Source85ff5f68…/tree4943c9a4…、case15/public6/profile212与五helper保持；
+4adapter/27拒绝/3环境seam与静态检查通过，实际240模块来源匹配，复用PR224软件CI。
+实际原件独审32项通过，仅确认失败，报告SHA b38e44b3…；本轮原件：
+ignored validation/ordinary-tool-argument-diagnostics-20261104/。
+
+| 优先级 | 当前状态与必要事项 |
+| --- | --- |
+| 本轮测量集成 | 仅更新验收文档，原件复核及最终main身份另记；不冒称新增软件CI或生产RSI验收。 |
+| P0 | 真实普通模型完成并有效评分仍未通过。schema/公开指令与实现只读核对未确认产品缺陷；下一协议修改先核实服务兼容契约或脱敏fixture，不猜strict支持、不加预算或放宽解析。 |
+| P1 | 实际worker不可变输入消费、完整构建保护和外部writer排除，随后是accepted runtime/live owner、首个scheduler context与生产nativeRSI CLI/case。它仍有软件集成缺口；不重试已拒绝方向。 |
+| P2 后置 | 远程evaluator、多机服务和模型训练。 |
+
+production_admission=false、online_publication=false。所有旧失败/ZIP/source保留，
+清理限本轮临时编译缓存；以下保留历史原文，旧“当前”等仅按其时点理解。
+
 # 当前发布工作台账（2026-11-04，工具参数 JSON 解码诊断）
 
 [本轮诊断](../specs/061-subject-failure-diagnostics/tool-argument-decode-observations.md)

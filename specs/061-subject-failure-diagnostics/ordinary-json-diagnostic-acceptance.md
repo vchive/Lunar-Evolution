@@ -1,8 +1,8 @@
 # Ordinary case after fixed JSON failure diagnostics
 
-Status: preparation and provider-free interface checks passed, 2026-11-04.
-No new model or evaluator execution has occurred. Continue the existing
-public-environment acceptance contract; do not redesign the task, parser or budget.
+Status: one independent model attempt finished, failed, 2026-11-04. No evaluator
+was invoked. Preserve the existing public-environment acceptance contract;
+do not redesign the task, parser or budget.
 
 ## Purpose and accepted source
 
@@ -83,9 +83,9 @@ actual outcome and integrate the measurement documents.
 - [x] Verify accepted software/main and existing experiment boundaries.
 - [x] Prepare and independently review the minimal successor helpers.
 - [x] Run the bounded preparation probe and provider-free interface batch.
-- [x] Review exact manifest/inputs and static checks; push this registration before launch.
-- [ ] Bind existing authorization and run one independent attempt.
-- [ ] Review originals, report actual outcome and integrate documents.
+- [x] Review exact manifest/inputs and static checks; push and verify registration before launch.
+- [x] Bind existing authorization and run one independent attempt.
+- [x] Review originals and report actual outcome in the integration documents.
 
 P0 remains open until genuine completion and valid local scoring. Native RSI P1
 is separate; its current prerequisites are reviewed in parallel without retrying
@@ -146,3 +146,35 @@ The original launcher/helpers and all model/evaluator budgets remain unchanged.
 The new real-launch supervisor also passes Ruff/compileall with its temporary
 cache removed; its exact7563 bytes/SHA256 is
 `f6a93a5b94eb9f5032f81a1033f2af22262eb9b098f69f76aaf8aef9b92305ea`.
+
+## Actual outcome
+
+Registration5037ec0ad0bb161cbaa0009f4bf8446eb7675e19 was pushed and its remote
+ref verified before fresh manifest-bound authorization. Independent real-launch
+supervisor review SHA256:
+`fe222c6d17bdb4d951602b23fc17daba6f53d983f0052e631134ad6dcfc248fb`.
+The single subject began2026-11-04T05:32:14.006193Z and exited2 in
+5.261406042147428seconds, original child reaped/EOF and no signals/timeout.
+Outer launcher supervision8.209862125106156seconds/rc2 also reaped/EOF/no signals.
+
+ThreeHTTP200 responses:2completed, third failed invalid_tool_calls, fixed category
+arguments_invalid_json. Actual tool_argument_decode is json_syntax,390Unicode
+characters, position12/line1/column13, finish_reason_category=tool_calls. This
+does not identify rejected content or a provider/gateway root cause. No raw
+argument/doc/exception prose was added. Actual request/profile protocol match
+the prepared hashes. Accepted2rounds/5tools; schema7 partial usage is4543input+
+177output=4720tokens, cost unknown, rejected-response usage unknown. No budget
+termination, completion receipt, root solution.csv, evaluator dispatch or score.
+
+Launch capability0.5792466253042221seconds/rc0 matches preparation. Source/case/
+profile/evaluator inventories before/after remain equal;240 actual product module
+origins match frozen source. Captures do not overflow; secret scan completed with
+10files/21800bytes and0matches. Full-group cleanup and immutable/OS-sandbox
+claims remain false. See the [actual result](../../docs/ordinary-json-diagnostic-acceptance-20261104.md)
+and original independent review in the fresh evidence root. P0/P1 remain open;
+no model or evaluator is rerun to replace this failed outcome.
+Independent actual-result review32 checks passed, accepting only the failed
+record,18,658bytes/SHA256:
+`b38e44b36727440422d34f4a75aaedee00dda4f2f5b5e02c823202d11c6572fb`.
+Its count of240 actual modules is separate from234 provider-free modules; all
+accepted tool results were2list_dir and3read_file, with no accepted command.
