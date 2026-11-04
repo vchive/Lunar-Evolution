@@ -224,8 +224,10 @@ def test_invalid_observation_storage_omits_detail_and_preserves_terminal_fields(
     elif mutation == "foreign_dictionary":
         object.__setattr__(detail, "__dict__", ForeignDict(detail.__dict__))
     elif mutation == "foreign_key":
-        detail.__dict__.pop("decoder_category")
-        detail.__dict__[ForeignKey(PRIVATE)] = PRIVATE
+        stored = {ForeignKey(PRIVATE): PRIVATE}
+        stored.update({key: value for key, value in detail.__dict__.items()
+                       if key != "decoder_category"})
+        object.__setattr__(detail, "__dict__", stored)
         callbacks.clear()
     elif mutation == "oversized_storage":
         detail.__dict__.update({f"extra-{index}": PRIVATE for index in range(17)})
